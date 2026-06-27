@@ -11,3 +11,242 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+```prisma
+////////////////
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/////////////////////////////////////////////////////
+// ENUMS
+/////////////////////////////////////////////////////
+
+enum Currency {
+  INR
+  USD
+  EUR
+  GBP
+  AUD
+  CAD
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  TRIAL
+  SUSPENDED
+}
+
+enum DepartmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum RoleStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  PENDING_VERIFICATION
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  INTERN
+  CONTRACT
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  RESIGNED
+  TERMINATED
+}
+
+/////////////////////////////////////////////////////
+// COMPANY
+/////////////////////////////////////////////////////
+
+model Company {
+  id                 String         @id @default(uuid())
+  companyCode        String         @unique
+  companyName        String
+  email              String         @unique
+  phone              String
+  website            String?
+  logo               String?
+  taxId              String?
+  registrationNumber String         @unique
+  baseCurrency       Currency       @default(INR)
+  timezone           String         @default("Asia/Kolkata")
+  address            String
+  city               String
+  state              String
+  country            String
+  postalCode         String
+  status             CompanyStatus  @default(ACTIVE)
+
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  departments        Department[]
+  users              User[]
+  employees          Employee[]
+
+  @@index([companyCode])
+}
+
+/////////////////////////////////////////////////////
+// DEPARTMENT
+/////////////////////////////////////////////////////
+
+model Department {
+  id               String             @id @default(uuid())
+  departmentCode   String             @unique
+  departmentName   String
+  description      String?
+  status           DepartmentStatus   @default(ACTIVE)
+
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  companyId        String
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  managerId        String?
+  manager          Employee?          @relation("DepartmentManager", fields: [managerId], references: [id])
+
+  employees        Employee[]         @relation("DepartmentEmployees")
+
+  @@index([companyId])
+}
+
+/////////////////////////////////////////////////////
+// ROLE
+/////////////////////////////////////////////////////
+
+model Role {
+  id            String       @id @default(uuid())
+  roleCode      String       @unique
+  roleName      String       @unique
+  description   String?
+  status        RoleStatus   @default(ACTIVE)
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  users         User[]
+}
+
+/////////////////////////////////////////////////////
+// USER
+/////////////////////////////////////////////////////
+
+model User {
+  id                     String          @id @default(uuid())
+
+  userCode               String          @unique
+  email                  String          @unique
+  password               String
+
+  accountStatus          AccountStatus   @default(ACTIVE)
+
+  isEmailVerified        Boolean         @default(false)
+
+  failedLoginAttempts    Int             @default(0)
+
+  lastLogin              DateTime?
+
+  passwordResetToken     String?
+  passwordResetExpiry    DateTime?
+
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  companyId              String
+  company                Company         @relation(fields: [companyId], references: [id])
+
+  roleId                 String
+  role                   Role            @relation(fields: [roleId], references: [id])
+
+  employee               Employee?
+
+  @@index([companyId])
+  @@index([roleId])
+}
+
+/////////////////////////////////////////////////////
+// EMPLOYEE
+/////////////////////////////////////////////////////
+
+model Employee {
+  id                        String            @id @default(uuid())
+
+  employeeCode              String            @unique
+
+  firstName                 String
+  lastName                  String
+
+  email                     String            @unique
+
+  phone                     String
+
+  gender                    Gender
+
+  dateOfBirth               DateTime
+
+  profileImage              String?
+
+  designation               String
+
+  employmentType            EmploymentType
+
+  joiningDate               DateTime
+
+  status                    EmployeeStatus    @default(ACTIVE)
+
+  emergencyContactName      String?
+
+  emergencyContactPhone     String?
+
+  createdAt                 DateTime          @default(now())
+
+  updatedAt                 DateTime          @updatedAt
+
+  companyId                 String
+  company                   Company           @relation(fields: [companyId], references: [id])
+
+  departmentId              String
+  department                Department        @relation("DepartmentEmployees", fields: [departmentId], references: [id])
+
+  userId                    String            @unique
+  user                      User              @relation(fields: [userId], references: [id])
+
+  managerId                 String?
+  manager                   Employee?         @relation("ReportingManager", fields: [managerId], references: [id])
+
+  subordinates              Employee[]        @relation("ReportingManager")
+
+  managedDepartments        Department[]      @relation("DepartmentManager")
+
+  @@index([companyId])
+  @@index([departmentId])
+  @@index([managerId])
+}
+```
