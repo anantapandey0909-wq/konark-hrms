@@ -29,10 +29,12 @@ export default function EmployeesPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleEdit = React.useCallback((employee: Employee) => {
-    // TODO: Navigate to edit employee page
-    console.log(employee);
-  }, []);
+  const handleEdit = React.useCallback(
+  (employee: Employee) => {
+    router.push(`/employees/${employee.id}/edit`);
+  },
+  [router]
+);
 
   const handleDeactivate = React.useCallback((id: string) => {
     setEmployees((prev) =>

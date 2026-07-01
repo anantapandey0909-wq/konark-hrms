@@ -1,11 +1,8 @@
-
-
 import * as React from "react";
 import Link from "next/link";
 import {
   User,
   Mail,
-  Phone,
   Briefcase,
   Calendar,
   Shield,
@@ -13,7 +10,6 @@ import {
   UserMinus,
   Printer,
   Download,
-  MapPin,
   Clock,
   CreditCard,
   FileText,
@@ -32,9 +28,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mockEmployees } from "@/mock/employee";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export default async function EmployeeProfilePage({
@@ -69,24 +65,8 @@ export default async function EmployeeProfilePage({
     );
   }
 
-  const containerVariants = {
-    hidden: { opacity: 0, y: 15 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.3, staggerChildren: 0.08 },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
-  };
-
   return (
-    <div
-      className="flex-1 space-y-6 p-6 max-w-7xl mx-auto"
-    >
+    <div className="flex-1 space-y-6 p-6 max-w-7xl mx-auto">
       {/* Back Button */}
       <div className="flex items-center justify-between">
         <Button
@@ -103,28 +83,31 @@ export default async function EmployeeProfilePage({
       </div>
 
       {/* Employee Header Block */}
-      <div >
+      <div>
         <Card className="overflow-hidden border-neutral-200 dark:border-neutral-800">
           <div className="h-32 bg-gradient-to-r from-neutral-100 to-neutral-200 dark:from-neutral-900 dark:to-neutral-800" />
           <div className="p-6 relative -mt-12 flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
               <Avatar className="h-24 w-24 border-4 border-white dark:border-neutral-950 shadow-md">
                 <AvatarImage
-  src={employee.avatar ?? undefined}
-  alt={employee.fullName}
-/>
-               <AvatarFallback>
-  {employee.fullName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)}
-</AvatarFallback>
+                  src={employee.avatar ?? undefined}
+                  alt={employee.fullName}
+                />
+                <AvatarFallback>
+                  {employee.fullName
+                    ? employee.fullName
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()
+                    : "HR"}
+                </AvatarFallback>
               </Avatar>
               <div className="space-y-1 pb-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
-                    {employee.fullName} 
+                    {employee.fullName}
                   </h1>
                   <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/50">
                     {employee.status}
@@ -189,11 +172,9 @@ export default async function EmployeeProfilePage({
 
         {/* Tab Cards */}
         <TabsContent value="overview">
-          <div>
-            className="grid grid-cols-1 md:grid-cols-3 gap-6"
-          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left/Center side grids */}
-            <div>
+            <div className="md:col-span-2 space-y-6">
               <Card className="border-neutral-200 dark:border-neutral-800">
                 <CardHeader>
                   <CardTitle className="text-lg font-semibold flex items-center gap-2">
@@ -204,7 +185,7 @@ export default async function EmployeeProfilePage({
                 <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6 text-sm">
                   <div className="space-y-1">
                     <p className="text-neutral-400">Full Name</p>
-                    <p className="font-medium">{employee.fullName} </p>
+                    <p className="font-medium">{employee.fullName}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-neutral-400">Gender</p>
@@ -253,7 +234,7 @@ export default async function EmployeeProfilePage({
             </div>
 
             {/* Right side Metadata column */}
-            <div >
+            <div className="space-y-6">
               <Card className="border-neutral-200 dark:border-neutral-800">
                 <CardHeader>
                   <CardTitle className="text-lg font-semibold flex items-center gap-2">
