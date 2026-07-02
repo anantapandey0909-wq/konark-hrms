@@ -31,7 +31,7 @@ const mainNavItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Employees", href: "/dashboard/employees", icon: Users },
   { name: "Departments", href: "/dashboard/departments", icon: Briefcase },
-  { name: "Attendance", href: "/dashboard/attendance", icon: Clock },
+  { name: "Attendance", href: "/attendance", icon: Clock },
   { name: "Leave", href: "/dashboard/leave", icon: CalendarDays },
   { name: "Payroll", href: "/dashboard/payroll", icon: FileText },
 ];
