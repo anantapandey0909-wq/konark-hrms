@@ -37,9 +37,21 @@ const formatTime = (date: Date | null, includeSeconds = false): string => {
   });
 };
 
+// Singleton-style External Clock Store to manage standard tick intervals globally/outside React render loops
+const clockStore = {
+  subscribe(onChange: () => void) {
+    const interval = setInterval(onChange, 1000);
+    return () => clearInterval(interval);
+  },
+  getSnapshot(): number {
+    return new Date().getTime();
+  },
+  getServerSnapshot(): null {
+    return null;
+  }
+};
+
 export default function ClockInCard() {
-  const [mounted, setMounted] = useState<boolean>(false);
-  const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [status, setStatus] = useState<AttendanceState>("NOT_CLOCKED_IN");
   const [clockInTime, setClockInTime] = useState<Date | null>(null);
   const [clockOutTime, setClockOutTime] = useState<Date | null>(null);
@@ -47,19 +59,16 @@ export default function ClockInCard() {
 
   const workTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Prevent hydration mismatches by ensuring wall clock runs only on client mount
-  useEffect(() => {
-    setMounted(true);
+  // Subscribe to system time using canonical React 19 external store hook
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+useEffect(() => {
+  const interval = setInterval(() => {
     setCurrentTime(new Date());
+  }, 1000);
 
-    const timeInterval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-
-    return () => {
-      clearInterval(timeInterval);
-    };
-  }, []);
+  return () => clearInterval(interval);
+}, []);
 
   // Track dynamic work hours calculation when status is active
   useEffect(() => {
@@ -95,8 +104,8 @@ export default function ClockInCard() {
     setStatus("CLOCKED_OUT");
   };
 
-  // Safe system state placeholder while mounting
-  if (!mounted || !currentTime) {
+  // Safe system state placeholder while mounting/hydrating
+  if (!currentTime) {
     return (
       <Card className="border border-border bg-card text-card-foreground shadow-sm">
         <CardContent className="h-64 flex items-center justify-center">
@@ -169,68 +178,62 @@ export default function ClockInCard() {
 
         {/* Shift Details Matrix */}
         <div className="grid grid-cols-2 gap-4 text-xs">
-  <div className="space-y-1">
-    <span className="text-muted-foreground">Shift Timing</span>
-    <p className="font-semibold text-foreground">
-      09:00 AM – 06:00 PM
-    </p>
-  </div>
+          <div className="space-y-1">
+            <span className="text-muted-foreground">Shift Timing</span>
+            <p className="font-semibold text-foreground">
+              09:00 AM – 06:00 PM
+            </p>
+          </div>
 
-  <div className="space-y-1 text-right">
-    <span className="text-muted-foreground">Today's Attendance</span>
+          <div className="space-y-1 text-right">
+            <span className="text-muted-foreground">Today&apos;s Attendance</span>
+            <Badge
+              variant={
+                status === "CLOCKED_IN"
+                  ? "default"
+                  : status === "CLOCKED_OUT"
+                  ? "secondary"
+                  : "outline"
+              }
+              className="mt-1"
+            >
+              {status === "CLOCKED_IN" && "Present"}
+              {status === "CLOCKED_OUT" && "Completed"}
+              {status === "NOT_CLOCKED_IN" && "Not Marked"}
+            </Badge>
+          </div>
 
-    <Badge
-      variant={
-        status === "CLOCKED_IN"
-          ? "default"
-          : status === "CLOCKED_OUT"
-          ? "secondary"
-          : "outline"
-      }
-      className="mt-1"
-    >
-      {status === "CLOCKED_IN" && "Present"}
-      {status === "CLOCKED_OUT" && "Completed"}
-      {status === "NOT_CLOCKED_IN" && "Not Marked"}
-    </Badge>
-  </div>
+          <div className="space-y-1">
+            <span className="text-muted-foreground">Worked Hours Today</span>
+            <div className="flex items-center gap-1 font-semibold text-foreground">
+              <Timer className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="tabular-nums font-mono">
+                {formatWorkedHours(workedSeconds)}
+              </span>
+            </div>
+          </div>
 
-  <div className="space-y-1">
-    <span className="text-muted-foreground">Worked Hours Today</span>
+          <div className="space-y-1 text-right">
+            <span className="text-muted-foreground">Last Clock In</span>
+            <p className="font-semibold text-foreground">
+              {formatTime(clockInTime)}
+            </p>
+          </div>
 
-    <div className="flex items-center gap-1 font-semibold text-foreground">
-      <Timer className="h-3.5 w-3.5 text-muted-foreground" />
+          <div className="space-y-1">
+            <span className="text-muted-foreground">Last Clock Out</span>
+            <p className="font-semibold text-foreground">
+              {formatTime(clockOutTime)}
+            </p>
+          </div>
 
-      <span className="tabular-nums font-mono">
-        {formatWorkedHours(workedSeconds)}
-      </span>
-    </div>
-  </div>
-
-  <div className="space-y-1 text-right">
-    <span className="text-muted-foreground">Last Clock In</span>
-
-    <p className="font-semibold text-foreground">
-      {formatTime(clockInTime)}
-    </p>
-  </div>
-
-  <div className="space-y-1">
-    <span className="text-muted-foreground">Last Clock Out</span>
-
-    <p className="font-semibold text-foreground">
-      {formatTime(clockOutTime)}
-    </p>
-  </div>
-
-  <div className="space-y-1 text-right">
-    <span className="text-muted-foreground">Location</span>
-
-    <p className="font-semibold text-foreground">
-      Main Office
-    </p>
-  </div>
-</div>
+          <div className="space-y-1 text-right">
+            <span className="text-muted-foreground">Location</span>
+            <p className="font-semibold text-foreground">
+              Main Office
+            </p>
+          </div>
+        </div>
 
         {/* Dynamic Action Buttons */}
         <div className="pt-2">

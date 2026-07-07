@@ -111,3 +111,30 @@ export interface LeaveFilters {
 
   department: string | "ALL";
 }
+export interface LeaveFormData {
+  employeeId: string;
+  employeeName?: string;
+  department?: string;
+  reportingManager?: string;
+  employeeDisplayId?: string;
+
+  leaveType: LeaveType | "";
+
+  startDate: string;
+  endDate: string;
+
+  isHalfDay: boolean;
+  halfDaySession?: HalfDaySession | "";
+
+  duration: number;
+
+  reason: string;
+
+  notes?: string;
+
+  status?: LeaveStatus;
+
+  approver?: string;
+
+  attachmentName?: string;
+}

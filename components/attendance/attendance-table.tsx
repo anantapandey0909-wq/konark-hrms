@@ -31,7 +31,7 @@ import {
   SelectValue 
 } from "@/components/ui/select";
 import { mockAttendanceRecords } from "@/mock/attendance";
-import { AttendanceRecord, AttendanceStatus } from "@/types/attendance";
+import { AttendanceStatus } from "@/types/attendance";
 
 const ITEMS_PER_PAGE = 5;
 
@@ -97,10 +97,21 @@ export default function AttendanceTable() {
     console.log("Export CSV");
   }, []);
 
-  // Resets to initial page whenever filters change
-  useEffect(() => {
+  // Handler helpers to cleanly coordinate state updates alongside page resets
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, deptFilter]);
+  };
+
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setCurrentPage(1);
+  };
+
+  const handleDeptFilterChange = (value: string) => {
+    setDeptFilter(value);
+    setCurrentPage(1);
+  };
 
   // Memoized query normalization to optimize search filtering inside every iteration
   const normalizedQuery = useMemo(() => {
@@ -139,7 +150,7 @@ export default function AttendanceTable() {
     switch (status) {
       case "PRESENT":
         return (
-          <Badge variant="outline" className={`${baseClasses} bg-emerald-550 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-900/30`}>
+          <Badge variant="outline" className={`${baseClasses} bg-emerald-600 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-900/30`}>
             Present
           </Badge>
         );
@@ -225,14 +236,14 @@ export default function AttendanceTable() {
                 type="text"
                 placeholder="Search name or ID..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={handleSearchChange}
                 aria-label="Search employees by name or code"
                 className="pl-8 h-8.5 text-xs bg-background"
               />
             </div>
             
             <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
                 <SelectTrigger aria-label="Filter by attendance status" className="h-8.5 text-xs bg-background w-full sm:w-36">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -246,7 +257,7 @@ export default function AttendanceTable() {
                 </SelectContent>
               </Select>
 
-              <Select value={deptFilter} onValueChange={setDeptFilter}>
+              <Select value={deptFilter} onValueChange={handleDeptFilterChange}>
                 <SelectTrigger aria-label="Filter by department" className="h-8.5 text-xs bg-background w-full sm:w-44">
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
@@ -398,6 +409,9 @@ export default function AttendanceTable() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
+              <span className="text-xs font-medium text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
               <Button
                 variant="outline"
                 size="icon"

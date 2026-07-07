@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import React, { useState } from "react";
+import React from "react";
 import {
   LayoutDashboard,
   Users,
@@ -15,23 +15,28 @@ import {
   Sparkles,
   Briefcase,
   HelpCircle,
-  FileText,
-  LogOut
+  FileText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppSidebarProps {
   isCollapsed: boolean;
-  setIsCollapsed: (collapsed: boolean) => void;
+  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   isMobileOpen: boolean;
   setIsMobileOpen: (open: boolean) => void;
+}
+
+interface SidebarContentProps {
+  isCollapsed: boolean;
+  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  pathname: string;
 }
 
 const mainNavItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Employees", href: "/dashboard/employees", icon: Users },
   { name: "Departments", href: "/dashboard/departments", icon: Briefcase },
-  { name: "Attendance", href: "/attendance", icon: Clock },
+  { name: "Attendance", href: "/dashboard/attendance", icon: Clock },
   { name: "Leave", href: "/dashboard/leave", icon: CalendarDays },
   { name: "Payroll", href: "/dashboard/payroll", icon: FileText },
 ];
@@ -41,23 +46,19 @@ const secondaryNavItems = [
   { name: "Support", href: "/dashboard/support", icon: HelpCircle },
 ];
 
-export function AppSidebar({
+function SidebarContent({
   isCollapsed,
   setIsCollapsed,
-  isMobileOpen,
-  setIsMobileOpen,
-}: AppSidebarProps) {
-  const pathname = usePathname();
-
-  const handleBackdropClick = React.useCallback(() => {
-    setIsMobileOpen(false);
-  }, [setIsMobileOpen]);
-
-  const SidebarContent = () => (
+  pathname,
+}: SidebarContentProps) {
+  return (
     <div className="flex h-full flex-col justify-between bg-zinc-50 dark:bg-zinc-950/70 p-4 border-r border-zinc-200/60 dark:border-zinc-800/60 select-none">
       <div>
         {/* Workspace Switcher */}
-        <div className="flex items-center gap-3 px-2 py-3 mb-6">
+        <Link
+  href="/dashboard"
+  className="flex items-center gap-3 px-2 py-3 mb-6 rounded-lg transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-900"
+>
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900 shadow-sm">
             <Briefcase className="h-5 w-5" />
           </div>
@@ -77,7 +78,7 @@ export function AppSidebar({
               </span>
             </motion.div>
           )}
-        </div>
+        </Link>
 
         {/* Main Navigation Group */}
         <div className="space-y-1">
@@ -179,7 +180,7 @@ export function AppSidebar({
                 Enterprise Core
               </span>
               <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
-               Version 1.0 MVP
+                Version 1.0 MVP
               </span>
             </div>
           </div>
@@ -216,6 +217,19 @@ export function AppSidebar({
       </div>
     </div>
   );
+}
+
+export function AppSidebar({
+  isCollapsed,
+  setIsCollapsed,
+  isMobileOpen,
+  setIsMobileOpen,
+}: AppSidebarProps) {
+  const pathname = usePathname();
+
+  const handleBackdropClick = React.useCallback(() => {
+    setIsMobileOpen(false);
+  }, [setIsMobileOpen]);
 
   return (
     <>
@@ -226,7 +240,11 @@ export function AppSidebar({
           isCollapsed ? "w-[72px]" : "w-64"
         )}
       >
-        <SidebarContent />
+        <SidebarContent
+          isCollapsed={isCollapsed}
+          setIsCollapsed={setIsCollapsed}
+          pathname={pathname}
+        />
       </aside>
 
       {/* Mobile Drawer Navigation Backdrop */}
@@ -252,7 +270,11 @@ export function AppSidebar({
             transition={{ type: "spring", bounce: 0, duration: 0.35 }}
             className="fixed inset-y-0 left-0 z-50 w-64 md:hidden shadow-xl"
           >
-            <SidebarContent />
+            <SidebarContent
+              isCollapsed={isCollapsed}
+              setIsCollapsed={setIsCollapsed}
+              pathname={pathname}
+            />
           </motion.aside>
         )}
       </AnimatePresence>

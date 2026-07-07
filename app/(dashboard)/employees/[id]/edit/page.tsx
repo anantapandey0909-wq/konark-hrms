@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, AlertCircle } from "lucide-react";
 
 import { mockEmployees } from "@/mock/employee";
-import { EmployeeForm } from "@/components/employee/form/employee-form";
+import { EmployeeForm, EmployeeFormData } from "@/components/employee/form/employee-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -24,7 +24,7 @@ export default function EditEmployeePage() {
     );
   }, [employeeId]);
 
-  const handleSave = async (formData: any) => {
+  const handleSave = async (formData: EmployeeFormData) => {
     setIsSaving(true);
     try {
       // Simulate network request latency to the backend database

@@ -10,7 +10,7 @@ import LeaveStats from "@/components/leave/leave-stats";
 import LeaveFilters from "@/components/leave/leave-filters";
 import LeaveTable from "@/components/leave/leave-table";
 
-import { mockLeaveRequests } from "@/lib/mock-data";
+import { mockLeaveRequests } from "@/mock/leave";
 
 import {
   LeaveStatus,

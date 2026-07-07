@@ -14,9 +14,9 @@ export default function DashboardPage() {
         </h1>
 
         <p className="max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-          Welcome back. Here's a live overview of your organization,
-          employee attendance, payroll progress and recent activities.
-        </p>
+  Welcome back. Here&apos;s a live overview of your organization,
+  employee attendance, payroll progress and recent activities.
+</p>
       </section>
 
       {/* KPI Cards */}
