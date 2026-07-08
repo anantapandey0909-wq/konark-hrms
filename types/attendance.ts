@@ -1,5 +1,13 @@
-// types/attendance.ts
+/**
+ * ==================================================
+ * Attendance Module Type Definitions
+ * Konark HRMS
+ * ==================================================
+ */
 
+/**
+ * Supported attendance statuses.
+ */
 export type AttendanceStatus =
   | "PRESENT"
   | "ABSENT"
@@ -7,17 +15,20 @@ export type AttendanceStatus =
   | "HALF_DAY"
   | "ON_LEAVE";
 
+/**
+ * Single daily attendance record for an employee.
+ */
 export interface AttendanceRecord {
   /** Unique attendance record ID */
   id: string;
 
-  /** Existing Employee ID */
+  /** Employee ID (references Employee module) */
   employeeId: string;
 
-  /** Existing Employee Code */
+  /** Employee Code */
   employeeCode: string;
 
-  /** Snapshot of employee name for historical records */
+  /** Snapshot of employee name */
   employeeName: string;
 
   /** Snapshot of department */
@@ -35,7 +46,7 @@ export interface AttendanceRecord {
   /** Daily attendance status */
   status: AttendanceStatus;
 
-  /** Total working hours */
+  /** Total worked hours */
   workHours: number | null;
 
   /** Overtime hours */
@@ -47,13 +58,16 @@ export interface AttendanceRecord {
   /** Assigned shift */
   shiftName?: string;
 
-  /** Whether attendance was manually regularized */
+  /** Whether attendance has been manually regularized */
   isRegularized?: boolean;
 
-  /** Optional remarks */
+  /** Optional HR remarks */
   notes?: string;
 }
 
+/**
+ * Dashboard attendance statistics.
+ */
 export interface AttendanceStats {
   /** Employees present today */
   presentCount: number;
@@ -64,10 +78,10 @@ export interface AttendanceStats {
   /** Employees marked late */
   lateCount: number;
 
-  /** Employees on leave */
+  /** Employees currently on leave */
   onLeaveCount: number;
 
-  /** Attendance percentage */
+  /** Overall attendance percentage */
   attendanceRate: number;
 
   /** Average work hours */
@@ -77,16 +91,73 @@ export interface AttendanceStats {
   totalOvertimeHours: number;
 }
 
+/**
+ * Active clock session state.
+ */
 export interface ActiveClockState {
-  /** Current clock-in status */
+  /** Whether the employee is currently clocked in */
   isClockedIn: boolean;
 
   /** Current clock-in timestamp */
   clockInTime: string | null;
 
-  /** Current break start timestamp */
+  /** Active break start timestamp */
   currentBreakStart: string | null;
 
-  /** Break duration in minutes */
+  /** Total accumulated break duration (minutes) */
   totalBreakDuration: number;
+}
+
+/**
+ * Attendance status summary.
+ * Used by dashboard widgets and statistics.
+ */
+export interface AttendanceSummary {
+  presentCount: number;
+  lateCount: number;
+  absentCount: number;
+  halfDayCount: number;
+  onLeaveCount: number;
+  totalEmployees: number;
+}
+
+/**
+ * Employee attendance summary.
+ * Used by employee profile pages and reports.
+ */
+export interface EmployeeAttendanceSummary {
+  presentCount: number;
+  lateCount: number;
+  halfDayCount: number;
+  absentCount: number;
+  onLeaveCount: number;
+  totalWorkedHours: number;
+  totalOvertime: number;
+  attendanceRate: number;
+}
+
+/**
+ * Attendance filtering options.
+ * Used by tables, dashboards and reports.
+ */
+export interface AttendanceFilters {
+  employeeId?: string;
+
+  department?: string;
+
+  status?: AttendanceStatus;
+
+  location?: string;
+
+  shiftName?: string;
+
+  search?: string;
+
+  /** ISO Date (YYYY-MM-DD) */
+  startDate?: string;
+
+  /** ISO Date (YYYY-MM-DD) */
+  endDate?: string;
+
+  isRegularized?: boolean;
 }

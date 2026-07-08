@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { 
   Clock, 
   Play, 
@@ -37,18 +37,34 @@ const formatTime = (date: Date | null, includeSeconds = false): string => {
   });
 };
 
-// Singleton-style External Clock Store to manage standard tick intervals globally/outside React render loops
+// External store for the system clock to handle standard tick intervals globally
+let clockListeners: Array<() => void> = [];
+let currentClockTime = new Date();
+let clockInterval: ReturnType<typeof setInterval> | null = null;
+
 const clockStore = {
-  subscribe(onChange: () => void) {
-    const interval = setInterval(onChange, 1000);
-    return () => clearInterval(interval);
+  subscribe(listener: () => void) {
+    clockListeners.push(listener);
+    if (!clockInterval) {
+      clockInterval = setInterval(() => {
+        currentClockTime = new Date();
+        clockListeners.forEach((l) => l());
+      }, 1000);
+    }
+    return () => {
+      clockListeners = clockListeners.filter((l) => l !== listener);
+      if (clockListeners.length === 0 && clockInterval) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+      }
+    };
   },
-  getSnapshot(): number {
-    return new Date().getTime();
+  getSnapshot() {
+    return currentClockTime;
   },
-  getServerSnapshot(): null {
-    return null;
-  }
+  getServerSnapshot() {
+    return new Date(0);
+  },
 };
 
 export default function ClockInCard() {
@@ -59,16 +75,12 @@ export default function ClockInCard() {
 
   const workTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Subscribe to system time using canonical React 19 external store hook
-  const [currentTime, setCurrentTime] = useState(new Date());
-
-useEffect(() => {
-  const interval = setInterval(() => {
-    setCurrentTime(new Date());
-  }, 1000);
-
-  return () => clearInterval(interval);
-}, []);
+  // Subscribe to system clock using standard React 18+ hook
+  const currentTime = useSyncExternalStore(
+    clockStore.subscribe,
+    clockStore.getSnapshot,
+    clockStore.getServerSnapshot
+  );
 
   // Track dynamic work hours calculation when status is active
   useEffect(() => {
@@ -105,7 +117,7 @@ useEffect(() => {
   };
 
   // Safe system state placeholder while mounting/hydrating
-  if (!currentTime) {
+  if (!currentTime || currentTime.getTime() === 0) {
     return (
       <Card className="border border-border bg-card text-card-foreground shadow-sm">
         <CardContent className="h-64 flex items-center justify-center">
