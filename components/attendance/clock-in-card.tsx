@@ -41,7 +41,7 @@ const formatTime = (date: Date | null, includeSeconds = false): string => {
 let clockListeners: Array<() => void> = [];
 let currentClockTime = new Date();
 let clockInterval: ReturnType<typeof setInterval> | null = null;
-
+const serverSnapshot = new Date(0);
 const clockStore = {
   subscribe(listener: () => void) {
     clockListeners.push(listener);
@@ -63,8 +63,8 @@ const clockStore = {
     return currentClockTime;
   },
   getServerSnapshot() {
-    return new Date(0);
-  },
+  return serverSnapshot;
+},
 };
 
 export default function ClockInCard() {

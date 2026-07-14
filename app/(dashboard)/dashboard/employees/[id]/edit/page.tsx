@@ -42,7 +42,7 @@ void formData;
       // Future backend integration:
       // await updateEmployee(employeeId, _formData);
 
-      router.push("/employees");
+      router.push("/dashboard/employees");
       router.refresh();
     } catch (error) {
       console.error(
@@ -55,7 +55,7 @@ void formData;
   };
 
   const handleCancel = () => {
-    router.push(`/employees/${employeeId}`);
+    router.push(`/dashboard/employees/${employeeId}`);
   };
 
   if (!employee) {
@@ -83,7 +83,7 @@ void formData;
           size="sm"
           className="mt-2"
         >
-          <Link href="/employees">
+          <Link href="/dashboard/employees">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Return to Directory
           </Link>

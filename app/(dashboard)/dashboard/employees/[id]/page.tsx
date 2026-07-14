@@ -56,7 +56,7 @@ export default async function EmployeeProfilePage({
           The employee record with ID <span className="font-mono font-bold text-neutral-800 dark:text-neutral-200">{id}</span> could not be located in the directory database.
         </p>
         <Button asChild variant="outline" size="sm" className="mt-2">
-          <Link href="/employees">
+          <Link href="/dashboard/employees">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Return to Directory
           </Link>
@@ -75,7 +75,7 @@ export default async function EmployeeProfilePage({
           asChild
           className="text-neutral-500 hover:text-neutral-950 dark:hover:text-neutral-50"
         >
-          <Link href="/employees">
+          <Link href="/dashboard/employees">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Directory
           </Link>
@@ -133,7 +133,7 @@ export default async function EmployeeProfilePage({
                 Export
               </Button>
               <Button size="sm" variant="outline" className="flex-1 sm:flex-initial" asChild>
-                <Link href={`/employees/${id}/edit`}>
+                <Link href={`/dashboard/employees/${id}/edit`}>
                   <Edit2 className="mr-2 h-4 w-4 text-neutral-500" />
                   Edit
                 </Link>

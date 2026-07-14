@@ -56,7 +56,7 @@ export default function EditAttendancePage() {
     if (attendanceRecord) {
       router.push(`/attendance/${attendanceRecord.id}`);
     } else {
-      router.push("/attendance");
+      router.push("/dashboard/attendance");
     }
   };
 
@@ -72,7 +72,7 @@ export default function EditAttendancePage() {
             The attendance record you are trying to edit does not exist, or you do not have permission to view it.
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push("/attendance")}>
+        <Button variant="outline" onClick={() => router.push("/dashboard/attendance")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Return to Attendance
         </Button>

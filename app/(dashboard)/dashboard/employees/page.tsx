@@ -31,7 +31,7 @@ export default function EmployeesPage() {
 
   const handleEdit = React.useCallback(
   (employee: Employee) => {
-    router.push(`/employees/${employee.id}/edit`);
+    router.push(`/dashboard/employees/${employee.id}/edit`);
   },
   [router]
 );
@@ -50,7 +50,7 @@ export default function EmployeesPage() {
   }, []);
 
   const handleAddClick = React.useCallback(() => {
-    router.push('/employees/new');
+    router.push('/dashboard/employees/new');
   }, [router]);
 
   const handleExportClick = React.useCallback(() => {

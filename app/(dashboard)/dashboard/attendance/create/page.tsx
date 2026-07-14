@@ -16,7 +16,7 @@ export default function CreateAttendancePage() {
 
   // Handle cancelled form submissions by returning to the dashboard
   const handleCancel = () => {
-    router.push("/attendance");
+    router.push("/dashboard/attendance");
   };
 
   // Process and simulate persistence of the verified record
@@ -31,7 +31,7 @@ export default function CreateAttendancePage() {
       // Integrate with Attendance API once the backend module is implemented.
       // Persist AttendanceFormValues and refresh attendance statistics.
 
-      router.push("/attendance");
+      router.push("/dashboard/attendance");
       router.refresh();
     } catch {
       // TODO:

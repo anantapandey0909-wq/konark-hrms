@@ -22,7 +22,7 @@ export const navigation: NavigationItem[] = [
   },
   {
     title: "Employees",
-    href: "/employees",
+    href: "/dashboard/employees",
     icon: Users,
     roles: ["SUPER_ADMIN", "HR", "MANAGER"],
   },
@@ -34,19 +34,19 @@ export const navigation: NavigationItem[] = [
   },
   {
     title: "Attendance",
-    href: "/attendance",
+    href: "/dashboard/attendance",
     icon: Clock3,
     roles: ["SUPER_ADMIN", "HR", "MANAGER", "EMPLOYEE"],
   },
   {
     title: "Leave",
-    href: "/leave",
+    href: "/dashboard/leave",
     icon: CalendarCheck,
     roles: ["SUPER_ADMIN", "HR", "MANAGER", "EMPLOYEE"],
   },
   {
     title: "Payroll",
-    href: "/payroll",
+    href: "/dashboard/payroll",
     icon: Wallet,
     roles: ["SUPER_ADMIN", "HR"],
   },

@@ -85,7 +85,7 @@ export const columns = (
         .slice(0, 2);
 
       return (
-        <Link href={`/employees/${id}`} className="flex items-center gap-3 group">
+        <Link href={`/dashboard/employees/${id}`} className="flex items-center gap-3 group">
           <Avatar className="h-9 w-9 border border-neutral-200 dark:border-neutral-800 transition-transform group-hover:scale-105">
             <AvatarImage src={avatar || undefined} alt={fullName} />
             <AvatarFallback className="bg-neutral-100 text-neutral-800 font-medium text-xs dark:bg-neutral-800 dark:text-neutral-200">
@@ -228,7 +228,7 @@ export const columns = (
             <DropdownMenuLabel className="text-neutral-500 text-xs font-semibold px-2 py-1.5">Actions</DropdownMenuLabel>
             
             <DropdownMenuItem asChild>
-              <Link href={`/employees/${employee.id}`} className="flex items-center gap-2 cursor-pointer text-sm">
+              <Link href={`/dashboard/employees/${employee.id}`} className="flex items-center gap-2 cursor-pointer text-sm">
                 <Eye className="h-4 w-4 text-neutral-500" />
                 <span>View Profile</span>
               </Link>

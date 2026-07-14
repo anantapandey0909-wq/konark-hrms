@@ -66,7 +66,7 @@ export default async function AttendanceDetailsPage({ params }: PageProps) {
           </CardHeader>
           <CardContent className="pb-8 pt-2">
             <Link
-              href="/attendance"
+              href="/dashboard/attendance"
               className={cn(
                 buttonVariants({ variant: "default" }),
                 "w-full h-10 text-sm font-medium"
@@ -90,7 +90,7 @@ export default async function AttendanceDetailsPage({ params }: PageProps) {
       <div className="flex flex-col gap-4">
         <div>
           <Link
-            href="/attendance"
+            href="/dashboard/attendance"
             className="inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-all gap-1"
           >
             <ChevronLeft className="h-4 w-4" />
