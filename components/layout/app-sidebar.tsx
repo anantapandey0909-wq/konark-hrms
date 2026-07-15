@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BarChart3 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import React from "react";
@@ -39,6 +40,11 @@ const mainNavItems = [
   { name: "Attendance", href: "/dashboard/attendance", icon: Clock },
   { name: "Leave", href: "/dashboard/leave", icon: CalendarDays },
   { name: "Payroll", href: "/dashboard/payroll", icon: FileText },
+  {
+  name: "Reports",
+  href: "/dashboard/reports",
+  icon: BarChart3,
+}
 ];
 
 const secondaryNavItems = [
