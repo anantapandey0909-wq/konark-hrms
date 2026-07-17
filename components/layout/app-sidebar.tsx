@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { BarChart3 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import React from "react";
@@ -16,7 +15,9 @@ import {
   Sparkles,
   Briefcase,
   HelpCircle,
-  FileText
+  FileText,
+   BarChart3,
+  
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
