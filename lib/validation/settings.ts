@@ -22,7 +22,6 @@ import type {
   LeavePolicy
 } from "@/types/settings";
 import {
-  TIME_FORMATS,
   DATE_FORMATS,
   LANGUAGES,
   TIMEZONES,
