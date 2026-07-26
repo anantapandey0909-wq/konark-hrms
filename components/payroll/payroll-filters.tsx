@@ -1,7 +1,9 @@
-import type { ChangeEvent } from "react";
-import { Search, X } from "lucide-react";
+"use client";
+
+import * as React from "react";
+import { Search, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import type { Department } from "@/types/employee";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -9,203 +11,202 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import type {
-  PayrollFilters as PayrollFiltersType,
-  PayrollStatus,
-  PayrollMonth,
-} from "@/types/payroll";
-import { formatPayrollMonth, formatPayrollStatus } from "@/lib/payroll";
-import { cn } from "@/lib/utils";
+import { PayrollFilters, PayrollStatus, PayrollMonth } from "@/types/payroll";
+import { Department } from "@/types/department";
 
 export interface PayrollFiltersProps {
-  filters: PayrollFiltersType;
-  onFiltersChange: (filters: PayrollFiltersType) => void;
-  className?: string;
+  readonly filters: PayrollFilters;
+  readonly departments: readonly Department[];
+  readonly onFilterChange: (filters: PayrollFilters) => void;
+  readonly onReset: () => void;
 }
 
-const DEPARTMENTS = [
-  "Engineering",
-  "Product",
-  "Design",
-  "Marketing",
-  "Sales",
-  "HR",
-  "Finance",
-  "Operations",
-] as const;
-
-const STATUSES: PayrollStatus[] = ["DRAFT", "PENDING", "APPROVED", "PAID", "CANCELLED"];
-
-const MONTHS: PayrollMonth[] = [
-  "JANUARY",
-  "FEBRUARY",
-  "MARCH",
-  "APRIL",
-  "MAY",
-  "JUNE",
-  "JULY",
-  "AUGUST",
-  "SEPTEMBER",
-  "OCTOBER",
-  "NOVEMBER",
-  "DECEMBER",
+const STATUS_OPTIONS: readonly { readonly label: string; readonly value: PayrollStatus }[] = [
+  { label: "Draft", value: "DRAFT" },
+  { label: "Pending Approval", value: "PENDING" },
+  { label: "Approved", value: "APPROVED" },
+  { label: "Paid", value: "PAID" },
+  { label: "Cancelled", value: "CANCELLED" },
 ];
 
-const YEARS = [2023, 2024, 2025, 2026];
+const MONTH_OPTIONS: readonly { readonly label: string; readonly value: PayrollMonth }[] = [
+  { label: "January", value: "JANUARY" },
+  { label: "February", value: "FEBRUARY" },
+  { label: "March", value: "MARCH" },
+  { label: "April", value: "APRIL" },
+  { label: "May", value: "MAY" },
+  { label: "June", value: "JUNE" },
+  { label: "July", value: "JULY" },
+  { label: "August", value: "AUGUST" },
+  { label: "September", value: "SEPTEMBER" },
+  { label: "October", value: "OCTOBER" },
+  { label: "November", value: "NOVEMBER" },
+  { label: "December", value: "DECEMBER" },
+];
 
-export function PayrollFilters({
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS: readonly string[] = Array.from({ length: 5 }, (_, i) =>
+  (CURRENT_YEAR - i).toString()
+);
+
+export function PayrollFiltersComponent({
   filters,
-  onFiltersChange,
-  className,
+  departments,
+  onFilterChange,
+  onReset,
 }: PayrollFiltersProps) {
-  
-  // Reusable unified filter state updater
-  const updateFilter = <K extends keyof PayrollFiltersType>(
-  key: K,
-  value: PayrollFiltersType[K]
-) => {
-
-    onFiltersChange({
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    onFilterChange({
       ...filters,
-      [key]: value,
+      search: event.target.value,
     });
-  };
-
-  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
-    updateFilter("search", e.target.value);
   };
 
   const handleDepartmentChange = (value: string) => {
-  updateFilter(
-    "department",
-    value === "ALL"
-      ? "ALL"
-      : (value as Department)
-  );
-};
+    if (value === "ALL") {
+      onFilterChange({
+        ...filters,
+        department: "ALL",
+      });
+    } else {
+      const selectedDept = departments.find((dept) => dept.id === value);
+      if (selectedDept) {
+        onFilterChange({
+          ...filters,
+          department: selectedDept,
+        });
+      }
+    }
+  };
 
   const handleStatusChange = (value: string) => {
-    updateFilter("status", value === "ALL" ? "ALL" : (value as PayrollStatus));
-  };
-
-  const handleMonthChange = (value: string) => {
-    updateFilter("month", value === "ALL" ? "ALL" : (value as PayrollMonth));
-  };
-
-  const handleYearChange = (value: string) => {
-    updateFilter("year", value === "ALL" ? "ALL" : Number(value));
-  };
-
-  const hasActiveFilters =
-    (filters.search && filters.search.trim().length > 0) ||
-    (filters.department && filters.department !== "ALL") ||
-    (filters.status && filters.status !== "ALL") ||
-    (filters.month && filters.month !== "ALL") ||
-    (filters.year && filters.year !== "ALL");
-
-  const handleClearFilters = () => {
-    onFiltersChange({
-      search: "",
-      department: "ALL",
-      status: "ALL",
-      month: "ALL",
-      year: "ALL",
+    onFilterChange({
+      ...filters,
+      status: value as "ALL" | PayrollStatus,
     });
   };
 
+  const handleMonthChange = (value: string) => {
+    onFilterChange({
+      ...filters,
+      month: value as "ALL" | PayrollMonth,
+    });
+  };
+
+  const handleYearChange = (value: string) => {
+    onFilterChange({
+      ...filters,
+      year: value === "ALL" ? "ALL" : parseInt(value, 10),
+    });
+  };
+
+  const getDepartmentValue = (): string => {
+    if (!filters.department || filters.department === "ALL") {
+      return "ALL";
+    }
+    return filters.department.id;
+  };
+
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-4 p-4 rounded-lg border bg-card text-card-foreground shadow-sm md:flex-row md:items-center",
-        className
-      )}
-    >
-      {/* Search Input */}
-      <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          type="text"
-          placeholder="Search by employee name or payroll number..."
-          value={filters.search ?? ""}
-          onChange={handleSearchChange}
-          className="pl-9 h-10 w-full"
-        />
+    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex items-center gap-2 border-b border-slate-100 pb-3 dark:border-slate-900">
+        <SlidersHorizontal className="h-4 w-4 text-slate-500" />
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Filter Payroll Records</h2>
       </div>
 
-      {/* Select Filter Controls */}
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
-        {/* Department Filter */}
-        <Select value={filters.department ?? "ALL"} onValueChange={handleDepartmentChange}>
-          <SelectTrigger className="w-full sm:w-[150px] h-10">
-            <SelectValue placeholder="Department" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+          <Input
+            type="text"
+            placeholder="Search employee or code..."
+            className="pl-9"
+            value={filters.search}
+            onChange={handleSearchChange}
+          />
+        </div>
+
+        <Select
+          value={getDepartmentValue()}
+          onValueChange={handleDepartmentChange}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All Departments" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All Departments</SelectItem>
-            {DEPARTMENTS.map((dept) => (
-              <SelectItem key={dept} value={dept}>
-                {dept}
+            {departments.map((dept) => (
+              <SelectItem key={dept.id} value={dept.id}>
+                {dept.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        {/* Status Filter */}
-        <Select value={filters.status ?? "ALL"} onValueChange={handleStatusChange}>
-          <SelectTrigger className="w-full sm:w-[140px] h-10">
-            <SelectValue placeholder="Status" />
+        <Select
+          value={filters.status}
+          onValueChange={handleStatusChange}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All Statuses</SelectItem>
-            {STATUSES.map((status) => (
-              <SelectItem key={status} value={status}>
-                {formatPayrollStatus(status)}
+            {STATUS_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        {/* Month Filter */}
-        <Select value={filters.month ?? "ALL"} onValueChange={handleMonthChange}>
-          <SelectTrigger className="w-full sm:w-[140px] h-10">
-            <SelectValue placeholder="Month" />
+        <Select
+          value={filters.month}
+          onValueChange={handleMonthChange}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All Months" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All Months</SelectItem>
-            {MONTHS.map((month) => (
-              <SelectItem key={month} value={month}>
-                {formatPayrollMonth(month)}
+            {MONTH_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        {/* Year Filter */}
-        <Select value={String(filters.year ?? "ALL")} onValueChange={handleYearChange}>
-          <SelectTrigger className="w-full sm:w-[110px] h-10">
-            <SelectValue placeholder="Year" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All Years</SelectItem>
-            {YEARS.map((year) => (
-              <SelectItem key={year} value={String(year)}>
-                {year}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <Select
+              value={filters.year.toString()}
+              onValueChange={handleYearChange}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Years" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Years</SelectItem>
+                {YEAR_OPTIONS.map((year) => (
+                  <SelectItem key={year} value={year}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        {/* Reset Button */}
-        {hasActiveFilters && (
           <Button
-            variant="ghost"
-            onClick={handleClearFilters}
-            className="col-span-2 sm:col-span-1 h-10 px-3 text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 shrink-0"
+            variant="outline"
+            size="icon"
+            onClick={onReset}
+            title="Reset Filters"
+            aria-label="Reset Filters"
           >
-            <X className="h-4 w-4" />
-            <span>Clear</span>
+            <RotateCcw className="h-4 w-4" />
           </Button>
-        )}
+        </div>
       </div>
     </div>
   );

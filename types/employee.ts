@@ -1,91 +1,42 @@
-export type EmployeeStatus =
-  | "ACTIVE"
-  | "INACTIVE"
-  | "ON_LEAVE"
-  | "SUSPENDED";
+export type EmployeeStatus = "ACTIVE" | "INACTIVE" | "ON_LEAVE" | "TERMINATED";
 
-export type EmployeeRole =
-  | "ADMIN"
-  | "MANAGER"
-  | "EMPLOYEE"
-  | "HR_PARTNER"
-  | "DIRECTOR";
+export type EmploymentType = "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
 
-export type Gender =
-  | "MALE"
-  | "FEMALE"
-  | "OTHER";
+/**
+ * Read-only runtime definitions to support dropdown forms, filter components,
+ * and database mapping lookups.
+ */
+export const EMPLOYEE_STATUSES = ["ACTIVE", "INACTIVE", "ON_LEAVE", "TERMINATED"] as const;
 
-export type EmploymentType =
-  | "FULL_TIME"
-  | "PART_TIME"
-  | "CONTRACT"
-  | "INTERN";
+export const EMPLOYMENT_TYPES = ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"] as const;
 
-export type EmployeeLevel =
-  | "L1"
-  | "L2"
-  | "L3"
-  | "L4"
-  | "L5";
-
-export type Department =
-  | "Engineering"
-  | "Product"
-  | "Design"
-  | "Marketing"
-  | "Sales"
-  | "HR"
-  | "Finance"
-  | "Operations";
-
+/**
+ * Core Employee entity partition schema.
+ * Bound strictly to a single Tenant partition key to enforce strict data isolation.
+ */
 export interface Employee {
-  id: string;
-
-  employeeId: string;
-  employeeCode: string;
-
-  avatar?: string | null;
-
-  fullName: string;
-  email: string;
-  phone: string;
-
-  department: Department;
-  designation: string;
-
-  role: EmployeeRole;
-  level: EmployeeLevel;
-
-  status: EmployeeStatus;
-
-  gender: Gender;
-
-  employmentType: EmploymentType;
-
-  joiningDate: string;
-
-  managerId?: string | null;
-  managerName?: string | null;
-
-  location: string;
-
-  profileCompletion: number;
-
-  createdAt?: string;
-  updatedAt?: string;
+  readonly id: string;
+  readonly tenantId: string; // Partition key for multi-tenant database indexing
+  readonly employeeId: string; // Corporate identification number (e.g., EMP-202)
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly phone: string | null;
+  readonly avatarUrl: string | null; // Path or URL to the employee avatar image
+  readonly departmentId: string | null; // Associated department identifier
+  readonly managerId: string | null; // Reports-to employee identifier supporting approval workflows
+  readonly designation: string; // Job title (e.g., Senior Software Engineer)
+  readonly status: EmployeeStatus;
+  readonly employmentType: EmploymentType;
+  readonly workLocation: string | null; // Allocated workspace or office location (e.g., "Remote", "Pune Office")
+  readonly joiningDate: string; // ISO format (YYYY-MM-DD)
+  readonly relievingDate: string | null; // Exit date, ISO format (YYYY-MM-DD)
+  readonly createdAt: string; // ISO-8601 string
+  readonly updatedAt: string; // ISO-8601 string
 }
 
-export interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages?: number;
-}
-
-export interface EmployeeFilters {
-  search: string;
-  department: Department | "ALL";
-  status: EmployeeStatus | "ALL";
-  role: EmployeeRole | "ALL";
-}
+/**
+ * Utility shapes designed for client-side forms and request serialization.
+ */
+export type CreateEmployeeInput = Omit<Employee, "id" | "createdAt" | "updatedAt">;
+export type UpdateEmployeeInput = Partial<CreateEmployeeInput>;

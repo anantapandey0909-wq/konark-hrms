@@ -5,21 +5,16 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import React from "react";
 import {
-  LayoutDashboard,
-  Users,
-  CalendarDays,
-  Clock,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Sparkles,
   Briefcase,
-  HelpCircle,
-  FileText,
-   BarChart3,
-  
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { mainNavigation, secondaryNavigation } from "@/lib/navigation/sidebar-navigation";
+
+type SidebarNavItem = typeof mainNavigation[number];
 
 interface AppSidebarProps {
   isCollapsed: boolean;
@@ -34,38 +29,88 @@ interface SidebarContentProps {
   pathname: string;
 }
 
-const mainNavItems = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Employees", href: "/dashboard/employees", icon: Users },
-  { name: "Departments", href: "/dashboard/departments", icon: Briefcase },
-  { name: "Attendance", href: "/dashboard/attendance", icon: Clock },
-  { name: "Leave", href: "/dashboard/leave", icon: CalendarDays },
-  { name: "Payroll", href: "/dashboard/payroll", icon: FileText },
-  {
-  name: "Reports",
-  href: "/dashboard/reports",
-  icon: BarChart3,
+interface NavigationItemProps {
+  item: SidebarNavItem;
+  isActive: boolean;
+  isCollapsed: boolean;
+  layoutId: string;
 }
-];
 
-const secondaryNavItems = [
-  { name: "Settings", href: "/dashboard/settings", icon: Settings },
-  { name: "Support", href: "/dashboard/support", icon: HelpCircle },
-];
+const NavigationItem = React.memo(function NavigationItem({
+  item,
+  isActive,
+  isCollapsed,
+  layoutId,
+}: NavigationItemProps) {
+  return (
+    <Link
+      href={item.href}
+      className={cn(
+        "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-600",
+        isActive
+          ? "text-zinc-900 dark:text-zinc-50 font-semibold"
+          : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+      )}
+    >
+      {isActive && (
+        <motion.div
+          layoutId={layoutId}
+          className="absolute inset-0 rounded-lg bg-zinc-200/50 dark:bg-zinc-800/50 -z-10"
+          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+        />
+      )}
+      <item.icon className="h-4 w-4 shrink-0" />
+      {!isCollapsed && (
+        <motion.span
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          {item.name}
+        </motion.span>
+      )}
+    </Link>
+  );
+});
 
 function SidebarContent({
   isCollapsed,
   setIsCollapsed,
   pathname,
 }: SidebarContentProps) {
+  const { user } = useAuth();
+
+  if (!user) {
+    return null;
+  }
+
+  // Filter paths natively based on authorized access rules
+  const mainNavItems = mainNavigation.filter((item) =>
+    item.roles.includes(user.role)
+  );
+
+  const secondaryNavItems = secondaryNavigation.filter((item) =>
+    item.roles.includes(user.role)
+  );
+
+  const userInitials = (
+    (user.firstName?.trim().charAt(0) || "") + 
+    (user.lastName?.trim().charAt(0) || "")
+  ).toUpperCase() || "U";
+
+  const userFullName = 
+    [user.firstName?.trim(), user.lastName?.trim()].filter(Boolean).join(" ") || 
+    user.email || 
+    "Employee";
+
   return (
     <div className="flex h-full flex-col justify-between bg-zinc-50 dark:bg-zinc-950/70 p-4 border-r border-zinc-200/60 dark:border-zinc-800/60 select-none">
       <div>
         {/* Workspace Switcher */}
         <Link
-  href="/dashboard"
-  className="flex items-center gap-3 px-2 py-3 mb-6 rounded-lg transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-900"
->
+          href="/dashboard"
+          className="flex items-center gap-3 px-2 py-3 mb-6 rounded-lg transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-900"
+        >
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900 shadow-sm">
             <Briefcase className="h-5 w-5" />
           </div>
@@ -95,39 +140,15 @@ function SidebarContent({
             </p>
           )}
           <nav className="space-y-[2px]" aria-label="Main Navigation">
-            {mainNavItems.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={cn(
-                    "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-600",
-                    isActive
-                      ? "text-zinc-900 dark:text-zinc-50 font-semibold"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                  )}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="activeNavIndicator"
-                      className="absolute inset-0 rounded-lg bg-zinc-200/50 dark:bg-zinc-800/50 -z-10"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  {!isCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      {item.name}
-                    </motion.span>
-                  )}
-                </Link>
-              );
-            })}
+            {mainNavItems.map((item) => (
+              <NavigationItem
+                key={item.name}
+                item={item}
+                isActive={pathname === item.href}
+                isCollapsed={isCollapsed}
+                layoutId="activeNavIndicator"
+              />
+            ))}
           </nav>
         </div>
 
@@ -139,39 +160,15 @@ function SidebarContent({
             </p>
           )}
           <nav className="space-y-[2px]" aria-label="Secondary Navigation">
-            {secondaryNavItems.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={cn(
-                    "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-600",
-                    isActive
-                      ? "text-zinc-900 dark:text-zinc-50 font-semibold"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                  )}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="activeNavIndicatorSecondary"
-                      className="absolute inset-0 rounded-lg bg-zinc-200/50 dark:bg-zinc-800/50 -z-10"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  {!isCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      {item.name}
-                    </motion.span>
-                  )}
-                </Link>
-              );
-            })}
+            {secondaryNavItems.map((item) => (
+              <NavigationItem
+                key={item.name}
+                item={item}
+                isActive={pathname === item.href}
+                isCollapsed={isCollapsed}
+                layoutId="activeNavIndicatorSecondary"
+              />
+            ))}
           </nav>
         </div>
       </div>
@@ -197,14 +194,14 @@ function SidebarContent({
           {!isCollapsed && (
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-indigo-500 to-rose-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                AP
+                {userInitials}
               </div>
               <div className="flex flex-col overflow-hidden">
                 <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate leading-none">
-                  ananta pandey
+                  {userFullName}
                 </span>
                 <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
-                  HR Manager
+                  {user.role}
                 </span>
               </div>
             </div>
@@ -213,6 +210,7 @@ function SidebarContent({
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="hidden md:flex h-8 w-8 items-center justify-center rounded-md hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            aria-expanded={!isCollapsed}
           >
             {isCollapsed ? (
               <ChevronRight className="h-4 w-4" />

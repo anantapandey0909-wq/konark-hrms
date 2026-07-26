@@ -1,121 +1,100 @@
 "use client";
 
-import React, { useState } from "react";
+import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, AlertCircle } from "lucide-react";
+import { mockAttendanceWithEmployees } from "@/mock/attendance";
+import { AttendanceForm } from "@/components/attendance/attendance-form";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  AttendanceForm,
-  type AttendanceFormValues,
-} from "@/components/attendance/attendance-form";
-import { mockAttendanceRecords } from "@/mock/attendance";
+import { ArrowLeft, AlertCircle } from "lucide-react";
+import Link from "next/link";
 
 export default function EditAttendancePage() {
   const params = useParams();
   const router = useRouter();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
 
-  const id = typeof params?.id === "string" ? params.id : "";
+  const attendanceId = React.useMemo(() => {
+    return typeof params?.id === "string" ? params.id : "";
+  }, [params?.id]);
 
-  const attendanceRecord = React.useMemo(
-  () => mockAttendanceRecords.find((record) => record.id === id),
-  [id]
-);
+  const record = React.useMemo(() => {
+    if (!attendanceId) return null;
+    return mockAttendanceWithEmployees.find((r) => r.id === attendanceId) ?? null;
+  }, [attendanceId]);
 
-  const handleUpdate = async (_data: AttendanceFormValues): Promise<void> => {
-    void _data;
-    setIsSubmitting(true);
+  const handleFormSubmit = async (values: any) => {
+    setIsSaving(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // TODO:
-      // Integrate Attendance Update API once backend is available.
-      // Persist AttendanceFormValues.
-      // Refresh attendance dashboard statistics.
-
-      if (attendanceRecord) {
-        router.push(`/attendance/${attendanceRecord.id}`);
-        router.refresh();
-      }
-    } catch  {
-      // TODO:
-      // Show toast notification after notification service is implemented.
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCancel = (): void => {
-    if (attendanceRecord) {
-      router.push(`/attendance/${attendanceRecord.id}`);
-    } else {
+      // In a real application, we would call a Server Action or API here:
+      // await updateAttendanceRecord(attendanceId, values);
+      
+      // Simulate backend latency
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      
       router.push("/dashboard/attendance");
+    } catch (error) {
+      console.error("Failed to save attendance record", error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  if (!attendanceRecord) {
+  const handleCancel = () => {
+    router.push("/dashboard/attendance");
+  };
+
+  if (!record) {
     return (
-      <div className="max-w-5xl mx-auto p-6 flex flex-col items-center justify-center min-h-[400px] text-center space-y-4">
-        <div className="p-3 bg-destructive/10 rounded-full text-destructive">
-          <AlertCircle className="h-8 w-8" />
-        </div>
-        <div className="space-y-2 max-w-md">
-          <h2 className="text-xl font-semibold tracking-tight">Attendance Record Not Found</h2>
-          <p className="text-sm text-muted-foreground">
-            The attendance record you are trying to edit does not exist, or you do not have permission to view it.
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => router.push("/dashboard/attendance")}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Return to Attendance
+      <div className="flex-1 p-8 pt-6 max-w-3xl space-y-6">
+        <Button variant="ghost" size="sm" asChild className="mb-2">
+          <Link href="/dashboard/attendance" className="flex items-center gap-1">
+            <ArrowLeft className="h-4 w-4" /> Back to list
+          </Link>
         </Button>
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            <CardTitle className="text-destructive">Record Not Found</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The requested attendance record with ID <span className="font-mono font-bold text-foreground">"{attendanceId}"</span> could not be located in our systems.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <div className="space-y-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-2 -ml-2 text-muted-foreground hover:text-foreground"
-          onClick={handleCancel}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Details
+    <div className="flex-1 space-y-6 p-8 pt-6 max-w-3xl">
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/dashboard/attendance">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Edit Attendance Record
-          </h1>
-          <p className="text-muted-foreground">
-            Modify attendance information and update the employee attendance record.
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Edit Attendance</h1>
+          <p className="text-muted-foreground text-sm">
+            Modify time logs, statuses, and location details for {record.employee.firstName} {record.employee.lastName}.
           </p>
         </div>
       </div>
 
-      <Card className="border border-border bg-card">
-        <CardHeader className="pb-4 border-b border-border/50 bg-muted/10">
-          <CardTitle>Attendance Details</CardTitle>
+      <Card className="border shadow-sm">
+        <CardHeader>
+          <CardTitle>Update Log Parameters</CardTitle>
           <CardDescription>
-            Update the daily log status, times, and remarks for the employee.
+            Adjust check times, statuses, and shift parameters.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <AttendanceForm
-            initialData={attendanceRecord}
-            onSubmit={handleUpdate}
+            record={record}
+            onSubmit={handleFormSubmit}
             onCancel={handleCancel}
-            isLoading={isSubmitting}
-            submitLabel="Save Changes"
           />
         </CardContent>
       </Card>

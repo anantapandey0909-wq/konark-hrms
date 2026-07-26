@@ -1,140 +1,103 @@
 "use client";
 
 import React from "react";
-import { motion } from "framer-motion";
-import {
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  CalendarOff,
-  Percent,
-  Timer,
-  TrendingUp,
-} from "lucide-react";
+import { Users, Clock, AlertTriangle, TrendingUp } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { AttendanceStats as AttendanceStatsType } from "@/types/attendance";
+import { cn } from "@/lib/utils";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { mockAttendanceStats } from "@/mock/attendance";
-
-interface StatItem {
-  title: string;
-  value: string | number;
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-  bg: string;
-  description: string;
+interface AttendanceStatsProps {
+  stats: AttendanceStatsType;
+  isLoading?: boolean;
+  className?: string;
 }
 
-export default function AttendanceStats() {
-  const stats = React.useMemo<StatItem[]>(
-    () => [
-      {
-        title: "Present Today",
-        value: mockAttendanceStats.presentCount,
-        icon: CheckCircle2,
-        color: "text-emerald-600 dark:text-emerald-400",
-        bg: "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/30",
-        description: "Employees checked in",
-      },
-      {
-        title: "Late Arrivals",
-        value: mockAttendanceStats.lateCount,
-        icon: Clock,
-        color: "text-amber-600 dark:text-amber-400",
-        bg: "bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-900/30",
-        description: "Arrived after shift start",
-      },
-      {
-        title: "Absent",
-        value: mockAttendanceStats.absentCount,
-        icon: AlertCircle,
-        color: "text-destructive dark:text-red-400",
-        bg: "bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30",
-        description: "Unexcused absences today",
-      },
-      {
-        title: "On Leave",
-        value: mockAttendanceStats.onLeaveCount,
-        icon: CalendarOff,
-        color: "text-blue-600 dark:text-blue-400",
-        bg: "bg-blue-50 dark:bg-blue-950/40 border-blue-100 dark:border-blue-900/30",
-        description: "Approved time off",
-      },
-      {
-        title: "Attendance Rate",
-        value: `${mockAttendanceStats.attendanceRate}%`,
-        icon: Percent,
-        color: "text-indigo-600 dark:text-indigo-400",
-        bg: "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-100 dark:border-indigo-900/30",
-        description: "Overall attendance",
-      },
-      {
-        title: "Avg Work Hours",
-        value: `${mockAttendanceStats.averageWorkHours}h`,
-        icon: Timer,
-        color: "text-violet-600 dark:text-violet-400",
-        bg: "bg-violet-50 dark:bg-violet-950/40 border-violet-100 dark:border-violet-900/30",
-        description: "Daily average",
-      },
-      {
-        title: "Overtime Hours",
-        value: `${mockAttendanceStats.totalOvertimeHours}h`,
-        icon: TrendingUp,
-        color: "text-sky-600 dark:text-sky-400",
-        bg: "bg-sky-50 dark:bg-sky-950/40 border-sky-100 dark:border-sky-900/30",
-        description: "Accumulated overtime",
-      },
-    ],
-    []
-  );
+export function AttendanceStats({
+  stats,
+  isLoading = false,
+  className,
+}: AttendanceStatsProps) {
+  const {
+    totalEmployees = 0,
+    presentCount = 0,
+    absentCount = 0,
+    lateCount = 0,
+    onLeaveCount = 0,
+    halfDayCount = 0,
+    averageWorkingHours = 0,
+    totalOvertimeHours = 0,
+    attendanceRate = 0,
+  } = stats || {};
+
+  const metricCards = [
+    {
+      title: "Attendance Rate",
+      value: `${attendanceRate.toFixed(1)}%`,
+      description: `${presentCount} active today out of ${totalEmployees}`,
+      icon: TrendingUp,
+      color: "text-blue-600 dark:text-blue-400",
+      bgColor: "bg-blue-500/10",
+    },
+    {
+      title: "Average Working Hours",
+      value: `${averageWorkingHours.toFixed(1)}h`,
+      description: "Weighted average log per shifts",
+      icon: Clock,
+      color: "text-indigo-600 dark:text-indigo-400",
+      bgColor: "bg-indigo-500/10",
+    },
+    {
+      title: "Late Arrivals",
+      value: lateCount.toString(),
+      description: `${absentCount} absent, ${onLeaveCount} on active leave`,
+      icon: AlertTriangle,
+      color: "text-amber-500",
+      bgColor: "bg-amber-500/10",
+    },
+    {
+      title: "Total Overtime",
+      value: `+${totalOvertimeHours.toFixed(1)}h`,
+      description: `Includes ${halfDayCount} half-day logging adjustments`,
+      icon: Users,
+      color: "text-emerald-600 dark:text-emerald-400",
+      bgColor: "bg-emerald-500/10",
+    },
+  ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4"
-    >
-      {stats.map((stat, index) => {
-        const Icon = stat.icon;
-
+    <div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-4 w-full", className)}>
+      {metricCards.map((card, idx) => {
+        const Icon = card.icon;
         return (
-          <motion.div
-            key={stat.title}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.3,
-              delay: index * 0.05,
-            }}
-          >
-            <Card className="overflow-hidden border border-border bg-card shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5">
-              <CardContent className="flex min-h-[112px] flex-col justify-between p-4">
-                <div className="flex items-center justify-between">
-                  <span className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {stat.title}
-                  </span>
-
-                  <div
-                    className={`rounded-md border p-1.5 shrink-0 ${stat.bg}`}
-                  >
-                    <Icon className={`h-4 w-4 ${stat.color}`} />
-                  </div>
+          <Card key={idx} className="border border-border bg-card text-card-foreground shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-xs font-semibold tracking-tight text-muted-foreground uppercase">
+                {card.title}
+              </CardTitle>
+              <div className={cn("p-1.5 rounded-lg shrink-0", card.bgColor)}>
+                <Icon className={cn("h-4 w-4", card.color)} />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-2">
+                  <div className="h-7 bg-muted rounded w-1/2 animate-pulse" />
+                  <div className="h-4 bg-muted rounded w-3/4 animate-pulse" />
                 </div>
-
-                <div className="mt-3">
-                  <h3 className="text-3xl font-bold tracking-tight">
-                    {stat.value}
-                  </h3>
-
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {stat.description}
+              ) : (
+                <div className="space-y-1">
+                  <div className="text-xl font-bold tracking-tight text-foreground tabular-nums">
+                    {card.value}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground leading-normal">
+                    {card.description}
                   </p>
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+              )}
+            </CardContent>
+          </Card>
         );
       })}
-    </motion.div>
+    </div>
   );
 }

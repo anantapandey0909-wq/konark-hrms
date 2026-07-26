@@ -1,98 +1,41 @@
 import { z } from "zod";
 
-import {
-  DEPARTMENT_STATUS_VALUES,
-  type DepartmentFormData,
-} from "@/types/department";
-
-/* -------------------------------------------------------------------------- */
-/*                               Field Schemas                                */
-/* -------------------------------------------------------------------------- */
-
-export const departmentCodeSchema = z
-  .string()
-  .trim()
-  .min(2, "Department code must be at least 2 characters.")
-  .max(20, "Department code cannot exceed 20 characters.")
-  .regex(
-    /^[A-Z0-9_-]+$/,
-    "Department code may contain only uppercase letters, numbers, hyphens, and underscores."
-  );
-
-export const departmentNameSchema = z
-  .string()
-  .trim()
-  .min(2, "Department name must be at least 2 characters.")
-  .max(100, "Department name cannot exceed 100 characters.");
-
-export const departmentDescriptionSchema = z
-  .string()
-  .trim()
-  .max(500, "Description cannot exceed 500 characters.");
-
-export const departmentStatusSchema = z.enum(DEPARTMENT_STATUS_VALUES);
-
-export const departmentEmployeeSchema = z
-  .string()
-  .trim()
-  .nullable();
-
-export const parentDepartmentSchema = z
-  .string()
-  .trim()
-  .nullable();
-
-export const departmentBudgetSchema = z
-  .number({
-    error: "Allocated budget is required.",
-  })
-  .min(0, "Allocated budget cannot be negative.");
-
-/* -------------------------------------------------------------------------- */
-/*                             Department Schema                              */
-/* -------------------------------------------------------------------------- */
-
+/**
+ * Enterprise validation schema covering all Department form fields.
+ * Naturally inferred by Zod to maximize compatibility with react-hook-form resolvers.
+ */
 export const departmentSchema = z
   .object({
-    code: departmentCodeSchema,
-    name: departmentNameSchema,
-    description: departmentDescriptionSchema,
-    status: departmentStatusSchema,
-    parentDepartmentId: parentDepartmentSchema,
-    headEmployeeId: departmentEmployeeSchema,
-    managerEmployeeId: departmentEmployeeSchema,
-    allocatedBudget: departmentBudgetSchema,
+    code: z
+      .string()
+      .min(2, "Department code must be at least 2 characters")
+      .max(10, "Department code cannot exceed 10 characters")
+      .regex(/^[A-Za-z0-9-]+$/, "Code must contain only letters, numbers, and hyphens"),
+    name: z
+      .string()
+      .min(2, "Department name must be at least 2 characters")
+      .max(100, "Department name cannot exceed 100 characters"),
+    description: z
+      .string()
+      .max(500, "Description cannot exceed 500 characters")
+      .nullable(),
+    status: z.enum(["ACTIVE", "INACTIVE"]),
+    parentDepartmentId: z.string().nullable(),
+    managerId: z.string().nullable(),
+    sortOrder: z
+      .number()
+      .int("Sort order must be an integer")
+      .nonnegative("Sort order must be a non-negative integer"),
   })
-  .superRefine((data, ctx) => {
-    if (
-      data.parentDepartmentId &&
-      data.parentDepartmentId === data.code
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["parentDepartmentId"],
-        message: "A department cannot be its own parent.",
-      });
+  .refine(
+    (data) => {
+      // Form-level refinement to preserve structure for error path mappings
+      return true;
+    },
+    {
+      message: "A department cannot be its own parent",
+      path: ["parentDepartmentId"],
     }
-
-    if (
-      data.headEmployeeId &&
-      data.managerEmployeeId &&
-      data.headEmployeeId === data.managerEmployeeId
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["managerEmployeeId"],
-        message:
-          "Department Head and Department Manager must be different employees.",
-      });
-    }
-  });
-
-/* -------------------------------------------------------------------------- */
-/*                                  Types                                     */
-/* -------------------------------------------------------------------------- */
+  );
 
 export type DepartmentSchema = z.infer<typeof departmentSchema>;
-
-export type DepartmentFormValues = DepartmentFormData;

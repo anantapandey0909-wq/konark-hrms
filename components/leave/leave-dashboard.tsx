@@ -239,7 +239,7 @@ export default function LeaveDashboard() {
         </div>
 
         <Button asChild>
-          <Link href="/leave/new">
+          <Link href="/dashboard/leave/new">
             <Plus className="mr-2 h-4 w-4" />
             Apply Leave
           </Link>
@@ -284,4 +284,3 @@ export default function LeaveDashboard() {
     </div>
   );
 }
-

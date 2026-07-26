@@ -1,9 +1,16 @@
 "use client";
 
 import * as React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { motion } from "framer-motion";
+import type { Variants } from "framer-motion";
+import { User, ArrowLeft, Check } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -12,283 +19,492 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Employee,
-  EmployeeRole,
-  Gender,
-  EmploymentType,
-  Department,
-} from "@/types/employee";
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { cn } from "@/lib/utils";
+import type { Employee, EmployeeStatus, EmploymentType } from "@/types/employee";
+import type { Department } from "@/types/department";
 
-export interface EmployeeFormData {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  gender: Gender | "";
-  employeeCode: string;
-  department: Department | "";
-  designation: string;
-  role: EmployeeRole | "";
-  employmentType: EmploymentType | "";
-  joiningDate: string;
+const EMPLOYEE_STATUS_VALUES = ["ACTIVE", "INACTIVE", "ON_LEAVE", "TERMINATED"] as const;
+const EMPLOYMENT_TYPE_VALUES = ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"] as const;
+
+export const employeeFormSchema = z.object({
+  firstName: z.string().min(2, "First name must be at least 2 characters"),
+  lastName: z.string().min(2, "Last name must be at least 2 characters"),
+  email: z.string().email("Please enter a valid email address"),
+  phone: z.string().nullable(),
+  avatarUrl: z.string().url("Avatar must be a valid URL").nullable(),
+  departmentId: z.string().nullable(),
+  managerId: z.string().nullable(),
+  designation: z.string().min(1, "Designation is required"),
+  status: z.enum(EMPLOYEE_STATUS_VALUES),
+  employmentType: z.enum(EMPLOYMENT_TYPE_VALUES),
+  workLocation: z.string().nullable(),
+  joiningDate: z.string().min(1, "Joining date is required"),
+  relievingDate: z.string().nullable(),
+  tenantId: z.string().min(1, "Tenant partition key is required"),
+  employeeId: z.string().min(1, "Employee ID is required"),
+});
+
+export type EmployeeFormData = z.infer<typeof employeeFormSchema>;
+
+interface EmployeeFormProps {
+  mode: "create" | "edit";
+  defaultValues?: Partial<Employee>;
+  departments: Department[];
+  managers: Employee[];
+  isSubmitting?: boolean;
+  onSubmit: (values: EmployeeFormData) => Promise<void> | void;
+  onCancel?: () => void;
+  className?: string;
 }
 
-export interface EmployeeFormProps {
-  initialData?: Partial<Employee>;
-  onSubmit: (data: EmployeeFormData) => void;
-  onCancel: () => void;
-  isLoading?: boolean;
-}
+const fadeVariants: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.25, ease: "easeOut" },
+  },
+};
 
 export function EmployeeForm({
-  initialData,
+  mode,
+  defaultValues,
+  departments,
+  managers,
+  isSubmitting = false,
   onSubmit,
   onCancel,
-  isLoading = false,
+  className,
 }: EmployeeFormProps) {
-  const [formData, setFormData] = React.useState<EmployeeFormData>(() => ({
-    firstName: initialData?.fullName?.split(" ")[0] || "",
-    lastName: initialData?.fullName?.split(" ").slice(1).join(" ") || "",
-    email: initialData?.email || "",
-    phone: initialData?.phone || "",
-    gender: (initialData?.gender || "") as Gender | "",
-    employeeCode: initialData?.employeeCode || "",
-    department: (initialData?.department || "") as Department | "",
-    designation: initialData?.designation || "",
-    role: (initialData?.role || "") as EmployeeRole | "",
-    employmentType: (initialData?.employmentType || "") as EmploymentType | "",
-    joiningDate: initialData?.joiningDate
-      ? new Date(initialData.joiningDate).toISOString().split("T")[0]
-      : "",
-  }));
+  const form = useForm<EmployeeFormData>({
+    resolver: zodResolver(employeeFormSchema),
+    defaultValues: {
+      firstName: defaultValues?.firstName ?? "",
+      lastName: defaultValues?.lastName ?? "",
+      email: defaultValues?.email ?? "",
+      phone: defaultValues?.phone ?? null,
+      avatarUrl: defaultValues?.avatarUrl ?? null,
+      departmentId: defaultValues?.departmentId ?? null,
+      managerId: defaultValues?.managerId ?? null,
+      designation: defaultValues?.designation ?? "",
+      status: defaultValues?.status ?? "ACTIVE",
+      employmentType: defaultValues?.employmentType ?? "FULL_TIME",
+      workLocation: defaultValues?.workLocation ?? null,
+      joiningDate: defaultValues?.joiningDate ?? new Date().toISOString().split("T")[0],
+      relievingDate: defaultValues?.relievingDate ?? null,
+      tenantId: defaultValues?.tenantId ?? "tenant-konark-tech",
+      employeeId: defaultValues?.employeeId ?? "",
+    },
+  });
 
-  const handleChange = <K extends keyof EmployeeFormData>(
-    field: K,
-    value: EmployeeFormData[K]
-  ) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
+  const handleFormSubmit = async (values: EmployeeFormData) => {
+    const normalizedValues: EmployeeFormData = {
+      ...values,
+      departmentId:
+        values.departmentId === "none" || values.departmentId === ""
+          ? null
+          : values.departmentId,
+      managerId:
+        values.managerId === "none" || values.managerId === ""
+          ? null
+          : values.managerId,
+      phone: values.phone === "" ? null : values.phone,
+      avatarUrl: values.avatarUrl === "" ? null : values.avatarUrl,
+      workLocation: values.workLocation === "" ? null : values.workLocation,
+      relievingDate: values.relievingDate === "" ? null : values.relievingDate,
+    };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    onSubmit(formData);
+    await onSubmit(normalizedValues);
   };
 
   return (
-    <Card className="w-full max-w-4xl mx-auto border-neutral-200 dark:border-neutral-800">
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold tracking-tight">
-          {initialData ? "Edit Employee Profile" : "Register New Employee"}
-        </CardTitle>
-        <CardDescription>
-          Enter the personal and professional details of the employee.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* First Name */}
-            <div className="space-y-2">
-              <Label htmlFor="firstName">First Name</Label>
-              <Input
-                id="firstName"
-                placeholder="John"
-                value={formData.firstName}
-                onChange={(e) => handleChange("firstName", e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-
-            {/* Last Name */}
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name</Label>
-              <Input
-                id="lastName"
-                placeholder="Doe"
-                value={formData.lastName}
-                onChange={(e) => handleChange("lastName", e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="john.doe@konark.com"
-                value={formData.email}
-                onChange={(e) => handleChange("email", e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-
-            {/* Phone */}
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone Number</Label>
-              <Input
-                id="phone"
-                type="tel"
-                placeholder="+1 (555) 019-2834"
-                value={formData.phone}
-                onChange={(e) => handleChange("phone", e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-
-            {/* Gender */}
-            <div className="space-y-2">
-              <Label htmlFor="gender">Gender</Label>
-              <Select
-                value={formData.gender}
-                onValueChange={(value) => handleChange("gender", value as Gender)}
-                disabled={isLoading}
-              >
-                <SelectTrigger id="gender">
-                  <SelectValue placeholder="Select gender" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MALE">Male</SelectItem>
-                  <SelectItem value="FEMALE">Female</SelectItem>
-                  <SelectItem value="OTHER">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Employee Code */}
-            <div className="space-y-2">
-              <Label htmlFor="employeeCode">Employee ID / Code</Label>
-              <Input
-                id="employeeCode"
-                placeholder="KN-10204"
-                value={formData.employeeCode}
-                onChange={(e) => handleChange("employeeCode", e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-
-            {/* Department */}
-            <div className="space-y-2">
-              <Label htmlFor="department">Department</Label>
-              <Select
-                value={formData.department}
-                onValueChange={(value) => handleChange("department", value as Department)}
-                disabled={isLoading}
-              >
-                <SelectTrigger id="department">
-                  <SelectValue placeholder="Select department" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ENGINEERING">Engineering</SelectItem>
-                  <SelectItem value="PRODUCT">Product</SelectItem>
-                  <SelectItem value="DESIGN">Design</SelectItem>
-                  <SelectItem value="HR">Human Resources</SelectItem>
-                  <SelectItem value="MARKETING">Marketing</SelectItem>
-                  <SelectItem value="SALES">Sales</SelectItem>
-                  <SelectItem value="FINANCE">Finance</SelectItem>
-                  <SelectItem value="OPERATIONS">Operations</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Designation */}
-            <div className="space-y-2">
-              <Label htmlFor="designation">Designation</Label>
-              <Input
-                id="designation"
-                placeholder="Software Engineer"
-                value={formData.designation}
-                onChange={(e) => handleChange("designation", e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-
-            {/* Role (RBAC) */}
-            <div className="space-y-2">
-              <Label htmlFor="role">System Role</Label>
-              <Select
-                value={formData.role}
-                onValueChange={(value) => handleChange("role", value as EmployeeRole)}
-                disabled={isLoading}
-              >
-                <SelectTrigger id="role">
-                  <SelectValue placeholder="Select system role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ADMIN">Admin</SelectItem>
-                  <SelectItem value="HR_PARTNER">HR Partner</SelectItem>
-                  <SelectItem value="DIRECTOR">Director</SelectItem>
-                  <SelectItem value="MANAGER">Manager</SelectItem>
-                  <SelectItem value="EMPLOYEE">Employee</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Employment Type */}
-            <div className="space-y-2">
-              <Label htmlFor="employmentType">Employment Type</Label>
-              <Select
-                value={formData.employmentType}
-                onValueChange={(value) => handleChange("employmentType", value as EmploymentType)}
-                disabled={isLoading}
-              >
-                <SelectTrigger id="employmentType">
-                  <SelectValue placeholder="Select employment type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FULL_TIME">Full-time</SelectItem>
-                  <SelectItem value="PART_TIME">Part-time</SelectItem>
-                  <SelectItem value="CONTRACT">Contract</SelectItem>
-                  <SelectItem value="INTERN">Internship</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Joining Date */}
-            <div className="space-y-2">
-              <Label htmlFor="joiningDate">Joining Date</Label>
-              <Input
-                id="joiningDate"
-                type="date"
-                value={formData.joiningDate}
-                onChange={(e) => handleChange("joiningDate", e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
+    <motion.div
+      variants={fadeVariants}
+      initial="hidden"
+      animate="visible"
+      className={cn("w-full max-w-4xl mx-auto", className)}
+    >
+      <Card className="overflow-hidden rounded-xl border border-muted/60 bg-card shadow-sm">
+        <CardHeader className="border-b border-muted/40 pb-4 flex flex-row items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <User className="h-5 w-5" aria-hidden="true" />
           </div>
+          <CardTitle className="text-lg font-semibold text-foreground tracking-tight select-none">
+            {mode === "create" ? "Add New Employee" : "Edit Employee Profile"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {/* First Name */}
+                <FormField
+                  control={form.control}
+                  name="firstName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. Sarah"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={isLoading}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? "Saving changes..." : "Save Record"}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+                {/* Last Name */}
+                <FormField
+                  control={form.control}
+                  name="lastName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Last Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. Jenkins"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Email Address */}
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email Address</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          placeholder="sarah.jenkins@konarktech.co.in"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Phone Number */}
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone Number</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. +91 80 4912 3456"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Employee ID */}
+                <FormField
+                  control={form.control}
+                  name="employeeId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Employee ID</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. K-00234"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Work Location */}
+                <FormField
+                  control={form.control}
+                  name="workLocation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Work Location</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. Bangalore Office, Remote"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Designation */}
+                <FormField
+                  control={form.control}
+                  name="designation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Designation</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. Senior Software Engineer"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Department */}
+                <FormField
+                  control={form.control}
+                  name="departmentId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Department</FormLabel>
+                      <Select
+                        disabled={isSubmitting}
+                        onValueChange={(val) => field.onChange(val === "none" ? null : val)}
+                        value={field.value ?? "none"}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="rounded-xl border-muted/60">
+                            <SelectValue placeholder="Unassigned" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="none">Unassigned</SelectItem>
+                          {departments.map((dept) => (
+                            <SelectItem key={dept.id} value={dept.id}>
+                              {dept.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Employment Type */}
+                <FormField
+                  control={form.control}
+                  name="employmentType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Employment Type</FormLabel>
+                      <Select
+                        disabled={isSubmitting}
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="rounded-xl border-muted/60">
+                            <SelectValue placeholder="Select Classification" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-xl">
+                          {EMPLOYMENT_TYPE_VALUES.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {type.replace("_", " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Status */}
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select
+                        disabled={isSubmitting}
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="rounded-xl border-muted/60">
+                            <SelectValue placeholder="Select Status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-xl">
+                          {EMPLOYEE_STATUS_VALUES.map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {status.replace("_", " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Joining Date */}
+                <FormField
+                  control={form.control}
+                  name="joiningDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Joining Date</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Relieving Date */}
+                <FormField
+                  control={form.control}
+                  name="relievingDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Relieving Date</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Reporting Manager */}
+                <FormField
+                  control={form.control}
+                  name="managerId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reporting Manager</FormLabel>
+                      <Select
+                        disabled={isSubmitting}
+                        onValueChange={(val) => field.onChange(val === "none" ? null : val)}
+                        value={field.value ?? "none"}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="rounded-xl border-muted/60">
+                            <SelectValue placeholder="No Manager" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="none">No Manager (Top-level)</SelectItem>
+                          {managers.map((mgr) => (
+                            <SelectItem key={mgr.id} value={mgr.id}>
+                              {mgr.firstName} {mgr.lastName} ({mgr.employeeId})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Avatar URL */}
+                <FormField
+                  control={form.control}
+                  name="avatarUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Avatar URL</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. https://images.unsplash.com/..."
+                          className="rounded-xl border-muted/60"
+                          disabled={isSubmitting}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Form Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-muted/30">
+                {onCancel && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onCancel}
+                    disabled={isSubmitting}
+                    className="rounded-xl border-muted/60 flex items-center gap-2 font-medium"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    <span>Cancel</span>
+                  </Button>
+                )}
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="rounded-xl flex items-center gap-2 font-medium transition-transform duration-100 active:scale-95"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>
+                    {isSubmitting
+                      ? "Submitting..."
+                      : mode === "create"
+                      ? "Add Employee"
+                      : "Save Changes"}
+                  </span>
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }

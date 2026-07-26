@@ -18,11 +18,7 @@ export function searchItems(query: string, items: SearchResult[]): SearchResult[
     const matchTitle = item.title.toLowerCase().includes(sanitizedQuery);
     const matchSubtitle = item.subtitle?.toLowerCase().includes(sanitizedQuery) ?? false;
     
-    const matchMetadata =
-  item.metadata != null &&
-  Object.values(item.metadata).some((value) =>
-    value.toString().toLowerCase().includes(sanitizedQuery)
-  );
+    const matchMetadata = item.metadata
      
 
     return matchTitle || matchSubtitle || matchMetadata;

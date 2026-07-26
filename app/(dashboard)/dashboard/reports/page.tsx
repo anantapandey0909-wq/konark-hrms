@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import ReportsDashboard from "@/components/reports/reports-dashboard";
+import { ReportsDashboard } from "@/components/reports/reports-dashboard";
 
 export const metadata: Metadata = {
   title: "Reports | Konark HRMS",

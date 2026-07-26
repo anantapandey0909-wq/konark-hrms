@@ -1,41 +1,37 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { DepartmentDetails } from "@/components/departments/department-details";
+"use client";
+
+import * as React from "react";
 import { getDepartmentById } from "@/mock/department";
+import { DepartmentDetails } from "@/components/departments/department-details";
+import { useRouter } from "next/navigation";
+import { use } from "react";
 
 interface PageProps {
-  params: Promise<{
-    departmentId: string;
-  }>;
+  readonly params: Promise<{ departmentId: string }>;
 }
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { departmentId } = await params;
-  const department = getDepartmentById(departmentId);
+export default function DepartmentPage({ params }: PageProps) {
+  const router = useRouter();
+  const { departmentId } = use(params);
+  
+  const department = React.useMemo(() => getDepartmentById(departmentId), [departmentId]);
 
-  if (!department) {
-    return {
-      title: "Department Not Found | Konark HRMS",
-    };
-  }
-
-  return {
-    title: `${department.name} | Konark HRMS`,
-    description: department.description || "Department details and organizational information.",
+  const handleDelete = () => {
+    router.push("/dashboard/departments");
   };
-}
-
-export default async function DepartmentDetailsPage({ params }: PageProps) {
-  const { departmentId } = await params;
-  const department = getDepartmentById(departmentId);
 
   if (!department) {
-    notFound();
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-2">
+        <h2 className="text-xl font-bold">Department Not Found</h2>
+        <p className="text-sm text-muted-foreground">The division with the requested identifier could not be located.</p>
+      </div>
+    );
   }
 
   return (
-    <main className="container py-6 space-y-6" id="main-content">
-      <DepartmentDetails department={department} />
-    </main>
+    <div className="flex-1 space-y-4 p-8 pt-6">
+      <DepartmentDetails department={department} onDelete={handleDelete} />
+    </div>
   );
 }

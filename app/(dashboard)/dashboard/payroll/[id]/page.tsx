@@ -1,291 +1,255 @@
-import type { Metadata } from "next";
-import { getPayrollById } from "@/mock/payroll";
-import { notFound } from "next/navigation";
-import Link from "next/link";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+"use client";
+
+import React, { use } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import type { Variants } from "framer-motion";
+import { 
+  ArrowLeft, 
+  Printer, 
+  Building2, 
+  Calendar, 
+  User, 
+  Briefcase, 
+  CreditCard,
+  DollarSign,
+  TrendingUp,
+  FileSpreadsheet
+} from "lucide-react";
+
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { PayrollStatusBadge } from "@/components/payroll/payroll-status-badge";
-import { cn } from "@/lib/utils";
-import {
-  formatPayrollCurrency,
-  formatPayrollDate,
-  formatPayrollMonth,
-} from "@/lib/payroll";
-import { ChevronLeft, Edit, FileText,  Clock, BarChart3, Receipt, Clipboard } from "lucide-react";
 
-export const metadata: Metadata = {
-  title: "Payroll Details | Konark HRMS",
-  description: "View payroll details for an employee.",
-};
-
-interface DetailRowProps {
-  label: string;
-  value: React.ReactNode;
-  className?: string;
-}
-
-function DetailRow({ label, value, className = "" }: DetailRowProps) {
-  return (
-    <div
-  className={cn(
-    "flex justify-between py-1.5 border-b last:border-b-0 text-sm",
-    className
-  )}
->
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-semibold">{value}</span>
-    </div>
-  );
-}
+import { mockPayrollRecords } from "@/mock/payroll";
 
 interface PageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 }
 
 export default function PayrollDetailsPage({ params }: PageProps) {
-  const payroll = getPayrollById(params.id);
+  const { id } = use(params);
+  const router = useRouter();
 
-  if (!payroll) {
-    notFound();
+  const record = mockPayrollRecords.find((r) => r.id === id);
+
+  const containerVariants: Variants = {
+    hidden: { opacity: 0, y: 15 },
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        type: "spring",
+        stiffness: 100,
+        staggerChildren: 0.1
+      }
+    }
+  };
+
+  const itemVariants: Variants = {
+    hidden: { opacity: 0, y: 10 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 120 } }
+  };
+
+  if (!record) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <FileSpreadsheet className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-bold">Payroll Record Not Found</h2>
+        <p className="text-muted-foreground text-sm">
+          The requested payroll statement could not be resolved in our system.
+        </p>
+        <Button onClick={() => router.push("/dashboard/payroll")} variant="outline">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Payroll
+        </Button>
+      </div>
+    );
   }
 
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0
+    }).format(value);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <div className="container mx-auto p-4 md:p-8 space-y-6">
-      {/* Navigation & Header Actions */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b pb-5">
-        <div className="space-y-1">
-          <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground hover:text-foreground">
-            <Link href="/dashboard/payroll" className="flex items-center gap-1">
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Back to Payroll
-            </Link>
-          </Button>
-          <div className="flex flex-wrap items-center gap-3 mt-1">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {payroll.payrollNumber}
-            </h1>
-            <PayrollStatusBadge status={payroll.status} />
-          </div>
-          <p className="text-muted-foreground text-sm">
-            Employee: <span className="font-semibold text-foreground">{payroll.employeeName}</span> &middot; {payroll.designation} ({payroll.department})
-          </p>
-          {payroll.generatedAt && (
-            <p className="text-xs text-muted-foreground">
-              Generated: {formatPayrollDate(payroll.generatedAt)}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href={`/dashboard/payroll/${payroll.id}/edit`} className="flex items-center gap-1.5">
-              <Edit className="h-4 w-4" aria-hidden="true" />
-              Edit Payroll
-            </Link>
-          </Button>
-        </div>
+    <div className="space-y-6 p-6 max-w-4xl mx-auto print:p-0">
+      <div className="flex justify-between items-center print:hidden">
+        <Button onClick={() => router.push("/dashboard/payroll")} variant="ghost">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Payroll Hub
+        </Button>
+        <Button onClick={handlePrint} variant="outline">
+          <Printer className="mr-2 h-4 w-4" /> Print Payslip
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left & Middle: Basic Information, Salary Breakdown, and Notes */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* 1. Basic Information */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <FileText className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                Basic Information
-              </CardTitle>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Payroll Number</span>
-                <span className="font-medium text-foreground">{payroll.payrollNumber}</span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Employee Code</span>
-                <span className="font-medium text-foreground">{payroll.employeeCode}</span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Department</span>
-                <span className="font-medium text-foreground">{payroll.department}</span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Designation</span>
-                <span className="font-medium text-foreground">{payroll.designation}</span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Month</span>
-                <span className="font-medium text-foreground">{formatPayrollMonth(payroll.month)}</span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Year</span>
-                <span className="font-medium text-foreground">{payroll.year}</span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Generated Date</span>
-                <span className="font-medium text-foreground">
-                  {payroll.generatedAt ? formatPayrollDate(payroll.generatedAt) : "N/A"}
-                </span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground block">Paid Date</span>
-                <span className="font-medium text-foreground">
-                  {payroll.paidAt ? formatPayrollDate(payroll.paidAt) : "Unpaid"}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 4. Salary Breakdown */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <Receipt className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                Salary Breakdown
-              </CardTitle>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-4 space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-                <div className="bg-muted/30 p-3 rounded-lg space-y-0.5">
-                  <span className="text-muted-foreground text-xs block">Basic Salary</span>
-                  <span className="text-base font-semibold">
-                    {formatPayrollCurrency(payroll.salaryBreakdown.basicSalary)}
-                  </span>
-                </div>
-                <div className="bg-muted/30 p-3 rounded-lg space-y-0.5">
-                  <span className="text-muted-foreground text-xs block">Gross Salary</span>
-                  <span className="text-base font-semibold">
-                    {formatPayrollCurrency(payroll.salaryBreakdown.grossSalary)}
-                  </span>
-                </div>
-                <div className="bg-muted/30 p-3 rounded-lg space-y-0.5">
-                  <span className="text-muted-foreground text-xs block">Taxable Income</span>
-                  <span className="text-base font-semibold">
-                    {formatPayrollCurrency(payroll.salaryBreakdown.taxableIncome)}
-                  </span>
-                </div>
-                <div className="bg-muted/30 p-3 rounded-lg space-y-0.5">
-                  <span className="text-muted-foreground text-xs block">Total Allowances</span>
-                  <span className="text-base font-semibold text-emerald-600">
-                    + {formatPayrollCurrency(payroll.salaryBreakdown.totalAllowances)}
-                  </span>
-                </div>
-                <div className="bg-muted/30 p-3 rounded-lg space-y-0.5">
-                  <span className="text-muted-foreground text-xs block">Total Deductions</span>
-                  <span className="text-base font-semibold text-destructive">
-                    - {formatPayrollCurrency(payroll.salaryBreakdown.totalDeductions)}
-                  </span>
-                </div>
-                <div className="bg-primary/5 p-3 rounded-lg border border-primary/20 space-y-0.5">
-                  <span className="text-primary text-xs font-semibold block">Net Salary</span>
-                  <span className="text-lg font-bold text-primary">
-                    {formatPayrollCurrency(payroll.salaryBreakdown.netSalary)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Allowances List */}
-              {payroll.salaryBreakdown.allowances && payroll.salaryBreakdown.allowances.length > 0 && (
-                <div className="space-y-2 pt-2 border-t">
-                  <h4 className="text-sm font-semibold text-foreground">Allowances</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                    {payroll.salaryBreakdown.allowances.map((allowance) => (
-                      <div key={allowance.id} className="flex justify-between p-2 rounded-md bg-muted/20 border">
-                        <span className="text-muted-foreground">
-  {allowance.name || "Allowance"}
-</span>
-                        <span className="font-semibold text-emerald-600">
-                          + {formatPayrollCurrency(allowance.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Deductions List */}
-              {payroll.salaryBreakdown.deductions && payroll.salaryBreakdown.deductions.length > 0 && (
-                <div className="space-y-2 pt-2 border-t">
-                  <h4 className="text-sm font-semibold text-foreground">Deductions</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                    {payroll.salaryBreakdown.deductions.map((deduction) => (
-                      <div key={deduction.id} className="flex justify-between p-2 rounded-md bg-muted/20 border">
-                    <span className="text-muted-foreground">
-  {deduction.name}
-</span>
-                        <span className="font-semibold text-destructive">
-                          - {formatPayrollCurrency(deduction.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* 5. Notes */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <Clipboard className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                Notes
-              </CardTitle>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {payroll.notes ? payroll.notes : "No notes available."}
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="space-y-6"
+      >
+        <Card className="border shadow-lg overflow-hidden">
+          <div className="bg-primary/5 p-6 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1.5">
+              <span className="bg-primary/10 text-primary px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                Official Statement
+              </span>
+              <h2 className="text-2xl font-bold text-foreground">Payslip of Account</h2>
+              <p className="text-muted-foreground text-xs flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5" /> For period of {record.month} {record.year}
               </p>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+            <div className="text-left md:text-right">
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Payslip Number</p>
+              <p className="text-lg font-bold text-primary">{record.payrollNumber}</p>
+              <p className="text-[10px] text-muted-foreground">Generated at: {record.generatedAt.split("T")[0]}</p>
+            </div>
+          </div>
 
-        {/* Right Column: Attendance & Leave Summary */}
-        <div className="space-y-6">
-          {/* 2. Attendance Summary */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <Clock className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                Attendance Summary
-              </CardTitle>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-4 space-y-1">
-              <DetailRow label="Working Days" value={payroll.attendanceSummary.workingDays} />
-              <DetailRow label="Present Days" value={payroll.attendanceSummary.presentDays} />
-              <DetailRow label="Absent Days" value={payroll.attendanceSummary.absentDays} className="[&>span:last-child]:text-destructive" />
-              <DetailRow label="Paid Leave Days" value={payroll.attendanceSummary.paidLeaveDays} />
-              <DetailRow label="Unpaid Leave Days" value={payroll.attendanceSummary.unpaidLeaveDays} className="[&>span:last-child]:text-destructive" />
-              <DetailRow label="Overtime Hours" value={`${payroll.attendanceSummary.overtimeHours} hrs`} />
-              <DetailRow label="Late Entries" value={payroll.attendanceSummary.lateEntries} className="[&>span:last-child]:text-amber-600" />
-            </CardContent>
-          </Card>
+          <CardContent className="p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+              <div className="space-y-3">
+                <h3 className="font-bold text-muted-foreground text-[10px] uppercase tracking-wider">
+                  Employee Specifications
+                </h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium text-foreground">{record.employeeName}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <CreditCard className="h-4 w-4" />
+                    <span>Employee ID: {record.employeeCode}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Briefcase className="h-4 w-4" />
+                    <span>{record.designation}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Building2 className="h-4 w-4" />
+                    <span>{record.department.name} ({record.department.code})</span>
+                  </div>
+                </div>
+              </div>
 
-          {/* 3. Leave Summary */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                Leave Summary
-              </CardTitle>
-            </CardHeader>
+              <div className="space-y-3">
+                <h3 className="font-bold text-muted-foreground text-[10px] uppercase tracking-wider">
+                  Payment Parameters
+                </h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between border-b pb-1">
+                    <span className="text-muted-foreground">Start Period</span>
+                    <span className="font-medium text-foreground">{record.payPeriodStart}</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-1">
+                    <span className="text-muted-foreground">End Period</span>
+                    <span className="font-medium text-foreground">{record.payPeriodEnd}</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-1">
+                    <span className="text-muted-foreground">Status</span>
+                    <span className="font-bold text-emerald-500">{record.status}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <Separator />
-            <CardContent className="pt-4 space-y-1">
-              <DetailRow label="Total Leaves" value={payroll.leaveSummary.totalLeaves} />
-              <DetailRow label="Paid Leaves" value={payroll.leaveSummary.paidLeaves} />
-              <DetailRow label="Unpaid Leaves" value={payroll.leaveSummary.unpaidLeaves} />
-              <DetailRow label="Leave Without Pay Days" value={payroll.leaveSummary.leaveWithoutPayDays} className="[&>span:last-child]:text-destructive" />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <h3 className="font-bold text-emerald-500 text-[10px] uppercase tracking-wider border-b pb-1.5 flex justify-between">
+                  <span>Earnings &amp; Allowances</span>
+                  <span>Amount</span>
+                </h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between font-medium text-foreground">
+                    <span>Basic Salary</span>
+                    <span>{formatCurrency(record.salaryBreakdown.basicSalary)}</span>
+                  </div>
+                  {record.salaryBreakdown.allowances.map((allowance) => (
+                    <div key={allowance.id} className="flex justify-between text-muted-foreground">
+                      <span>{allowance.name}</span>
+                      <span>{formatCurrency(allowance.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-bold border-t pt-2 text-emerald-500">
+                    <span>Total Allowances</span>
+                    <span>{formatCurrency(record.salaryBreakdown.totalAllowances + record.salaryBreakdown.basicSalary)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="font-bold text-rose-500 text-[10px] uppercase tracking-wider border-b pb-1.5 flex justify-between">
+                  <span>Deductions &amp; Taxes</span>
+                  <span>Amount</span>
+                </h3>
+                <div className="space-y-2 text-xs">
+                  {record.salaryBreakdown.deductions.map((deduction) => (
+                    <div key={deduction.id} className="flex justify-between text-muted-foreground">
+                      <span>{deduction.name}</span>
+                      <span>{formatCurrency(deduction.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-bold border-t pt-2 text-rose-500">
+                    <span>Total Deductions</span>
+                    <span>{formatCurrency(record.salaryBreakdown.totalDeductions)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-muted/30 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="space-y-0.5 text-center md:text-left">
+                <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-wider">
+                  Net Compensation
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  The net transactional amount transferred directly to the designated bank account.
+                </p>
+              </div>
+              <div className="text-center md:text-right">
+                <p className="text-3xl font-extrabold text-primary">
+                  {formatCurrency(record.salaryBreakdown.netSalary)}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-center border-t pt-6">
+              <div>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Working Days</span>
+                <span className="font-bold text-foreground text-sm">{record.attendanceSummary.workingDays}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Present</span>
+                <span className="font-bold text-emerald-500 text-sm">{record.attendanceSummary.presentDays}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Absent</span>
+                <span className="font-bold text-rose-500 text-sm">{record.attendanceSummary.absentDays}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Overtime Hours</span>
+                <span className="font-bold text-foreground text-sm">{record.attendanceSummary.overtimeHours} hrs</span>
+              </div>
+            </div>
+
+            {record.notes && (
+              <div className="text-[10px] text-muted-foreground bg-muted/20 p-3 rounded-lg border">
+                <span className="font-bold block text-foreground mb-0.5 uppercase tracking-wider">Authorized Notes</span>
+                {record.notes}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }

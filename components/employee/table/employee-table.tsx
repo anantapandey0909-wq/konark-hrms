@@ -1,188 +1,234 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import {
-  ColumnFiltersState,
-  SortingState,
-  VisibilityState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { Employee } from '@/types/employee';
-import { columns } from './columns';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
-interface EmployeeTableProps {
-  data: Employee[];
+import React, { useState, useMemo } from "react";
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  MapPin, 
+  Calendar,
+  Briefcase
+} from "lucide-react";
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import type { Employee } from "@/types/employee";
+import { cn } from "@/lib/utils";
+
+const ITEMS_PER_PAGE = 5;
+
+export interface EmployeeTableProps {
+  employees: Employee[];
   isLoading?: boolean;
-  onEdit: (employee: Employee) => void;
-  onDeactivate: (id: string) => void;
+  className?: string;
 }
-export function EmployeeTable({
-  data,
-  isLoading = false,
-  onEdit,
-  onDeactivate,
-}: EmployeeTableProps) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = React.useState({});
 
-  const tableColumns = React.useMemo(
-  () => columns(onEdit, onDeactivate),
-  [onEdit, onDeactivate]
-);
-
-  const table = useReactTable({
-    data,
-    columns: tableColumns,
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
-    state: {
-      sorting,
-      columnFilters,
-      columnVisibility,
-      rowSelection,
-    },
-    initialState: {
-      pagination: {
-        pageSize: 8,
-      },
-    },
+const formatDate = (dateString: string): string => {
+  const date = new Date(`${dateString}T00:00:00`);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
+};
 
-  const selectedRowsCount = table.getFilteredSelectedRowModel().rows.length;
+export function EmployeeTable({
+  employees = [],
+  isLoading = false,
+  className,
+}: EmployeeTableProps) {
+  const [currentPage, setCurrentPage] = useState(1);
 
-  if (isLoading) {
-    return (
-      <div className="flex h-[350px] w-full flex-col items-center justify-center border border-neutral-100 dark:border-neutral-800 rounded-xl bg-white dark:bg-neutral-950">
-        <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
-        <p className="mt-2 text-xs text-neutral-500">Retrieving directory assets...</p>
-      </div>
-    );
-  }
+  const totalItems = employees.length;
+  const totalPages = useMemo(() => Math.ceil(totalItems / ITEMS_PER_PAGE) || 1, [totalItems]);
+  
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return employees.slice(start, start + ITEMS_PER_PAGE);
+  }, [employees, currentPage]);
+
+  const startRecordIndex = useMemo(() => (currentPage - 1) * ITEMS_PER_PAGE + 1, [currentPage]);
+  const endRecordIndex = useMemo(() => Math.min(currentPage * ITEMS_PER_PAGE, totalItems), [currentPage, totalItems]);
 
   return (
-    <div className="w-full space-y-4">
-      {selectedRowsCount > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50 px-4 py-2.5">
-          <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-            {selectedRowsCount} item{selectedRowsCount > 1 ? 's' : ''} selected
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs font-semibold rounded-md border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            >
-              Bulk Change Status
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              className="h-8 text-xs font-semibold rounded-md bg-red-600 dark:bg-red-700 text-white hover:bg-red-700 dark:hover:bg-red-800"
-            >
-              Bulk Delete
-            </Button>
+    <Card className={cn("border border-border bg-card text-card-foreground shadow-sm overflow-hidden w-full", className)}>
+      <CardHeader className="pb-4 border-b border-border/50 bg-muted/10">
+        <div>
+          <CardTitle className="text-base font-semibold tracking-tight">
+            Employee Directory
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Manage, filter, and audit all active client workspace workforce parameters
+          </CardDescription>
+        </div>
+      </CardHeader>
+
+      <CardContent className="pt-4 space-y-4">
+        {/* Responsive Table View Container */}
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table className="min-w-max w-full">
+              {/* Sticky Table Header */}
+              <TableHeader className="bg-muted/40 sticky top-0 border-b border-border z-10">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[220px] text-xs font-semibold text-muted-foreground">Employee</TableHead>
+                  <TableHead className="w-[140px] text-xs font-semibold text-muted-foreground">Department</TableHead>
+                  <TableHead className="w-[180px] text-xs font-semibold text-muted-foreground font-medium">Designation</TableHead>
+                  <TableHead className="w-[130px] text-xs font-semibold text-muted-foreground text-center">Employment Type</TableHead>
+                  <TableHead className="w-[120px] text-xs font-semibold text-muted-foreground text-center">Location</TableHead>
+                  <TableHead className="w-[120px] text-xs font-semibold text-muted-foreground text-center">Joining Date</TableHead>
+                  <TableHead className="w-[100px] text-xs font-semibold text-muted-foreground text-right">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  // Loading State Animation
+                  Array.from({ length: 3 }).map((_, idx) => (
+                    <TableRow key={idx} className="animate-pulse bg-transparent">
+                      {Array.from({ length: 7 }).map((_, cIdx) => (
+                        <TableCell key={cIdx} className="py-4">
+                          <div className="h-4 bg-muted rounded w-3/4 mx-auto" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : paginatedRecords.length === 0 ? (
+                  // Empty State Layout
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-48 text-center">
+                      <div className="flex flex-col items-center justify-center space-y-2 text-muted-foreground">
+                        <Briefcase className="h-8 w-8 stroke-[1.5] text-muted-foreground/60" />
+                        <p className="text-sm font-semibold">No employees registered yet</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  // Records Table Rendering
+                  paginatedRecords.map((emp, index) => {
+                    const fullName = `${emp.firstName} ${emp.lastName}`;
+                    const initials = `${emp.firstName.charAt(0)}${emp.lastName.charAt(0)}`.toUpperCase();
+                    const departmentLabel = emp.departmentId?.replace("dept-", "").replace("-", " ") || "General";
+
+                    return (
+                      <TableRow 
+                        key={emp.id}
+                        className={cn(
+                          "hover:bg-muted/40 transition-all cursor-pointer",
+                          index % 2 === 0 ? "bg-transparent" : "bg-muted/10"
+                        )}
+                      >
+                        <TableCell className="py-3">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-9 w-9 border border-border/80 shrink-0">
+                              {emp.avatarUrl ? (
+                                <AvatarImage src={emp.avatarUrl} alt={fullName} />
+                              ) : null}
+                              <AvatarFallback className="text-[10px] font-bold">
+                                {initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-col space-y-0.5 overflow-hidden">
+                              <span className="text-xs font-semibold text-foreground leading-none truncate">
+                                {fullName}
+                              </span>
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                {emp.employeeId}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground font-medium capitalize">
+                          {departmentLabel}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium text-foreground">
+                          {emp.designation}
+                        </TableCell>
+                        <TableCell className="text-xs text-center">
+                          <Badge variant="outline" className="rounded-xl px-2 py-0.5 text-[10px] uppercase font-semibold">
+                            {emp.employmentType.replace("_", " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-center text-muted-foreground font-medium">
+                          {emp.workLocation ? (
+                            <div className="inline-flex items-center gap-1">
+                              <MapPin className="h-3 w-3 shrink-0 text-muted-foreground/80" />
+                              <span>{emp.workLocation}</span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground/50">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-center tabular-nums text-muted-foreground font-medium">
+                          {formatDate(emp.joiningDate)}
+                        </TableCell>
+                        <TableCell className="text-right py-3">
+                          <div className="flex justify-end">
+                            <Badge 
+                              variant="outline"
+                              className={cn(
+                                "rounded-xl px-2.5 py-0.5 text-[10px] font-bold tracking-tight uppercase",
+                                emp.status === "ACTIVE" && "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+                                emp.status === "ON_LEAVE" && "bg-amber-500/10 text-amber-600 border-amber-500/20",
+                                emp.status === "INACTIVE" && "bg-zinc-500/10 text-zinc-600 border-zinc-500/20",
+                                emp.status === "TERMINATED" && "bg-red-500/10 text-red-600 border-red-500/20"
+                              )}
+                            >
+                              {emp.status.replace("_", " ")}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
           </div>
         </div>
-      )}
 
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden shadow-sm">
-        <Table className="w-full">
-          <TableHeader className="bg-neutral-50/50 dark:bg-neutral-900/30">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="border-b border-neutral-150 dark:border-neutral-800 hover:bg-transparent">
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id} className="h-11 text-neutral-500 text-xs font-semibold px-4 tracking-tight">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && 'selected'}
-                  className="border-b border-neutral-150 dark:border-neutral-800 transition-colors hover:bg-neutral-50/30 dark:hover:bg-neutral-900/20 data-[state=selected]:bg-neutral-50/50 dark:data-[state=selected]:bg-neutral-900/30"
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="py-2.5 px-4">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={tableColumns.length} className="h-60 text-center">
-                  <div className="flex flex-col items-center justify-center gap-1">
-                    <AlertCircle className="h-7 w-7 text-neutral-400" />
-                    <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">No employees found</p>
-                    <p className="text-xs text-neutral-400 max-w-[280px]">
-                      Try adjusting your custom filter inputs or keywords to explore directory items.
-                    </p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="flex items-center justify-between py-1 px-1">
-        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
-          Showing page {table.getState().pagination.pageIndex + 1} of{' '}
-          {table.getPageCount() || 1}
-        </span>
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            className="h-8 w-8 p-0 rounded-lg border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            className="h-8 w-8 p-0 rounded-lg border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
+        {/* Table Footer Pagination Actions */}
+        {totalItems > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs">
+            <span className="text-muted-foreground">
+              Showing <span className="font-semibold text-foreground">{startRecordIndex}</span>–<span className="font-semibold text-foreground">{endRecordIndex}</span> of{" "}
+              <span className="font-semibold text-foreground">{totalItems}</span> employees
+            </span>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1 || isLoading}
+                aria-label="Go to previous page"
+                className="h-8 w-8"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-xs font-medium text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages || isLoading}
+                aria-label="Go to next page"
+                className="h-8 w-8"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

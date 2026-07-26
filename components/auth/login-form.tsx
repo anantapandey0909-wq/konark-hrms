@@ -45,22 +45,23 @@ export function LoginForm({
         className={cn("space-y-4", className)}
         noValidate
       >
-        {/* Email Field */}
+        {/* Login ID Field */}
         <FormField
           control={form.control}
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email Address</FormLabel>
+              <FormLabel>User ID / Email / UAN</FormLabel>
               <FormControl>
                 <Input
-                  {...field}
-                  type="email"
-                  placeholder="name@company.com"
-                  autoComplete="email"
-                  disabled={isLoading}
-                  className="rounded-xl"
-                />
+  {...field}
+  type="text"
+  placeholder="Enter your User ID, Email or UAN"
+  autoComplete="username"
+  disabled={isLoading}
+  className="rounded-xl"
+/>
+                
               </FormControl>
               <FormMessage />
             </FormItem>

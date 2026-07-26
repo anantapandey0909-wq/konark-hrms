@@ -1,14 +1,22 @@
-import { z } from "zod";
-
+import {z} from "zod";
 /**
  * Login form validation schema.
+ *
+ * Supports authentication using:
+ * - User ID
+ * - Employee UAN
+ * - Email Address
  */
 export const loginSchema = z.object({
   email: z
     .string()
     .trim()
-    .min(1, { message: "Email address is required." })
-    .email({ message: "Enter a valid email address." }),
+    .min(1, {
+      message: "User ID, Email or UAN is required.",
+    })
+    .max(100, {
+      message: "User ID, Email or UAN must not exceed 100 characters.",
+    }),
 
   password: z
     .string()
@@ -17,7 +25,7 @@ export const loginSchema = z.object({
     .max(128, { message: "Password must not exceed 128 characters." }),
 
   rememberMe: z.boolean(),
-});
+}); 
 
 /**
  * Forgot password form validation schema.

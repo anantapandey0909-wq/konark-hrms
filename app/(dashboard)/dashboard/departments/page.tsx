@@ -1,20 +1,16 @@
-import type { Metadata } from "next";
-import { DepartmentDashboard } from "@/components/departments/department-dashboard";
-import { mockDepartments, mockDepartmentSummary } from "@/mock/department";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Departments | Konark HRMS",
-  description: "Manage departments, department heads, managers, budgets, employees, and organizational structure.",
-};
+import * as React from "react";
+import { mockDepartments, mockDepartmentSummary } from "@/mock/department";
+import { DepartmentDashboard } from "@/components/departments/department-dashboard";
 
 export default function DepartmentsPage() {
   return (
-    <main className="container py-6 space-y-6" id="main-content">
+    <div className="flex-1 space-y-4 p-8 pt-6">
       <DepartmentDashboard
-        departments={mockDepartments}
+        initialDepartments={mockDepartments}
         summary={mockDepartmentSummary}
-        loading={false}
       />
-    </main>
+    </div>
   );
 }

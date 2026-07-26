@@ -1,192 +1,111 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
-import type { Variants } from "framer-motion";
-import { MoreHorizontal, Eye, Pencil, Trash2 } from "lucide-react";
+import { ResolvedDepartment } from "@/types/department";
 import {
   Table,
-  TableHeader,
   TableBody,
-  TableRow,
-  TableHead,
   TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
-import { DepartmentStatusBadge } from "./department-status-badge";
-import { DepartmentEmptyState } from "./department-empty-state";
-import type { ResolvedDepartment } from "@/types/department";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import Link from "next/link";
+import { Eye, Edit } from "lucide-react";
 
 interface DepartmentTableProps {
-  departments: ResolvedDepartment[];
-  loading?: boolean;
-  className?: string;
-  onView?: (department: ResolvedDepartment) => void;
-  onEdit?: (department: ResolvedDepartment) => void;
-  onDelete?: (department: ResolvedDepartment) => void;
+  readonly departments: readonly ResolvedDepartment[];
 }
 
-const inrFormatter = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0,
-});
-
-const fadeVariants: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { duration: 0.2, ease: "easeOut" },
-  },
-};
-
-export function DepartmentTable({
-  departments,
-  loading = false,
-  className,
-  onView,
-  onEdit,
-  onDelete,
-}: DepartmentTableProps) {
-  if (!loading && departments.length === 0) {
-    return <DepartmentEmptyState className="my-8" />;
-  }
-
+export function DepartmentTable({ departments }: DepartmentTableProps) {
   return (
-    <motion.div
-      variants={fadeVariants}
-      initial="hidden"
-      animate="visible"
-      className={cn(
-        "w-full overflow-hidden rounded-xl border border-muted/60 bg-card shadow-sm",
-        className
-      )}
-    >
-      <div className="w-full overflow-x-auto">
-        <Table className="w-full min-w-[1000px] table-fixed">
-          <TableHeader className="bg-muted/30 select-none">
-            <TableRow className="border-b border-muted/40 hover:bg-transparent">
-              <TableHead className="w-[110px] font-semibold text-muted-foreground">Code</TableHead>
-              <TableHead className="w-[220px] font-semibold text-muted-foreground">Department Name</TableHead>
-              <TableHead className="w-[120px] font-semibold text-muted-foreground">Status</TableHead>
-              <TableHead className="w-[180px] font-semibold text-muted-foreground">Head</TableHead>
-              <TableHead className="w-[180px] font-semibold text-muted-foreground">Manager</TableHead>
-              <TableHead className="w-[110px] text-center font-semibold text-muted-foreground">Employees</TableHead>
-              <TableHead className="w-[160px] text-right font-semibold text-muted-foreground">Monthly Payroll</TableHead>
-              <TableHead className="w-[80px] text-center font-semibold text-muted-foreground">Actions</TableHead>
+    <div className="rounded-md border bg-card text-card-foreground shadow-sm">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Code</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Manager</TableHead>
+            <TableHead>Parent Division</TableHead>
+            <TableHead>Headcount</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {departments.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground text-sm">
+                No departments match the criteria.
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody className="divide-y divide-muted/40">
-            {loading ? (
-              Array.from({ length: 5 }).map((_, rowIndex) => (
-                <TableRow key={`ske-row-${rowIndex}`} className="hover:bg-transparent border-b border-muted/30">
-                  <TableCell><Skeleton className="h-4 w-12 rounded" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-36 rounded" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-28 rounded" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-28 rounded" /></TableCell>
-                  <TableCell className="text-center flex justify-center"><Skeleton className="h-4 w-8 rounded" /></TableCell>
-                  <TableCell><div className="flex justify-end"><Skeleton className="h-4 w-24 rounded" /></div></TableCell>
-                  <TableCell className="text-center flex justify-center"><Skeleton className="h-8 w-8 rounded-lg" /></TableCell>
-                </TableRow>
-              ))
-            ) : (
-              departments.map((dept) => (
-                <TableRow
-                  key={dept.id}
-                  className="group transition-colors border-b border-muted/30 hover:bg-muted/10"
-                >
-                  <TableCell className="font-semibold text-foreground tracking-tight select-all">
-                    {dept.code}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm text-foreground tracking-tight line-clamp-1 select-all">
-                        {dept.name}
-                      </span>
-                      {dept.description && (
-                        <span className="text-xs text-muted-foreground/80 line-clamp-1 mt-0.5 select-none">
-                          {dept.description}
-                        </span>
-                      )}
+          ) : (
+            departments.map((dept) => (
+              <TableRow key={dept.id}>
+                <TableCell className="font-mono text-xs font-semibold">{dept.code}</TableCell>
+                <TableCell className="font-medium text-sm">
+                  <Link href={`/dashboard/departments/${dept.id}`} className="hover:underline text-primary">
+                    {dept.name}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  {dept.manager ? (
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-7 w-7">
+                        <AvatarImage src={dept.manager.avatarUrl ?? undefined} />
+                        <AvatarFallback className="text-[10px]">
+                          {dept.manager.firstName[0]}
+                          {dept.manager.lastName[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div className="text-xs font-semibold">
+                          {dept.manager.firstName} {dept.manager.lastName}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">{dept.manager.designation}</div>
+                      </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <DepartmentStatusBadge status={dept.status} />
-                  </TableCell>
-                  <TableCell className="text-sm font-medium text-foreground/90 select-all truncate">
-                    {dept.headEmployee?.fullName || "Unassigned"}
-                  </TableCell>
-                  <TableCell className="text-sm font-medium text-foreground/90 select-all truncate">
-                    {dept.managerEmployee?.fullName || "Unassigned"}
-                  </TableCell>
-                  <TableCell className="text-center font-semibold text-sm text-foreground/85 select-none">
-                    {dept.employeeCount}
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-sm text-foreground/85 select-all">
-                    {inrFormatter.format(dept.statistics.monthlyPayroll)}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 rounded-lg border border-transparent transition-all duration-150 text-muted-foreground hover:text-foreground hover:bg-muted hover:border-muted-foreground/10"
-                          aria-label="Toggle actions menu"
-                        >
-                          <MoreHorizontal className="h-4.5 w-4.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-[140px] rounded-xl select-none shadow-md">
-                        {onView && (
-                          <DropdownMenuItem
-                            onClick={() => onView(dept)}
-                            className="flex items-center gap-2 rounded-lg cursor-pointer py-2 focus:bg-muted"
-                          >
-                            <Eye className="h-4 w-4 text-muted-foreground/70" />
-                            <span>View Details</span>
-                          </DropdownMenuItem>
-                        )}
-                        {onEdit && (
-                          <DropdownMenuItem
-                            onClick={() => onEdit(dept)}
-                            className="flex items-center gap-2 rounded-lg cursor-pointer py-2 focus:bg-muted"
-                          >
-                            <Pencil className="h-4 w-4 text-muted-foreground/70" />
-                            <span>Edit Profile</span>
-                          </DropdownMenuItem>
-                        )}
-                        {onDelete && (
-                          <>
-                            <DropdownMenuSeparator className="bg-muted/50" />
-                            <DropdownMenuItem
-                              onClick={() => onDelete(dept)}
-                              className="flex items-center gap-2 rounded-lg cursor-pointer py-2 text-destructive focus:bg-destructive/5 focus:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </motion.div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Unassigned</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm">
+                  {dept.parentDepartment ? (
+                    <Badge variant="outline">{dept.parentDepartment.name}</Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm font-semibold">{dept.employeeCount}</TableCell>
+                <TableCell>
+                  {dept.status === "ACTIVE" ? (
+                    <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">Active</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-muted-foreground">Inactive</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <Button variant="ghost" size="icon" asChild>
+                      <Link href={`/dashboard/departments/${dept.id}`}>
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                    <Button variant="ghost" size="icon" asChild>
+                      <Link href={`/dashboard/departments/${dept.id}/edit`}>
+                        <Edit className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

@@ -4,8 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft } from "lucide-react";
-
-import { EmployeeForm, type EmployeeFormData } from "@/components/employee/form/employee-form";
+import { EmployeeForm } from "@/components/employee/form/employee-form";
+import type { EmployeeFormData } from "@/components/employee/form/employee-form";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -14,128 +14,81 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { Employee } from "@/types/employee";
 import { mockEmployees } from "@/mock/employee";
+import { mockDepartments } from "@/mock/department";
 
 export default function EditEmployeePage() {
   const params = useParams();
   const router = useRouter();
+  const [submitting, setSubmitting] = React.useState(false);
 
-  const [isSaving, setIsSaving] = React.useState(false);
+  const id = params?.id as string;
+  const employee = mockEmployees.find((e: Employee) => e.id === id);
 
-  const employeeId = params.id as string;
-
-  const employee = React.useMemo(() => {
-    return mockEmployees.find(
-      (employee) =>
-        employee.id === employeeId ||
-        employee.employeeCode === employeeId
-    );
-  }, [employeeId]);
-
-  const handleSave = async (formData: EmployeeFormData) => {
-    setIsSaving(true);
-
+  const handleSubmit = async (formData: EmployeeFormData) => {
+    setSubmitting(true);
     try {
-      // Simulate backend request
+      // Mock API latency
       await new Promise((resolve) => setTimeout(resolve, 1000));
-void formData;
-      // Future backend integration:
-      // await updateEmployee(employeeId, _formData);
-
-      router.push("/dashboard/employees");
-      router.refresh();
-    } catch (error) {
-      console.error(
-        "An error occurred while saving employee data:",
-        error
-      );
+      console.log("Submitting Updated Employee Data:", formData);
+      router.push(`/dashboard/employees/${id}`);
     } finally {
-      setIsSaving(false);
+      setSubmitting(false);
     }
   };
 
   const handleCancel = () => {
-    router.push(`/dashboard/employees/${employeeId}`);
+    router.push(`/dashboard/employees/${id}`);
   };
 
   if (!employee) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-4 p-6 text-center">
-        <div className="rounded-full bg-neutral-100 p-4 text-neutral-400 dark:bg-neutral-900">
-          <AlertCircle className="h-10 w-10" />
-        </div>
-
-        <h2 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
-          Employee Not Found
-        </h2>
-
-        <p className="max-w-sm text-sm text-neutral-500 dark:text-neutral-400">
-          The employee record with ID{" "}
-          <span className="font-mono font-bold text-neutral-800 dark:text-neutral-200">
-            {employeeId}
-          </span>{" "}
-          could not be located in the directory database.
-        </p>
-
-        <Button
-          asChild
-          variant="outline"
-          size="sm"
-          className="mt-2"
-        >
-          <Link href="/dashboard/employees">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Return to Directory
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-8 max-w-4xl mx-auto">
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/employees" passHref>
+            <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-xs">
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Directory</span>
+            </Button>
           </Link>
-        </Button>
+        </div>
+        <Card className="border border-red-200/40 bg-red-500/5 rounded-xl shadow-sm">
+          <CardHeader className="flex flex-row items-center gap-3 pb-2">
+            <AlertCircle className="h-5 w-5 text-red-500" />
+            <CardTitle className="text-sm font-semibold text-red-600">Employee Not Found</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CardDescription className="text-xs text-red-500/80">
+              The employee profile with ID "{id}" could not be retrieved from the active workspace.
+            </CardDescription>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
+  const fullName = `${employee.firstName} ${employee.lastName}`;
+
   return (
-    <div className="mx-auto flex max-w-4xl flex-1 flex-col space-y-6 p-6">
-      <div className="flex items-center">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleCancel}
-          className="-ml-2 text-neutral-500 hover:text-neutral-950 dark:hover:text-neutral-50"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Profile
-        </Button>
-      </div>
-
-      <div className="flex flex-col space-y-1.5">
-        <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
-          Edit Employee Profile
-        </h1>
-
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          Modify the profile credentials, departmental settings, and system
-          roles of {employee.fullName}.
+    <div className="flex flex-1 flex-col gap-6 p-4 md:p-8">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight">Edit Profile</h1>
+        <p className="text-sm text-muted-foreground">
+          Modify corporate and metadata fields for{" "}
+          <span className="font-semibold text-foreground">{fullName}</span> (Ref: {employee.employeeId})
         </p>
       </div>
 
-      <Card className="border-neutral-200 shadow-sm dark:border-neutral-800">
-        <CardHeader>
-          <CardTitle>Profile Details</CardTitle>
-
-          <CardDescription>
-            Ensure updated information matches organizational compliance
-            requirements.
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          <EmployeeForm
-            initialData={employee}
-            onSubmit={handleSave}
-            onCancel={handleCancel}
-            isLoading={isSaving}
-          />
-        </CardContent>
-      </Card>
+      <EmployeeForm
+        mode="edit"
+        defaultValues={employee}
+        departments={mockDepartments}
+        managers={mockEmployees.filter((e: Employee) => e.id !== id)} // Block self-reporting
+        isSubmitting={submitting}
+        onSubmit={handleSubmit}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

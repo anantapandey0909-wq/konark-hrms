@@ -1,4 +1,4 @@
-import type { Department } from "./employee";
+import type { Department } from "./department";
 
 export type PayrollStatus =
   | "DRAFT"

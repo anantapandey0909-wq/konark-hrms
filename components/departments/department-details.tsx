@@ -1,70 +1,73 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
-import type { Variants } from "framer-motion";
-import { Building2 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { ResolvedDepartment } from "@/types/department";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DepartmentOverview } from "./department-overview";
-import { DepartmentStatusBadge } from "./department-status-badge";
-import type { ResolvedDepartment } from "@/types/department";
+import { DepartmentMembers } from "./department-members";
+import { DepartmentBudget } from "./department-budget";
+import { Button } from "@/components/ui/button";
+import { Edit, ArrowLeft, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { DepartmentDeleteDialog } from "./department-delete-dialog";
 
 interface DepartmentDetailsProps {
-  department: ResolvedDepartment;
-  className?: string;
+  readonly department: ResolvedDepartment;
+  readonly onDelete: (id: string) => void;
 }
 
-const fadeVariants: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { duration: 0.25, ease: "easeOut" },
-  },
-};
+export function DepartmentDetails({ department, onDelete }: DepartmentDetailsProps) {
+  const [isDeleteOpen, setIsDeleteOpen] = React.useState(false);
 
-export function DepartmentDetails({ department, className }: DepartmentDetailsProps) {
   return (
-    <motion.div
-      variants={fadeVariants}
-      initial="hidden"
-      animate="visible"
-      className={cn("space-y-8", className)}
-    >
-      {/* Section 1: Department Header */}
-      <Card className="overflow-hidden rounded-xl border border-muted/60 bg-card shadow-sm">
-        <CardContent className="p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
-                  <Building2 className="h-4.5 w-4.5" />
-                </div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground select-all">
-                  {department.name}
-                </h1>
-                <span className="text-xs font-semibold text-muted-foreground select-all bg-muted px-2.5 py-0.5 rounded-lg border border-muted-foreground/10" aria-label="Department Code">
-                  {department.code}
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">
-                {department.description}
-              </p>
-            </div>
-            <div className="shrink-0 pt-1">
-              <DepartmentStatusBadge status={department.status} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Separator className="border-muted/40" />
-
-      {/* Section 2 to 5: Composed Department Overview Panel */}
-      <div className="space-y-6">
-        <DepartmentOverview department={department} />
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <Button variant="ghost" size="sm" asChild className="mb-2">
+            <Link href="/dashboard/departments" className="flex items-center gap-1">
+              <ArrowLeft className="h-4 w-4" /> Back to list
+            </Link>
+          </Button>
+          <h1 className="text-3xl font-bold tracking-tight">{department.name}</h1>
+          <p className="text-xs text-muted-foreground">
+            Administrative division key: <span className="font-mono font-semibold">{department.code}</span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/dashboard/departments/${department.id}/edit`}>
+              <Edit className="h-4 w-4 mr-2" /> Edit
+            </Link>
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => setIsDeleteOpen(true)}>
+            <Trash2 className="h-4 w-4 mr-2" /> Delete
+          </Button>
+        </div>
       </div>
-    </motion.div>
+
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="budget">Budget</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
+          <DepartmentOverview department={department} />
+        </TabsContent>
+        <TabsContent value="members">
+          <DepartmentMembers departmentId={department.id} />
+        </TabsContent>
+        <TabsContent value="budget">
+          <DepartmentBudget department={department} />
+        </TabsContent>
+      </Tabs>
+
+      <DepartmentDeleteDialog
+        isOpen={isDeleteOpen}
+        onOpenChange={setIsDeleteOpen}
+        departmentName={department.name}
+        onConfirm={() => onDelete(department.id)}
+      />
+    </div>
   );
 }

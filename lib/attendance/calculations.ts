@@ -1,100 +1,83 @@
-import type { 
-  AttendanceRecord, 
-  AttendanceSummary, 
-  EmployeeAttendanceSummary 
-} from "@/types/attendance";
+import { Attendance, AttendanceWithEmployee } from "@/types/attendance";
 
-/**
- * Standard daily work hours configuration boundary.
- */
-const STANDARD_WORK_HOURS = 8;
+export interface AttendanceStatistics {
+  readonly totalRecords: number;
+  readonly presentCount: number;
+  readonly absentCount: number;
+  readonly lateCount: number;
+  readonly halfDayCount: number;
+  readonly onLeaveCount: number;
+  readonly attendancePercentage: number;
+  readonly averageWorkingHours: number;
+  readonly totalOvertimeHours: number;
+}
 
-/**
- * Helper to handle floating-point rounding precision.
- * 
- * @param value - Numerical value to round.
- * @param decimals - Decimal places (defaults to 1).
- * @returns Rounded value.
- */
-function round(value: number, decimals = 1): number {
-  const factor = Math.pow(10, decimals);
-  return Math.round(value * factor) / factor;
+export interface MonthlyAttendanceSummary {
+  readonly yearMonth: string;
+  readonly statistics: AttendanceStatistics;
+}
+
+export interface DailyAttendanceSummary {
+  readonly date: string;
+  readonly statistics: AttendanceStatistics;
+}
+
+export interface EmployeeAttendanceMetrics {
+  readonly employeeId: string;
+  readonly statistics: AttendanceStatistics;
+}
+
+export interface DepartmentAttendanceMetrics {
+  readonly departmentId: string;
+  readonly statistics: AttendanceStatistics;
 }
 
 /**
- * Calculates total worked hours for an attendance record.
- * Falls back to computing differences of ISO clock metrics when not predefined.
- * 
- * @param record - Daily attendance log.
- * @returns Total worked hours as a decimal.
+ * Calculates comprehensive attendance statistics for a given set of records.
+ * Handles empty arrays, missing, and nullable fields safely.
+ *
+ * @param records Collection of attendance records
  */
-export function calculateWorkHours(record: AttendanceRecord): number {
-  if (record.workHours !== null && record.workHours !== undefined) {
-    return record.workHours;
+export function calculateAttendanceStatistics(
+  records: readonly Attendance[]
+): AttendanceStatistics {
+  const totalRecords = records.length;
+
+  if (totalRecords === 0) {
+    return {
+      totalRecords: 0,
+      presentCount: 0,
+      absentCount: 0,
+      lateCount: 0,
+      halfDayCount: 0,
+      onLeaveCount: 0,
+      attendancePercentage: 0,
+      averageWorkingHours: 0,
+      totalOvertimeHours: 0,
+    };
   }
 
-  if (!record.clockInAt || !record.clockOutAt) {
-    return 0;
-  }
-
-  const checkInTime = Date.parse(record.clockInAt);
-  const checkOutTime = Date.parse(record.clockOutAt);
-
-  if (isNaN(checkInTime) || isNaN(checkOutTime) || checkOutTime <= checkInTime) {
-    return 0;
-  }
-
-  const diffInMs = checkOutTime - checkInTime;
-  const diffInHours = diffInMs / (1000 * 60 * 60);
-
-  return round(diffInHours, 2);
-}
-
-/**
- * Calculates overtime hours relative to standard workday configurations.
- * 
- * @param record - Daily attendance log.
- * @returns Overtime hours as a decimal.
- */
-export function calculateOvertimeHours(record: AttendanceRecord): number {
-  if (record.overtimeHours !== null && record.overtimeHours !== undefined) {
-    return record.overtimeHours;
-  }
-
-  const workHours = calculateWorkHours(record);
-  const overtime = Math.max(workHours - STANDARD_WORK_HOURS, 0);
-
-  return round(overtime, 2);
-}
-
-/**
- * Counts status occurrences and unique personnel indexes from attendance records.
- * 
- * @param records - Array of attendance records.
- * @returns Status occurrence metrics.
- */
-export function calculateAttendanceSummary(records: AttendanceRecord[]): AttendanceSummary {
   let presentCount = 0;
-  let lateCount = 0;
   let absentCount = 0;
+  let lateCount = 0;
   let halfDayCount = 0;
   let onLeaveCount = 0;
-  const uniqueEmployeeIds = new Set<string>();
+  let accumulatedHours = 0;
+  let validHoursRecordCount = 0;
+  let totalOvertimeHours = 0;
 
-  for (const record of records) {
-    if (record.employeeId) {
-      uniqueEmployeeIds.add(record.employeeId);
-    }
+  for (let i = 0; i < totalRecords; i++) {
+    const record = records[i];
 
     switch (record.status) {
       case "PRESENT":
         presentCount++;
         break;
-      case "LATE":
-        lateCount++;
-        break;
       case "ABSENT":
         absentCount++;
+        break;
+      case "LATE":
+        lateCount++;
         break;
       case "HALF_DAY":
         halfDayCount++;
@@ -102,111 +85,283 @@ export function calculateAttendanceSummary(records: AttendanceRecord[]): Attenda
       case "ON_LEAVE":
         onLeaveCount++;
         break;
-      default:
-        break;
+    }
+
+    if (record.totalHours !== null && record.totalHours !== undefined) {
+      accumulatedHours += record.totalHours;
+      validHoursRecordCount++;
+    }
+
+    if (record.overtimeHours !== null && record.overtimeHours !== undefined) {
+      totalOvertimeHours += record.overtimeHours;
     }
   }
 
+  const attendedDaysCount = presentCount + lateCount + halfDayCount;
+  const attendancePercentage = totalRecords > 0
+    ? Math.round((attendedDaysCount / totalRecords) * 10000) / 100
+    : 0;
+
+  const averageWorkingHours = validHoursRecordCount > 0
+    ? Math.round((accumulatedHours / validHoursRecordCount) * 100) / 100
+    : 0;
+
   return {
+    totalRecords,
     presentCount,
-    lateCount,
     absentCount,
+    lateCount,
     halfDayCount,
     onLeaveCount,
-    totalEmployees: uniqueEmployeeIds.size,
+    attendancePercentage,
+    averageWorkingHours,
+    totalOvertimeHours: Math.round(totalOvertimeHours * 100) / 100,
   };
 }
 
 /**
- * Evaluates the percentage of positive daily attendance events.
- * 
- * @param records - Array of attendance records.
- * @returns Positive attendance rate decimal.
+ * Returns the count of employees present, late, or half-day.
  */
-export function calculateAttendanceRate(records: AttendanceRecord[]): number {
-  if (records.length === 0) {
-    return 0;
-  }
-
-  let attendedCount = 0;
-
-  for (const record of records) {
-    if (
-      record.status === "PRESENT" ||
-      record.status === "LATE" ||
-      record.status === "HALF_DAY"
-    ) {
-      attendedCount++;
+export function getTotalPresentEmployees(records: readonly Attendance[]): number {
+  let count = 0;
+  for (let i = 0; i < records.length; i++) {
+    const status = records[i].status;
+    if (status === "PRESENT" || status === "LATE" || status === "HALF_DAY") {
+      count++;
     }
   }
-
-  const rate = (attendedCount / records.length) * 100;
-  return round(rate, 1);
+  return count;
 }
 
 /**
- * Computes average daily work hours for employees who logged work.
- * 
- * @param records - Array of attendance records.
- * @returns Average work hours daily.
+ * Returns the count of absent employees.
  */
-export function calculateAverageWorkHours(records: AttendanceRecord[]): number {
-  const activeWorkSessions = records
-    .map((record) => calculateWorkHours(record))
-    .filter((hours) => hours > 0);
+export function getTotalAbsentEmployees(records: readonly Attendance[]): number {
+  let count = 0;
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].status === "ABSENT") {
+      count++;
+    }
+  }
+  return count;
+}
 
-  if (activeWorkSessions.length === 0) {
-    return 0;
+/**
+ * Returns the count of late employees.
+ */
+export function getTotalLateEmployees(records: readonly Attendance[]): number {
+  let count = 0;
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].status === "LATE") {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Returns the count of half-day employees.
+ */
+export function getTotalHalfDayEmployees(records: readonly Attendance[]): number {
+  let count = 0;
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].status === "HALF_DAY") {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Returns the count of employees on approved leave.
+ */
+export function getTotalLeaveEmployees(records: readonly Attendance[]): number {
+  let count = 0;
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].status === "ON_LEAVE") {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Calculates attendance status percentage across all records.
+ */
+export function getAttendancePercentage(records: readonly Attendance[]): number {
+  if (records.length === 0) return 0;
+  const attendedCount = getTotalPresentEmployees(records);
+  return Math.round((attendedCount / records.length) * 10000) / 100;
+}
+
+/**
+ * Calculates average working hours safely handling nullable parameters.
+ */
+export function getAverageWorkingHours(records: readonly Attendance[]): number {
+  let totalHours = 0;
+  let count = 0;
+  for (let i = 0; i < records.length; i++) {
+    const hours = records[i].totalHours;
+    if (hours !== null && hours !== undefined) {
+      totalHours += hours;
+      count++;
+    }
+  }
+  return count > 0 ? Math.round((totalHours / count) * 100) / 100 : 0;
+}
+
+/**
+ * Safely aggregates total overtime hours worked.
+ */
+export function getTotalOvertimeHours(records: readonly Attendance[]): number {
+  let totalOvertime = 0;
+  for (let i = 0; i < records.length; i++) {
+    const overtime = records[i].overtimeHours;
+    if (overtime !== null && overtime !== undefined) {
+      totalOvertime += overtime;
+    }
+  }
+  return Math.round(totalOvertime * 100) / 100;
+}
+
+/**
+ * Safely aggregates total working hours worked.
+ */
+export function getTotalWorkingHours(records: readonly Attendance[]): number {
+  let totalHours = 0;
+  for (let i = 0; i < records.length; i++) {
+    const hours = records[i].totalHours;
+    if (hours !== null && hours !== undefined) {
+      totalHours += hours;
+    }
+  }
+  return Math.round(totalHours * 100) / 100;
+}
+
+/**
+ * Groups and summaries records by month (YYYY-MM).
+ */
+export function calculateMonthlySummary(
+  records: readonly Attendance[]
+): readonly MonthlyAttendanceSummary[] {
+  const monthlyGroups: Record<string, Attendance[]> = {};
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const month = record.attendanceDate.substring(0, 7); // YYYY-MM
+
+    if (!monthlyGroups[month]) {
+      monthlyGroups[month] = [];
+    }
+    monthlyGroups[month].push(record);
   }
 
-  const sum = activeWorkSessions.reduce((total, hours) => total + hours, 0);
-  const average = sum / activeWorkSessions.length;
+  const months = Object.keys(monthlyGroups).sort();
+  const summary: MonthlyAttendanceSummary[] = [];
 
-  return round(average, 1);
+  for (let i = 0; i < months.length; i++) {
+    const month = months[i];
+    summary.push({
+      yearMonth: month,
+      statistics: calculateAttendanceStatistics(monthlyGroups[month]),
+    });
+  }
+
+  return summary;
 }
 
 /**
- * Sums overtime hours logged within a specified selection of records.
- * 
- * @param records - Array of attendance records.
- * @returns Sum of overtime hours.
+ * Groups and summaries records by date (YYYY-MM-DD).
  */
-export function calculateTotalOvertime(records: AttendanceRecord[]): number {
-  const total = records.reduce((sum, record) => sum + calculateOvertimeHours(record), 0);
-  return round(total, 1);
+export function calculateDailySummary(
+  records: readonly Attendance[]
+): readonly DailyAttendanceSummary[] {
+  const dailyGroups: Record<string, Attendance[]> = {};
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const date = record.attendanceDate;
+
+    if (!dailyGroups[date]) {
+      dailyGroups[date] = [];
+    }
+    dailyGroups[date].push(record);
+  }
+
+  const dates = Object.keys(dailyGroups).sort();
+  const summary: DailyAttendanceSummary[] = [];
+
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i];
+    summary.push({
+      date,
+      statistics: calculateAttendanceStatistics(dailyGroups[date]),
+    });
+  }
+
+  return summary;
 }
 
 /**
- * Builds localized metrics to summarize employee work history.
- * 
- * @param records - Full array of attendance logs.
- * @param employeeId - Unique identifier of the targeting employee.
- * @returns Summary of employee statistics.
+ * Groups and summaries records by individual employees.
  */
-export function calculateEmployeeAttendanceSummary(
-  records: AttendanceRecord[],
-  employeeId: string
-): EmployeeAttendanceSummary {
-  const employeeRecords = records.filter((record) => record.employeeId === employeeId);
+export function calculateEmployeeAttendanceMetrics(
+  records: readonly Attendance[]
+): readonly EmployeeAttendanceMetrics[] {
+  const employeeGroups: Record<string, Attendance[]> = {};
 
-  const summary = calculateAttendanceSummary(employeeRecords);
-  
-  const totalWorkedHours = employeeRecords.reduce(
-    (sum, record) => sum + calculateWorkHours(record),
-    0
-  );
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const empId = record.employeeId;
 
-  const totalOvertime = calculateTotalOvertime(employeeRecords);
-  const attendanceRate = calculateAttendanceRate(employeeRecords);
+    if (!employeeGroups[empId]) {
+      employeeGroups[empId] = [];
+    }
+    employeeGroups[empId].push(record);
+  }
 
-  return {
-    presentCount: summary.presentCount,
-    lateCount: summary.lateCount,
-    halfDayCount: summary.halfDayCount,
-    absentCount: summary.absentCount,
-    onLeaveCount: summary.onLeaveCount,
-    totalWorkedHours: round(totalWorkedHours, 1),
-    totalOvertime,
-    attendanceRate,
-  };
+  const empIds = Object.keys(employeeGroups);
+  const metrics: EmployeeAttendanceMetrics[] = [];
+
+  for (let i = 0; i < empIds.length; i++) {
+    const empId = empIds[i];
+    metrics.push({
+      employeeId: empId,
+      statistics: calculateAttendanceStatistics(employeeGroups[empId]),
+    });
+  }
+
+  return metrics;
+}
+
+/**
+ * Groups and summaries records by organizational department.
+ */
+export function calculateDepartmentAttendanceMetrics(
+  records: readonly AttendanceWithEmployee[]
+): readonly DepartmentAttendanceMetrics[] {
+  const departmentGroups: Record<string, Attendance[]> = {};
+
+  for (let i = 0; i < records.length; i++) {
+    const item = records[i];
+    const deptId = item.employee.departmentId || "unassigned";
+
+    if (!departmentGroups[deptId]) {
+      departmentGroups[deptId] = [];
+    }
+    departmentGroups[deptId].push(item.attendance);
+  }
+
+  const deptIds = Object.keys(departmentGroups);
+  const metrics: DepartmentAttendanceMetrics[] = [];
+
+  for (let i = 0; i < deptIds.length; i++) {
+    const deptId = deptIds[i];
+    metrics.push({
+      departmentId: deptId,
+      statistics: calculateAttendanceStatistics(departmentGroups[deptId]),
+    });
+  }
+
+  return metrics;
 }

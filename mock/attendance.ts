@@ -1,222 +1,272 @@
-import type { AttendanceRecord, AttendanceStats } from "@/types/attendance";
+// ============================================================================
+// Imports
+// ============================================================================
+
+import { Attendance, AttendanceWithEmployee } from "@/types/attendance";
 import { mockEmployees } from "@/mock/employee";
 
+// ============================================================================
+// Constants
+// ============================================================================
+
 /**
- * Resolves employee information directly from mockEmployees.
- * Throws a descriptive error during development if referential integrity is violated.
+ * Reusable system constants to prevent literal duplication, enforce type safety,
+ * and facilitate future localization or structural changes in the system metadata.
  */
-const getEmployeeData = (id: string) => {
-  const employee = mockEmployees.find((emp) => emp.id === id);
+const TENANT_KONARK = "tenant-konark-tech";
+const TENANT_SHAKTI = "tenant-shakti-auto";
+const TENANT_AYURCARE = "tenant-ayurcare";
+
+const LOC_BANGALORE = "Bangalore Office";
+const LOC_PUNE = "Pune Plant";
+const LOC_KOCHI = "Kochi Clinic";
+
+const SHIFT_GENERAL = "General Shift";
+const SHIFT_MORNING = "Morning Shift";
+
+const WORK_MODE_OFFICE = "OFFICE";
+
+const STATUS_PRESENT = "PRESENT";
+const STATUS_LATE = "LATE";
+const STATUS_ON_LEAVE = "ON_LEAVE";
+
+// ============================================================================
+// Attendance Records
+// ============================================================================
+
+/**
+ * Normalized representation of attendance events.
+ * 
+ * This array acts as the raw database table equivalent. By keeping it normalized
+ * and referencing only the `employeeId` and `tenantId`, we prevent data duplication
+ * and eliminate synchronization anomalies. Each record is scoped strictly to a tenant,
+ * enforcing secure data isolation within our multi-tenant SaaS architecture.
+ */
+export const mockAttendances: Attendance[] = [
+  {
+    id: "att-101",
+    tenantId: TENANT_KONARK,
+    employeeId: "emp-101",
+    attendanceDate: "2025-01-15",
+    checkIn: "2025-01-15T09:02:14.000Z",
+    checkOut: "2025-01-15T18:15:30.000Z",
+    totalHours: 9.22,
+    overtimeHours: 1.22,
+    breakDuration: 45,
+    status: STATUS_PRESENT,
+    workMode: WORK_MODE_OFFICE,
+    location: LOC_BANGALORE,
+    shiftName: SHIFT_GENERAL,
+    isRegularized: false,
+    remarks: "Standard operations.",
+    createdAt: "2025-01-15T18:15:30.000Z",
+    updatedAt: "2025-01-15T18:15:30.000Z",
+  },
+  {
+    id: "att-102",
+    tenantId: TENANT_KONARK,
+    employeeId: "emp-102",
+    attendanceDate: "2025-01-15",
+    checkIn: "2025-01-15T09:15:00.000Z",
+    checkOut: "2025-01-15T18:00:00.000Z",
+    totalHours: 8.75,
+    overtimeHours: 0.75,
+    breakDuration: 60,
+    status: STATUS_PRESENT,
+    workMode: WORK_MODE_OFFICE,
+    location: LOC_BANGALORE,
+    shiftName: SHIFT_GENERAL,
+    isRegularized: false,
+    remarks: "Regular logged shift.",
+    createdAt: "2025-01-15T18:00:00.000Z",
+    updatedAt: "2025-01-15T18:00:00.000Z",
+  },
+  {
+    id: "att-103",
+    tenantId: TENANT_KONARK,
+    employeeId: "emp-103",
+    attendanceDate: "2025-01-15",
+    checkIn: "2025-01-15T08:55:00.000Z",
+    checkOut: "2025-01-15T17:45:00.000Z",
+    totalHours: 8.83,
+    overtimeHours: 0.83,
+    breakDuration: 45,
+    status: STATUS_PRESENT,
+    workMode: WORK_MODE_OFFICE,
+    location: LOC_BANGALORE,
+    shiftName: SHIFT_GENERAL,
+    isRegularized: false,
+    remarks: "Shift completed on time.",
+    createdAt: "2025-01-15T17:45:00.000Z",
+    updatedAt: "2025-01-15T17:45:00.000Z",
+  },
+  {
+    id: "att-104",
+    tenantId: TENANT_KONARK,
+    employeeId: "emp-104",
+    attendanceDate: "2025-01-15",
+    checkIn: "2025-01-15T09:35:00.000Z",
+    checkOut: "2025-01-15T18:30:00.000Z",
+    totalHours: 8.92,
+    overtimeHours: 0.92,
+    breakDuration: 45,
+    status: STATUS_LATE,
+    workMode: WORK_MODE_OFFICE,
+    location: LOC_BANGALORE,
+    shiftName: SHIFT_GENERAL,
+    isRegularized: true,
+    remarks: "Slightly delayed check-in.",
+    createdAt: "2025-01-15T18:30:00.000Z",
+    updatedAt: "2025-01-15T18:30:00.000Z",
+  },
+  {
+    id: "att-105",
+    tenantId: TENANT_KONARK,
+    employeeId: "emp-105",
+    attendanceDate: "2025-01-15",
+    checkIn: "2025-01-15T09:00:00.000Z",
+    checkOut: "2025-01-15T18:00:00.000Z",
+    totalHours: 9.0,
+    overtimeHours: 1.0,
+    breakDuration: 60,
+    status: STATUS_PRESENT,
+    workMode: WORK_MODE_OFFICE,
+    location: LOC_BANGALORE,
+    shiftName: SHIFT_GENERAL,
+    isRegularized: false,
+    remarks: "Standard operations.",
+    createdAt: "2025-01-15T18:00:00.000Z",
+    updatedAt: "2025-01-15T18:00:00.000Z",
+  },
+  {
+    id: "att-106",
+    tenantId: TENANT_KONARK,
+    employeeId: "emp-106",
+    attendanceDate: "2025-01-15",
+    checkIn: null,
+    checkOut: null,
+    totalHours: null,
+    overtimeHours: null,
+    breakDuration: null,
+    status: STATUS_ON_LEAVE,
+    workMode: WORK_MODE_OFFICE,
+    location: null,
+    shiftName: null,
+    isRegularized: false,
+    remarks: "On approved medical leave.",
+    createdAt: "2025-01-15T09:00:00.000Z",
+    updatedAt: "2025-01-15T09:00:00.000Z",
+  },
+  {
+    id: "att-107",
+    tenantId: TENANT_SHAKTI,
+    employeeId: "emp-109",
+    attendanceDate: "2025-01-15",
+    checkIn: "2025-01-15T09:01:00.000Z",
+    checkOut: "2025-01-15T18:05:00.000Z",
+    totalHours: 9.06,
+    overtimeHours: 1.06,
+    breakDuration: 60,
+    status: STATUS_PRESENT,
+    workMode: WORK_MODE_OFFICE,
+    location: LOC_PUNE,
+    shiftName: SHIFT_MORNING,
+    isRegularized: false,
+    remarks: "Standard factory shift.",
+    createdAt: "2025-01-15T18:05:00.000Z",
+    updatedAt: "2025-01-15T18:05:00.000Z",
+  },
+  {
+    id: "att-108",
+    tenantId: TENANT_AYURCARE,
+    employeeId: "emp-108",
+    attendanceDate: "2025-01-15",
+    checkIn: "2025-01-15T09:10:00.000Z",
+    checkOut: "2025-01-15T18:10:00.000Z",
+    totalHours: 9.0,
+    overtimeHours: 1.0,
+    breakDuration: 45,
+    status: STATUS_PRESENT,
+    workMode: WORK_MODE_OFFICE,
+    location: LOC_KOCHI,
+    shiftName: SHIFT_GENERAL,
+    isRegularized: false,
+    remarks: "Standard accounting audit day.",
+    createdAt: "2025-01-15T18:10:00.000Z",
+    updatedAt: "2025-01-15T18:10:00.000Z",
+  }
+];
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Compiles a performant lookup index map of all available employees.
+ * This structure avoids the costly nested lookup overhead of Array.prototype.find
+ * and keeps the resolution logic operating at O(n) overall time complexity.
+ */
+const employeeMap = new Map<string, typeof mockEmployees[number]>(
+  mockEmployees.map((employee) => [employee.id, employee])
+);
+
+/**
+ * Resolves the employee details corresponding to an attendance record.
+ * 
+ * Mimics relational foreign key checks on relational transactional databases.
+ * In addition to resolving the object reference, this enforces isolation rules 
+ * by throwing a runtime validation exception if a cross-tenant leak is detected.
+ *
+ * @param attendance The source attendance transaction record.
+ * @param map Precompiled index map containing available employee models.
+ * @returns The validated employee object.
+ * @throws {Error} If the relationship is missing or tenant boundaries are violated.
+ */
+function resolveEmployee(
+  attendance: Attendance,
+  map: Map<string, typeof mockEmployees[number]>
+): typeof mockEmployees[number] {
+  const employee = map.get(attendance.employeeId);
 
   if (!employee) {
     throw new Error(
-      `Referential Integrity Violation: Employee with ID "${id}" was not found in mockEmployees. Please check mock/attendance.ts.`
+      `Attendance ${attendance.id} references missing employee ${attendance.employeeId}`
     );
   }
 
-  return {
-    employeeId: employee.id,
-    employeeCode: employee.employeeCode,
-    employeeName: employee.fullName,
-    department: employee.department,
-  };
-};
+  if (employee.tenantId !== attendance.tenantId) {
+    throw new Error(
+      `Tenant integrity violation: Attendance ${attendance.id} for tenant ${attendance.tenantId} references employee ${employee.id} belonging to tenant ${employee.tenantId}`
+    );
+  }
 
-export const mockAttendanceRecords: AttendanceRecord[] = [
-  // ==========================================
-  // ATTENDANCE LOGS: 2025-02-17
-  // ==========================================
-  {
-    id: "ATT-001",
-    ...getEmployeeData("emp-101"),
-    date: "2025-02-17",
-    clockInAt: "2025-02-17T09:00:00Z",
-    clockOutAt: "2025-02-17T18:00:00Z",
-    status: "PRESENT",
-    workHours: 8,
-    overtimeHours: 0,
-    location: "Office",
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Regular check-in",
-  },
-  {
-    id: "ATT-002",
-    ...getEmployeeData("emp-102"),
-    date: "2025-02-17",
-    clockInAt: "2025-02-17T09:45:00Z",
-    clockOutAt: "2025-02-17T18:15:00Z",
-    status: "LATE",
-    workHours: 7.5,
-    overtimeHours: 0,
-    location: "Remote",
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Delayed due to traffic transit issues",
-  },
-  {
-    id: "ATT-003",
-    ...getEmployeeData("emp-103"), // Elena Rostova (Active Maternity Leave LV-1009)
-    date: "2025-02-17",
-    clockInAt: null,
-    clockOutAt: null,
-    status: "ON_LEAVE",
-    workHours: null,
-    overtimeHours: null,
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Approved Maternity Leave",
-  },
-  {
-    id: "ATT-004",
-    ...getEmployeeData("emp-106"), // Liam O'Connor (Active Sick Leave LV-1002, Status: ON_LEAVE)
-    date: "2025-02-17",
-    clockInAt: null,
-    clockOutAt: null,
-    status: "ON_LEAVE",
-    workHours: null,
-    overtimeHours: null,
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Approved Sick Leave - Recovery from procedure",
-  },
-  {
-    id: "ATT-005",
-    ...getEmployeeData("emp-108"), // Sofia Al-Farsi (Active Casual Leave LV-1003)
-    date: "2025-02-17",
-    clockInAt: null,
-    clockOutAt: null,
-    status: "ON_LEAVE",
-    workHours: null,
-    overtimeHours: null,
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Approved Casual Leave - Attending family event",
-  },
-  {
-    id: "ATT-006",
-    ...getEmployeeData("emp-105"),
-    date: "2025-02-17",
-    clockInAt: "2025-02-17T08:50:00Z",
-    clockOutAt: "2025-02-17T17:50:00Z",
-    status: "PRESENT",
-    workHours: 8,
-    overtimeHours: 0,
-    location: "Office",
-    shiftName: "General Shift",
-    isRegularized: false,
-  },
-  {
-    id: "ATT-007",
-    ...getEmployeeData("emp-110"),
-    date: "2025-02-17",
-    clockInAt: "2025-02-17T08:55:00Z",
-    clockOutAt: "2025-02-17T19:30:00Z",
-    status: "PRESENT",
-    workHours: 8.5,
-    overtimeHours: 1.5,
-    location: "Office",
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Assisted with critical end-of-day handovers",
-  },
-  {
-    id: "ATT-008",
-    ...getEmployeeData("emp-121"), // Chloe Dupont (Intern, Inactive status simulation)
-    date: "2025-02-17",
-    clockInAt: null,
-    clockOutAt: null,
-    status: "ABSENT",
-    workHours: null,
-    overtimeHours: null,
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Unexcused absence - No call show",
-  },
+  return employee;
+}
 
-  // ==========================================
-  // ATTENDANCE LOGS: 2025-02-16
-  // ==========================================
-  {
-    id: "ATT-009",
-    ...getEmployeeData("emp-101"),
-    date: "2025-02-16",
-    clockInAt: "2025-02-16T08:50:00Z",
-    clockOutAt: "2025-02-16T17:50:00Z",
-    status: "PRESENT",
-    workHours: 8,
-    overtimeHours: 0,
-    location: "Office",
-    shiftName: "General Shift",
-    isRegularized: false,
-  },
-  {
-    id: "ATT-010",
-    ...getEmployeeData("emp-102"),
-    date: "2025-02-16",
-    clockInAt: "2025-02-16T13:00:00Z",
-    clockOutAt: "2025-02-16T17:00:00Z",
-    status: "HALF_DAY",
-    workHours: 4,
-    overtimeHours: 0,
-    location: "Remote",
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Routine medical consultation in the morning",
-  },
-  {
-    id: "ATT-011",
-    ...getEmployeeData("emp-103"), // Elena Rostova (Active Maternity Leave LV-1009)
-    date: "2025-02-16",
-    clockInAt: null,
-    clockOutAt: null,
-    status: "ON_LEAVE",
-    workHours: null,
-    overtimeHours: null,
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Approved Maternity Leave",
-  },
-  {
-    id: "ATT-012",
-    ...getEmployeeData("emp-106"), // Liam O'Connor (Active Sick Leave LV-1002)
-    date: "2025-02-16",
-    clockInAt: null,
-    clockOutAt: null,
-    status: "ON_LEAVE",
-    workHours: null,
-    overtimeHours: null,
-    shiftName: "General Shift",
-    isRegularized: false,
-    notes: "Approved Sick Leave - Recovery from procedure",
-  },
-  {
-    id: "ATT-013",
-    ...getEmployeeData("emp-115"),
-    date: "2025-02-16",
-    clockInAt: "2025-02-16T08:45:00Z",
-    clockOutAt: "2025-02-16T18:00:00Z",
-    status: "PRESENT",
-    workHours: 8.25,
-    overtimeHours: 0.25,
-    location: "Office",
-    shiftName: "General Shift",
-    isRegularized: false,
-  },
-];
+// ============================================================================
+// Exports & Dynamic Resolving
+// ============================================================================
 
 /**
- * NOTE: mockAttendanceStats represents aggregated, organization-wide summary data
- * (e.g., across all active/inactive employees over a broader, cumulative date range)
- * rather than being dynamically derived from the sample records listed above.
- * This preserves high-fidelity KPI values on the dashboard analytics views.
+ * Dynamically resolves and denormalizes the relational metadata of each attendance event.
+ * 
+ * This implementation mimics an active ORM join query (e.g., Prisma "include") to
+ * serve rich transactional records directly to tabular frontends. Relational integrity
+ * checks are enforced, avoiding silent fallback defaults and ensuring correctness in local development.
  */
-export const mockAttendanceStats: AttendanceStats = {
-  presentCount: 220,
-  absentCount: 3,
-  lateCount: 15,
-  onLeaveCount: 12,
-  attendanceRate: 94.5,
-  averageWorkHours: 8.1,
-  totalOvertimeHours: 45.5,
-};
+export const mockAttendanceWithEmployees: AttendanceWithEmployee[] = mockAttendances.map((attendance) => {
+  const employee = resolveEmployee(attendance, employeeMap);
+
+  return {
+    id: attendance.id,
+    attendance,
+    employee: {
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      email: employee.email,
+      avatarUrl: employee.avatarUrl ?? null,
+      designation: employee.designation,
+      departmentId: employee.departmentId ?? null,
+    },
+  };
+});

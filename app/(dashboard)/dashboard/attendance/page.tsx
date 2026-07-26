@@ -1,95 +1,273 @@
 "use client";
 
-import { useMemo, useState } from "react";
+// ============================================================================
+// Imports
+// ============================================================================
 
-import AttendanceStats from "@/components/attendance/attendance-stats";
-import ClockInCard from "@/components/attendance/clock-in-card";
-import { AttendanceFilters as AttendanceFiltersPanel } from "@/components/attendance/attendance-filters";
-import { AttendanceTable } from "@/components/attendance/attendance-table";
-
-import { applyAttendanceFilters } from "@/lib/attendance/filters";
-
-import { mockAttendanceRecords } from "@/mock/attendance";
+import * as React from "react";
+import { mockAttendanceWithEmployees } from "@/mock/attendance";
 import { mockEmployees } from "@/mock/employee";
+import { AttendanceWithEmployee } from "@/types/attendance";
+import { calculateAttendanceMetrics } from "@/lib/reports/attendance-metrics";
+import { AttendanceTable } from "@/components/attendance/attendance-table";
+import { AttendanceFilters, AttendanceFilterState } from "@/components/attendance/attendance-filters";
+import { AttendanceForm, AttendanceFormValues } from "@/components/attendance/attendance-form";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Plus, Users, Clock, ShieldCheck, CheckCircle2 } from "lucide-react";
 
-import type { AttendanceFilters } from "@/types/attendance";
+// ============================================================================
+// Helpers
+// ============================================================================
 
-// Reusable constant for initializing and resetting dashboard filters.
-const INITIAL_ATTENDANCE_FILTERS: AttendanceFilters = {
-  employeeId: undefined,
-  department: undefined,
-  status: undefined,
-  location: undefined,
-  shiftName: undefined,
-  search: undefined,
-  startDate: undefined,
-  endDate: undefined,
-  isRegularized: undefined,
-};
+/**
+ * Creates a normalized attendance transaction payload paired with its corresponding employee metadata.
+ * Enforces strong isolation and preserves strict relational boundaries.
+ */
+function createAttendanceRecord(
+  values: AttendanceFormValues,
+  timestamp: string
+): AttendanceWithEmployee {
+  const selectedEmployee = mockEmployees.find((e) => e.id === values.employeeId);
+  const newRecordId = `att-${Date.now()}`;
+
+  return {
+    id: newRecordId,
+    attendance: {
+      id: newRecordId,
+      tenantId: selectedEmployee?.tenantId ?? "tenant-konark-tech",
+      employeeId: values.employeeId,
+      attendanceDate: values.attendanceDate,
+      checkIn: values.checkIn || null,
+      checkOut: values.checkOut || null,
+      totalHours: values.totalHours || null,
+      overtimeHours: values.overtimeHours || null,
+      breakDuration: values.breakDuration || null,
+      status: values.status,
+      workMode: values.workMode,
+      remarks: values.remarks || null,
+      location: values.location || null,
+      shiftName: values.shiftName || null,
+      isRegularized: values.isRegularized,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    employee: {
+      firstName: selectedEmployee?.firstName ?? "Unknown",
+      lastName: selectedEmployee?.lastName ?? "User",
+      email: selectedEmployee?.email ?? "no-email@domain.com",
+      avatarUrl: selectedEmployee?.avatarUrl ?? null,
+      designation: selectedEmployee?.designation ?? "Employee",
+      departmentId: selectedEmployee?.departmentId ?? null,
+    },
+  };
+}
+
+/**
+ * Merges updated form values into an existing attendance transaction record.
+ */
+function updateAttendanceRecord(
+  existingRecord: AttendanceWithEmployee,
+  values: AttendanceFormValues,
+  timestamp: string
+): AttendanceWithEmployee {
+  return {
+    ...existingRecord,
+    attendance: {
+      ...existingRecord.attendance,
+      employeeId: values.employeeId,
+      attendanceDate: values.attendanceDate,
+      checkIn: values.checkIn || null,
+      checkOut: values.checkOut || null,
+      totalHours: values.totalHours || null,
+      overtimeHours: values.overtimeHours || null,
+      breakDuration: values.breakDuration || null,
+      status: values.status,
+      workMode: values.workMode,
+      remarks: values.remarks || null,
+      location: values.location || null,
+      shiftName: values.shiftName || null,
+      isRegularized: values.isRegularized,
+      updatedAt: timestamp,
+    },
+  };
+}
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export default function AttendancePage() {
-  const [filters, setFilters] = useState<AttendanceFilters>(
-    INITIAL_ATTENDANCE_FILTERS
+  // --------------------------------------------------------------------------
+  // State
+  // --------------------------------------------------------------------------
+
+  const [data, setData] = React.useState<AttendanceWithEmployee[]>(mockAttendanceWithEmployees);
+  const [filters, setFilters] = React.useState<AttendanceFilterState>({
+    search: "",
+    status: "ALL",
+    workMode: "ALL",
+  });
+
+  const [isDialogOpen, setIsDialogOpen] = React.useState(false);
+  const [editingRecord, setEditingRecord] = React.useState<AttendanceWithEmployee | null>(null);
+
+  // --------------------------------------------------------------------------
+  // Memoized Values
+  // --------------------------------------------------------------------------
+
+  // Compute analytics metrics from current dataset
+  const metrics = React.useMemo(() => {
+    const rawAttendances = data.map((d) => d.attendance);
+    return calculateAttendanceMetrics(rawAttendances);
+  }, [data]);
+
+  // Robust, dynamic filtering keeping time complexity at O(n)
+  const filteredData = React.useMemo(() => {
+    return data.filter((row) => {
+      const searchTarget = `${row.employee.firstName} ${row.employee.lastName}`.toLowerCase();
+      const searchQuery = filters.search.toLowerCase();
+
+      const searchMatch = filters.search === "" || searchTarget.includes(searchQuery);
+      const statusMatch = filters.status === "ALL" || row.attendance.status === filters.status;
+      const workModeMatch = filters.workMode === "ALL" || row.attendance.workMode === filters.workMode;
+
+      return searchMatch && statusMatch && workModeMatch;
+    });
+  }, [data, filters]);
+
+  // --------------------------------------------------------------------------
+  // Handlers
+  // --------------------------------------------------------------------------
+
+  const handleEditClick = React.useCallback((record: AttendanceWithEmployee) => {
+    setEditingRecord(record);
+    setIsDialogOpen(true);
+  }, []);
+
+  const handleCreateClick = React.useCallback(() => {
+    setEditingRecord(null);
+    setIsDialogOpen(true);
+  }, []);
+
+  const handleFormSubmit = React.useCallback(
+    (values: AttendanceFormValues) => {
+      const timestamp = new Date().toISOString();
+
+      if (editingRecord) {
+        // Enforce update mutations
+        setData((prev) =>
+          prev.map((row) =>
+            row.id === editingRecord.id
+              ? updateAttendanceRecord(row, values, timestamp)
+              : row
+          )
+        );
+      } else {
+        // Enforce transaction creations
+        const newRow = createAttendanceRecord(values, timestamp);
+        setData((prev) => [newRow, ...prev]);
+      }
+      setIsDialogOpen(false);
+    },
+    [editingRecord]
   );
 
-  // Employee dropdown options
-  const employeeOptions = useMemo(() => {
-    return mockEmployees.map((employee) => ({
-      id: employee.id,
-      fullName: employee.fullName,
-    }));
-  }, []);
-
-  // Department dropdown options
-  const departmentOptions = useMemo(() => {
-    const departments = mockEmployees.map((employee) => employee.department);
-
-    const uniqueDepartments = Array.from(new Set(departments));
-
-    return uniqueDepartments.sort((a, b) => a.localeCompare(b));
-  }, []);
-
-  // Apply all attendance filters
-  const filteredRecords = useMemo(() => {
-    return applyAttendanceFilters(mockAttendanceRecords, filters);
-  }, [filters]);
+  // --------------------------------------------------------------------------
+  // Render
+  // --------------------------------------------------------------------------
 
   return (
-    <div className="flex min-h-[calc(100vh-64px)] flex-col gap-6 bg-neutral-50/40 p-6 dark:bg-neutral-950/20">
-      {/* Page Header */}
-      <div className="flex flex-col space-y-1.5">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Attendance Management
-        </h1>
-
-        <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">
-          Monitor attendance, working hours, employee presence, and daily
-          activity across the organization.
-        </p>
+    <div className="flex-1 space-y-6 p-8 pt-6">
+      
+      {/* Title Bar & Actions */}
+      <div className="flex items-center justify-between space-y-2">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Attendance Logs</h2>
+          <p className="text-muted-foreground text-sm">
+            Monitor modern enterprise time tracking records, shift names, and regularizations.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleCreateClick} size="sm">
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" /> Add Record
+          </Button>
+        </div>
       </div>
 
-      {/* Dashboard Statistics */}
-      <AttendanceStats />
-
-      {/* Main Dashboard */}
-      <div className="grid w-full grid-cols-1 items-start gap-6 lg:grid-cols-3">
-        {/* Clock In Panel */}
-        <div className="h-full lg:col-span-1">
-          <ClockInCard />
+      {/* Analytics Metric Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+          <div className="flex flex-row items-center justify-between pb-2">
+            <span className="text-sm font-medium text-muted-foreground">Active Staff Records</span>
+            <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          </div>
+          <div className="text-2xl font-bold">{metrics.totalRecords}</div>
+          <p className="text-xs text-muted-foreground">Total trackings processed</p>
         </div>
 
-        {/* Attendance Table Section */}
-        <div className="flex w-full flex-col gap-4 overflow-hidden lg:col-span-2">
-          <AttendanceFiltersPanel
-            filters={filters}
-            onFiltersChange={setFilters}
-            employees={employeeOptions}
-            departments={departmentOptions}
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+          <div className="flex flex-row items-center justify-between pb-2">
+            <span className="text-sm font-medium text-muted-foreground">Avg Shift Hours</span>
+            <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          </div>
+          <div className="text-2xl font-bold">{metrics.averageWorkingHours} hrs</div>
+          <p className="text-xs text-muted-foreground">Across present logs</p>
+        </div>
+
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+          <div className="flex flex-row items-center justify-between pb-2">
+            <span className="text-sm font-medium text-muted-foreground">Overtime Scheduled</span>
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+          </div>
+          <div className="text-2xl font-bold text-emerald-600">
+            {metrics.totalOvertimeHours} hrs
+          </div>
+          <p className="text-xs text-muted-foreground">Approved overtime volume</p>
+        </div>
+
+        <div className="rounded-xl border bg-card text-card-foreground p-6 shadow-sm">
+          <div className="flex flex-row items-center justify-between pb-2">
+            <span className="text-sm font-medium text-muted-foreground">Regularizations</span>
+            <ShieldCheck className="h-4 w-4 text-amber-500" aria-hidden="true" />
+          </div>
+          <div className="text-2xl font-bold text-amber-600">
+            {metrics.regularizationCount}
+          </div>
+          <p className="text-xs text-muted-foreground">Manually certified entries</p>
+        </div>
+      </div>
+
+      {/* Dynamic Data Grid */}
+      <div className="space-y-4">
+        <AttendanceFilters filters={filters} onFiltersChange={setFilters} />
+        <AttendanceTable data={filteredData} onEdit={handleEditClick} />
+      </div>
+
+      {/* Transaction Control Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-2xl overflow-y-auto max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingRecord ? "Edit Attendance Record" : "Create New Attendance Log"}
+            </DialogTitle>
+            <DialogDescription>
+              Align check times, status corrections, and operational regularization parameters.
+            </DialogDescription>
+          </DialogHeader>
+          <AttendanceForm
+            record={editingRecord}
+            onSubmit={handleFormSubmit}
+            onCancel={() => setIsDialogOpen(false)}
           />
-
-          <AttendanceTable records={filteredRecords} />
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

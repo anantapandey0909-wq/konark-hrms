@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-import LeaveForm from "@/components/leave/leave-form";
+import { LeaveForm } from "@/components/leave/leave-form";
 import type { LeaveFormData } from "@/types/leave";
 
 export default function NewLeavePage() {
@@ -14,7 +14,7 @@ export default function NewLeavePage() {
     console.log("New Leave Request:", data);
 
     // Temporary navigation after successful creation.
-    router.push("/leave");
+    router.push("/dashboard/leave");
   };
 
   const handleCancel = () => {

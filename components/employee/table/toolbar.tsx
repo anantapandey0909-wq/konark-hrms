@@ -1,143 +1,141 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { EmployeeFilters, Department, EmployeeStatus, EmployeeRole } from '@/types/employee';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, X, Download, Plus, Filter } from 'lucide-react';
+import React from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { X, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { EmployeeStatus, EmploymentType } from "@/types/employee";
+import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES } from "@/types/employee";
+import type { Department } from "@/types/department";
 
-interface ToolbarProps {
-  filters: EmployeeFilters;
-  onFilterChange: (filters: EmployeeFilters) => void;
-  onAddClick: () => void;
-  onExportClick: () => void;
+export interface EmployeeFilters {
+  search: string;
+  departmentId: string | "ALL";
+  status: EmployeeStatus | "ALL";
+  employmentType: EmploymentType | "ALL";
 }
 
-const DEPARTMENTS: (Department | 'ALL')[] = [
-  'ALL',
-  'Engineering',
-  'Product',
-  'Design',
-  'Marketing',
-  'Sales',
-  'HR',
-  'Finance',
-  'Operations',
-];
+interface EmployeeTableToolbarProps {
+  filters: EmployeeFilters;
+  setFilters: React.Dispatch<React.SetStateAction<EmployeeFilters>>;
+  departments: Department[];
+  className?: string;
+}
 
-const STATUSES: (EmployeeStatus | 'ALL')[] = ['ALL', 'ACTIVE', 'INACTIVE', 'ON_LEAVE', 'SUSPENDED'];
+export function EmployeeTableToolbar({
+  filters,
+  setFilters,
+  departments,
+  className,
+}: EmployeeTableToolbarProps) {
+  const isFiltered = 
+    filters.search !== "" || 
+    filters.departmentId !== "ALL" || 
+    filters.status !== "ALL" || 
+    filters.employmentType !== "ALL";
 
-const ROLES: (EmployeeRole | 'ALL')[] = ['ALL', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR_PARTNER', 'DIRECTOR'];
-
-export function Toolbar({ filters, onFilterChange, onAddClick, onExportClick }: ToolbarProps) {
-  const isFiltered = filters.search !== '' || filters.department !== 'ALL' || filters.status !== 'ALL' || filters.role !== 'ALL';
-
-  const handleReset = React.useCallback(() => {
-  onFilterChange({
-    search: "",
-    department: "ALL",
-    status: "ALL",
-    role: "ALL",
-  });
-}, [onFilterChange]);
+  const handleReset = () => {
+    setFilters({
+      search: "",
+      departmentId: "ALL",
+      status: "ALL",
+      employmentType: "ALL",
+    });
+  };
 
   return (
-    <div className="flex flex-col gap-4 py-3 md:flex-row md:items-center md:justify-between">
-      <div className="flex flex-1 flex-wrap items-center gap-2">
-        <div className="relative w-full md:max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+    <div className={cn("flex flex-col sm:flex-row items-center justify-between gap-4 w-full", className)}>
+      <div className="flex flex-1 flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+        {/* Search Input */}
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground/70" />
           <Input
             placeholder="Search employees..."
             value={filters.search}
-            onChange={(e) => onFilterChange({ ...filters, search: e.target.value })}
-            className="pl-9 h-9 border-neutral-200 dark:border-neutral-800 rounded-lg text-sm bg-white dark:bg-neutral-950"
+            onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+            className="pl-9 rounded-xl border-muted/60 h-9"
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        {/* Department Filter */}
+        <div className="w-full sm:w-48">
           <Select
-            value={filters.department}
-            onValueChange={(val) => onFilterChange({ ...filters, department: val as Department | 'ALL' })}
+            value={filters.departmentId}
+            onValueChange={(val) => setFilters((prev) => ({ ...prev, departmentId: val }))}
           >
-            <SelectTrigger className="h-9 w-full sm:w-[150px] border-neutral-200 dark:border-neutral-800 text-xs">
-              <span className="flex items-center gap-1">
-                <Filter className="h-3.5 w-3.5 text-neutral-400" />
-                <SelectValue placeholder="Department" />
-              </span>
+            <SelectTrigger className="rounded-xl border-muted/60 h-9">
+              <SelectValue placeholder="All Departments" />
             </SelectTrigger>
-            <SelectContent className="border-neutral-200 dark:border-neutral-800">
-              {DEPARTMENTS.map((dept) => (
-                <SelectItem key={dept} value={dept} className="text-xs">
-                  {dept === 'ALL' ? 'All Departments' : dept}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={filters.status}
-            onValueChange={(val) => onFilterChange({ ...filters, status: val as EmployeeStatus | 'ALL' })}
-          >
-            <SelectTrigger className="h-9 w-full sm:w-[130px] border-neutral-200 dark:border-neutral-800 text-xs">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent className="border-neutral-200 dark:border-neutral-800">
-              {STATUSES.map((status) => (
-                <SelectItem key={status} value={status} className="text-xs">
-                  {status === 'ALL' ? 'All Statuses' : status.replace('_', ' ')}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={filters.role}
-            onValueChange={(val) => onFilterChange({ ...filters, role: val as EmployeeRole | 'ALL' })}
-          >
-            <SelectTrigger className="h-9 w-full sm:w-[130px] border-neutral-200 dark:border-neutral-800 text-xs">
-              <SelectValue placeholder="Role" />
-            </SelectTrigger>
-            <SelectContent className="border-neutral-200 dark:border-neutral-800">
-              {ROLES.map((role) => (
-                <SelectItem key={role} value={role} className="text-xs">
-                  {role === 'ALL' ? 'All Roles' : role.replace('_', ' ')}
+            <SelectContent className="rounded-xl">
+              <SelectItem value="ALL">All Departments</SelectItem>
+              {departments.map((dept) => (
+                <SelectItem key={dept.id} value={dept.id}>
+                  {dept.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
 
+        {/* Employment Type Filter */}
+        <div className="w-full sm:w-44">
+          <Select
+            value={filters.employmentType}
+            onValueChange={(val) => setFilters((prev) => ({ ...prev, employmentType: val as EmploymentType | "ALL" }))}
+          >
+            <SelectTrigger className="rounded-xl border-muted/60 h-9">
+              <SelectValue placeholder="All Classifications" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="ALL">All Types</SelectItem>
+              {EMPLOYMENT_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  <span className="capitalize">{type.replace("_", " ").toLowerCase()}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Status Filter */}
+        <div className="w-full sm:w-40">
+          <Select
+            value={filters.status}
+            onValueChange={(val) => setFilters((prev) => ({ ...prev, status: val as EmployeeStatus | "ALL" }))}
+          >
+            <SelectTrigger className="rounded-xl border-muted/60 h-9">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="ALL">All Statuses</SelectItem>
+              {EMPLOYEE_STATUSES.map((status) => (
+                <SelectItem key={status} value={status}>
+                  <span className="capitalize">{status.replace("_", " ").toLowerCase()}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Reset Action Button */}
         {isFiltered && (
           <Button
             variant="ghost"
             onClick={handleReset}
-            className="h-9 px-3 text-xs flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg"
+            className="rounded-xl h-9 px-3 gap-1.5 text-xs text-muted-foreground hover:text-foreground shrink-0 w-full sm:w-auto"
           >
             <X className="h-3.5 w-3.5" />
-            Reset filters
+            <span>Reset Filters</span>
           </Button>
         )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onExportClick}
-          className="h-9 border-neutral-200 dark:border-neutral-800 text-xs flex items-center gap-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-900 rounded-lg text-neutral-700 dark:text-neutral-300"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Export
-        </Button>
-        <Button
-          size="sm"
-          onClick={onAddClick}
-          className="h-9 bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-xs font-medium flex items-center gap-1.5 hover:bg-neutral-800 dark:hover:bg-neutral-200 rounded-lg px-4"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Employee
-        </Button>
       </div>
     </div>
   );

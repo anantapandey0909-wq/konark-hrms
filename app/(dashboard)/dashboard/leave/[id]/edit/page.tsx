@@ -5,7 +5,7 @@ import { useRouter, notFound } from "next/navigation";
 
 import { mockLeaveRequests } from "@/mock/leave";
 import { mapLeaveRequestToForm } from "@/lib/leave/mapLeaveRequestToForm";
-import LeaveForm from "@/components/leave/leave-form";
+import { LeaveForm } from "@/components/leave/leave-form";
 import type { LeaveFormData } from "@/types/leave";
 
 interface EditLeavePageProps {
@@ -37,7 +37,7 @@ export default function EditLeavePage({
     console.log("Updated Leave Request:", data);
 
     // Temporary navigation after successful save.
-    router.push(`/leave/${id}`);
+    router.push(`/dashboard/leave/${id}`);
   };
 
   const handleCancel = () => {

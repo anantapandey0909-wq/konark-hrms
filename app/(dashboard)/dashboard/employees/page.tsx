@@ -1,129 +1,74 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { Employee, EmployeeFilters } from '@/types/employee';
-import { mockEmployees } from '@/mock/employee';
-import { Toolbar } from '@/components/employee/table/toolbar';
-import { EmployeeTable } from '@/components/employee/table/employee-table';
-import { motion } from 'framer-motion';
+import React, { useState, useMemo } from "react";
+import Link from "next/link";
+import { Plus, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { EmployeeTable } from "@/components/employee/table/employee-table";
+import { EmployeeTableToolbar } from "@/components/employee/table/toolbar";
+import type { EmployeeFilters } from "@/components/employee/table/toolbar";
+import type { Employee } from "@/types/employee";
+import { mockEmployees } from "@/mock/employee";
+import { mockDepartments } from "@/mock/department";
 
 export default function EmployeesPage() {
-  const router = useRouter();
-
-  const [employees, setEmployees] = React.useState<Employee[]>(mockEmployees);
-  const [isLoading, setIsLoading] = React.useState<boolean>(true);
-
-  const [filters, setFilters] = React.useState<EmployeeFilters>({
-    search: '',
-    department: 'ALL',
-    status: 'ALL',
-    role: 'ALL',
+  const [filters, setFilters] = useState<EmployeeFilters>({
+    search: "",
+    departmentId: "ALL",
+    status: "ALL",
+    employmentType: "ALL",
   });
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 600);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleEdit = React.useCallback(
-  (employee: Employee) => {
-    router.push(`/dashboard/employees/${employee.id}/edit`);
-  },
-  [router]
-);
-
-  const handleDeactivate = React.useCallback((id: string) => {
-    setEmployees((prev) =>
-      prev.map((emp) =>
-        emp.id === id
-          ? {
-              ...emp,
-              status: 'INACTIVE',
-            }
-          : emp
-      )
-    );
-  }, []);
-
-  const handleAddClick = React.useCallback(() => {
-    router.push('/dashboard/employees/new');
-  }, [router]);
-
-  const handleExportClick = React.useCallback(() => {
-    console.log('Export Employees');
-  }, []);
-
-  const filteredEmployees = React.useMemo(() => {
-    return employees.filter((emp) => {
+  // Strict client-side filtering matching the new multi-tenant keys
+  const filteredEmployees = useMemo(() => {
+    return mockEmployees.filter((emp: Employee) => {
+      const fullName = `${emp.firstName} ${emp.lastName}`.toLowerCase();
       const matchesSearch =
-        emp.fullName.toLowerCase().includes(filters.search.toLowerCase()) ||
+        fullName.includes(filters.search.toLowerCase()) ||
         emp.email.toLowerCase().includes(filters.search.toLowerCase()) ||
-        emp.employeeCode.toLowerCase().includes(filters.search.toLowerCase()) ||
-        emp.designation.toLowerCase().includes(filters.search.toLowerCase());
+        emp.employeeId.toLowerCase().includes(filters.search.toLowerCase());
 
-      const matchesDepartment =
-        filters.department === 'ALL' ||
-        emp.department === filters.department;
+      const matchesDept = filters.departmentId === "ALL" || emp.departmentId === filters.departmentId;
+      const matchesStatus = filters.status === "ALL" || emp.status === filters.status;
+      const matchesType = filters.employmentType === "ALL" || emp.employmentType === filters.employmentType;
 
-      const matchesStatus =
-        filters.status === 'ALL' ||
-        emp.status === filters.status;
-
-      const matchesRole =
-        filters.role === 'ALL' ||
-        emp.role === filters.role;
-
-      return (
-        matchesSearch &&
-        matchesDepartment &&
-        matchesStatus &&
-        matchesRole
-      );
+      return matchesSearch && matchesDept && matchesStatus && matchesType;
     });
-  }, [employees, filters]);
+  }, [filters]);
 
   return (
-    <div className="flex flex-col gap-6 p-6 min-h-[calc(100vh-64px)] bg-neutral-50/40 dark:bg-neutral-950/20">
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="flex flex-col gap-1"
-      >
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
-          Employee Directory
-        </h1>
+    <div className="flex flex-col gap-6 p-4 md:p-8 w-full">
+      {/* Directory Title and Trigger Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight inline-flex items-center gap-2">
+            <Users className="h-7 w-7 text-primary shrink-0" />
+            <span>Employee Directory</span>
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Monitor, organize, and administer company personnel records.
+          </p>
+        </div>
+        <Link href="/dashboard/employees/create" passHref>
+          <Button className="rounded-xl gap-2 font-medium self-start sm:self-auto h-9">
+            <Plus className="h-4 w-4" />
+            <span>Add Employee</span>
+          </Button>
+        </Link>
+      </div>
 
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 font-normal">
-          Manage system accessibility levels, dynamic roles, personal
-          information records, and workspace status updates.
-        </p>
-      </motion.div>
+      {/* Interactive Filter Toolbar */}
+      <EmployeeTableToolbar
+        filters={filters}
+        setFilters={setFilters}
+        departments={mockDepartments}
+      />
 
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.05, ease: 'easeOut' }}
-        className="space-y-4"
-      >
-        <Toolbar
-          filters={filters}
-          onFilterChange={setFilters}
-          onAddClick={handleAddClick}
-          onExportClick={handleExportClick}
-        />
-
-        <EmployeeTable
-          data={filteredEmployees}
-          isLoading={isLoading}
-          onEdit={handleEdit}
-          onDeactivate={handleDeactivate}
-        />
-      </motion.div>
+      {/* Directory Presentation Grid */}
+      <EmployeeTable
+        employees={filteredEmployees}
+        isLoading={false}
+      />
     </div>
   );
 }

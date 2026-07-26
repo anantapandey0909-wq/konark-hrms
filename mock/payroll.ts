@@ -1,125 +1,77 @@
-import { mockEmployees } from "./employee";
-import { Employee } from "../types/employee";
-import {
-  PayrollRecord,
-  PayrollSummary,
-  PayrollStats,
-  PayrollStatus,
-  PayrollMonth,
-  PayrollAllowance,
-  PayrollDeduction
-} from "../types/payroll";
+import type { 
+  PayrollRecord, 
+  PayrollMonth, 
+  PayrollStatus, 
+  SalaryBreakdown, 
+  PayrollAllowance, 
+  PayrollDeduction,
+  PayrollAttendanceSummary,
+  PayrollLeaveSummary
+} from "@/types/payroll";
+import type { Department } from "@/types/department";
+import { mockEmployees } from "@/mock/employee";
+import { mockDepartments } from "@/mock/department";
+import { mockAttendances } from "@/mock/attendance";
+import { mockLeaveRequests } from "@/mock/leave";
 
-// Month to Number Mapping
-const MONTH_TO_NUMBER: Record<PayrollMonth, string> = {
-  JANUARY: "01",
-  FEBRUARY: "02",
-  MARCH: "03",
-  APRIL: "04",
-  MAY: "05",
-  JUNE: "06",
-  JULY: "07",
-  AUGUST: "08",
-  SEPTEMBER: "09",
-  OCTOBER: "10",
-  NOVEMBER: "11",
-  DECEMBER: "12",
+const SALARY_BANDS = {
+  LEADERSHIP: { baseline: 12000, label: "Leadership" },
+  SENIOR: { baseline: 8000, label: "Senior" },
+  ASSOCIATE: { baseline: 5000, label: "Associate" },
+} as const;
+
+const fallbackDepartment: Department = {
+  id: "dept-fallback",
+  tenantId: "tenant-konark-tech",
+  name: "General",
+  code: "GEN",
+  description: "Fallback Department",
+  managerId: null,
+  parentDepartmentId: null,
+  status: "ACTIVE",
+  sortOrder: 1,
+  budget: null,
+  createdAt: "2025-01-01T00:00:00.000Z",
+  updatedAt: "2025-01-01T00:00:00.000Z",
 };
 
-// Indian Salary Range Mapper based on Designation
-const getBasicSalary = (designation: string): number => {
-  const d = designation.toLowerCase();
-  if (d.includes("director") || d.includes("vp")) return 280000;
-  if (d.includes("manager") || d.includes("lead")) return 150000;
-  if (d.includes("senior") || d.includes("sr.")) return 95000;
-  if (d.includes("intern")) return 25000;
-  return 55000; // standard Engineer / default role
-};
-
-// Builder: Attendance Summary
-const buildAttendanceSummary = (month: PayrollMonth, index: number) => {
-  const workingDays = month === "JUNE" ? 20 : month === "JULY" ? 23 : 22;
-  const absentDays = index % 5 === 0 ? 1 : 0;
-  const paidLeaveDays = index % 7 === 0 ? 2 : index % 11 === 0 ? 1 : 0;
-  const unpaidLeaveDays = index % 13 === 0 ? 1 : 0;
-  const presentDays = workingDays - absentDays - paidLeaveDays - unpaidLeaveDays;
-  const overtimeHours = index % 3 === 0 ? 8 : 0;
-  const lateEntries = index % 4 === 0 ? 2 : 0;
-
-  return {
-    workingDays,
-    presentDays,
-    absentDays,
-    paidLeaveDays,
-    unpaidLeaveDays,
-    overtimeHours,
-    lateEntries,
+const getMonthDetails = (month: PayrollMonth, year: number): { code: string; days: number } => {
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  const MONTH_MAP: Record<PayrollMonth, { code: string; days: number }> = {
+    JANUARY: { code: "01", days: 31 },
+    FEBRUARY: { code: "02", days: isLeapYear ? 29 : 28 },
+    MARCH: { code: "03", days: 31 },
+    APRIL: { code: "04", days: 30 },
+    MAY: { code: "05", days: 31 },
+    JUNE: { code: "06", days: 30 },
+    JULY: { code: "07", days: 31 },
+    AUGUST: { code: "08", days: 31 },
+    SEPTEMBER: { code: "09", days: 30 },
+    OCTOBER: { code: "10", days: 31 },
+    NOVEMBER: { code: "11", days: 30 },
+    DECEMBER: { code: "12", days: 31 },
   };
+  return MONTH_MAP[month];
 };
 
-// Builder: Leave Summary
-const buildLeaveSummary = (attendance: ReturnType<typeof buildAttendanceSummary>) => {
-  const totalLeaves = attendance.paidLeaveDays + attendance.unpaidLeaveDays;
-  return {
-    totalLeaves,
-    paidLeaves: attendance.paidLeaveDays,
-    unpaidLeaves: attendance.unpaidLeaveDays,
-    leaveWithoutPayDays: attendance.unpaidLeaveDays,
-  };
-};
+export const calculateSalaryBreakdown = (basicSalary: number): SalaryBreakdown => {
+  const hra: PayrollAllowance = { id: "all-hra", name: "House Rent Allowance", amount: Math.round(basicSalary * 0.4) };
+  const lta: PayrollAllowance = { id: "all-lta", name: "Leave Travel Allowance", amount: Math.round(basicSalary * 0.1) };
+  const special: PayrollAllowance = { id: "all-spl", name: "Special Allowance", amount: 500 };
+  
+  const pf: PayrollDeduction = { id: "ded-pf", name: "Provident Fund", amount: Math.round(basicSalary * 0.12) };
+  const tax: PayrollDeduction = { id: "ded-tax", name: "Professional Tax", amount: 200 };
+  const insurance: PayrollDeduction = { id: "ded-ins", name: "Health Insurance", amount: 150 };
 
-// Builder: Salary Breakdown
-const buildSalaryBreakdown = (
-  employeeId: string,
-  month: PayrollMonth,
-  basicSalary: number,
-  status: PayrollStatus,
-  attendance: ReturnType<typeof buildAttendanceSummary>
-) => {
-  const hra = Math.round(basicSalary * 0.40);
-  const transport = 1600;
-  const medical = 1250;
-  const internet = 1000;
-  const bonus = (status === "PAID" || status === "APPROVED") ? Math.round(basicSalary * 0.10) : 0;
+  const allowances = [hra, lta, special];
+  const deductions = [pf, tax, insurance];
 
-  const allowances: PayrollAllowance[] = [
-    { id: `all-hra-${employeeId}-${month}`, name: "HRA", amount: hra },
-    { id: `all-trans-${employeeId}-${month}`, name: "Transport", amount: transport },
-    { id: `all-med-${employeeId}-${month}`, name: "Medical", amount: medical },
-    { id: `all-net-${employeeId}-${month}`, name: "Internet", amount: internet },
-  ];
-
-  if (bonus > 0) {
-    allowances.push({ id: `all-perf-${employeeId}-${month}`, name: "Performance Bonus", amount: bonus });
-  }
-
-  const totalAllowances = allowances.reduce((sum, item) => sum + item.amount, 0);
+  const totalAllowances = allowances.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalDeductions = deductions.reduce((acc, curr) => acc + curr.amount, 0);
+  
   const grossSalary = basicSalary + totalAllowances;
-
-  const pf = Math.round(basicSalary * 0.12);
-  const profTax = 200;
-  const incomeTax = Math.round(grossSalary * 0.10);
-  const insurance = 1000;
-
-  const deductions: PayrollDeduction[] = [
-    { id: `ded-pf-${employeeId}-${month}`, name: "PF", amount: pf },
-    { id: `ded-pt-${employeeId}-${month}`, name: "Professional Tax", amount: profTax },
-    { id: `ded-tax-${employeeId}-${month}`, name: "Income Tax", amount: incomeTax },
-    { id: `ded-ins-${employeeId}-${month}`, name: "Insurance", amount: insurance },
-  ];
-
-  if (attendance.unpaidLeaveDays > 0) {
-    const perDaySalary = Math.round(basicSalary / attendance.workingDays);
-    deductions.push({
-      id: `ded-lwp-${employeeId}-${month}`,
-      name: "Leave Without Pay",
-      amount: perDaySalary * attendance.unpaidLeaveDays,
-    });
-  }
-
-  const totalDeductions = deductions.reduce((sum, item) => sum + item.amount, 0);
+  const taxableIncome = Math.max(0, grossSalary - totalDeductions);
   const netSalary = grossSalary - totalDeductions;
-  const taxableIncome = Math.max(0, grossSalary - pf - profTax);
 
   return {
     basicSalary,
@@ -133,55 +85,78 @@ const buildSalaryBreakdown = (
   };
 };
 
-// Builder: Single Payroll Record
-const buildPayrollRecord = (
-  employee: Employee,
-  index: number,
+export const generatePayrollRecord = (
+  id: string,
+  payrollNumber: string,
+  employeeId: string,
   month: PayrollMonth,
-  year: number
+  year: number,
+  status: PayrollStatus
 ): PayrollRecord => {
-  const employeeId = employee.id;
-  const employeeCode = employee.employeeCode;
-  const employeeName = employee.fullName;
-  const department = employee.department;
-  const designation = employee.designation;
-
-  let status: PayrollStatus = "PAID";
-  if (month === "AUGUST") {
-    const mod = index % 10;
-    if (mod === 0) status = "DRAFT";
-    else if (mod === 1) status = "PENDING";
-    else if (mod >= 2 && mod <= 3) status = "APPROVED";
-    else status = "PAID";
+  const employee = mockEmployees.find((emp) => emp.id === employeeId);
+  if (!employee) {
+    throw new Error(`Employee with ID ${employeeId} not found in mock data.`);
   }
 
-  const attendanceSummary = buildAttendanceSummary(month, index);
-  const leaveSummary = buildLeaveSummary(attendanceSummary);
-  const basicSalary = getBasicSalary(designation);
-  const salaryBreakdown = buildSalaryBreakdown(employeeId, month, basicSalary, status, attendanceSummary);
+  const department = mockDepartments.find((d) => d.id === employee.departmentId) ?? fallbackDepartment;
 
-  const monthNum = MONTH_TO_NUMBER[month];
-  const daysInMonth = month === "JUNE" ? "30" : "31";
-  const payPeriodStart = `${year}-${monthNum}-01`;
-  const payPeriodEnd = `${year}-${monthNum}-${daysInMonth}`;
+  const isLeadership = employee.designation.includes("VP") || employee.designation.includes("Director") || employee.designation.includes("Principal");
+  const isSenior = employee.designation.includes("Senior") || employee.designation.includes("Lead") || employee.designation.includes("Staff");
 
-  const pad = (num: number) => num.toString().padStart(3, "0");
-  const payrollNumber = `PAY-${year}-${monthNum}-${pad(index + 1)}`;
+  const band = isLeadership 
+    ? SALARY_BANDS.LEADERSHIP 
+    : isSenior 
+      ? SALARY_BANDS.SENIOR 
+      : SALARY_BANDS.ASSOCIATE;
 
-  const generatedAt = `${payPeriodEnd}T18:00:00.000Z`;
-  const paidAt = status === "PAID" ? `${payPeriodEnd}T11:00:00.000Z` : undefined;
-  const notes = status === "DRAFT" ? "Draft payroll calculated for verification." : undefined;
-  const createdAt = `${payPeriodStart}T09:00:00.000Z`;
-  const updatedAt = generatedAt;
+  const idNum = parseInt(employee.id.replace(/\D/g, "")) || 0;
+  const basicSalary = band.baseline + (idNum % 10) * 200;
 
-  return {
-    id: payrollNumber,
+  const salaryBreakdown = calculateSalaryBreakdown(basicSalary);
+
+  const monthDetails = getMonthDetails(month, year);
+
+  const empAttendances = mockAttendances.filter(
+    (att) => att.employeeId === employeeId && att.attendanceDate.startsWith(`${year}-${monthDetails.code}`)
+  );
+
+  const presentDays = empAttendances.filter((att) => att.status === "PRESENT" || att.status === "LATE").length || 20;
+  const lateEntries = empAttendances.filter((att) => att.status === "LATE").length || 2;
+  const overtimeHours = empAttendances.reduce((acc, curr) => acc + (curr.overtimeHours ?? 0), 0) || 5;
+
+  const empLeaves = mockLeaveRequests.filter(
+    (lv) => lv.employeeId === employeeId && lv.status === "APPROVED"
+  );
+  const totalLeaves = empLeaves.reduce((acc, curr) => acc + curr.totalDays, 0) || 2;
+
+  const attendanceSummary: PayrollAttendanceSummary = {
+    workingDays: monthDetails.days - 8,
+    presentDays,
+    absentDays: Math.max(0, (monthDetails.days - 8) - presentDays - totalLeaves),
+    paidLeaveDays: totalLeaves,
+    unpaidLeaveDays: 0,
+    overtimeHours,
+    lateEntries,
+  };
+
+  const leaveSummary: PayrollLeaveSummary = {
+    totalLeaves,
+    paidLeaves: totalLeaves,
+    unpaidLeaves: 0,
+    leaveWithoutPayDays: 0,
+  };
+
+  const payPeriodStart = `${year}-${monthDetails.code}-01`;
+  const payPeriodEnd = `${year}-${monthDetails.code}-${monthDetails.days}`;
+
+  const record: PayrollRecord = {
+    id,
     payrollNumber,
-    employeeId,
-    employeeCode,
-    employeeName,
+    employeeId: employee.id,
+    employeeCode: employee.employeeId,
+    employeeName: `${employee.firstName} ${employee.lastName}`,
     department,
-    designation,
+    designation: employee.designation,
     month,
     year,
     status,
@@ -190,67 +165,46 @@ const buildPayrollRecord = (
     attendanceSummary,
     leaveSummary,
     salaryBreakdown,
-    generatedAt,
-    paidAt,
-    notes,
-    createdAt,
-    updatedAt,
+    generatedAt: `${year}-${monthDetails.code}-28T09:00:00.000Z`,
+    paidAt: status === "PAID" ? `${year}-${monthDetails.code}-${monthDetails.days}T15:30:00.000Z` : undefined,
+    notes: `Monthly standard payroll release for ${month} ${year}.`,
+    createdAt: `${year}-${monthDetails.code}-28T09:00:00.000Z`,
+    updatedAt: `${year}-${monthDetails.code}-${monthDetails.days}T15:30:00.000Z`,
   };
+
+  return record;
 };
 
-// Generate Mock Records
-const generateMockPayrollRecords = (): PayrollRecord[] => {
-  const records: PayrollRecord[] = [];
-  const months: PayrollMonth[] = ["JUNE", "JULY", "AUGUST"];
-  const year = 2024;
-
-  mockEmployees.forEach((employee: Employee, index: number) => {
-    months.forEach((month) => {
-      records.push(buildPayrollRecord(employee, index, month, year));
-    });
+const januaryRecords: PayrollRecord[] = mockEmployees
+  .slice(0, 12)
+  .map((emp, index) => {
+    const paddedIndex = String(index + 1).padStart(3, "0");
+    const status: PayrollStatus = index % 4 === 0 ? "APPROVED" : index % 4 === 1 ? "PAID" : index % 4 === 2 ? "PENDING" : "DRAFT";
+    return generatePayrollRecord(
+      `pay-jan-2025-${emp.id}`,
+      `PAY-2025-01-${paddedIndex}`,
+      emp.id,
+      "JANUARY",
+      2025,
+      status
+    );
   });
 
-  return records;
-};
+const decemberRecords: PayrollRecord[] = mockEmployees
+  .slice(0, 8)
+  .map((emp, index) => {
+    const paddedIndex = String(index + 20).padStart(3, "0");
+    return generatePayrollRecord(
+      `pay-dec-2024-${emp.id}`,
+      `PAY-2024-12-${paddedIndex}`,
+      emp.id,
+      "DECEMBER",
+      2024,
+      "PAID"
+    );
+  });
 
-export const mockPayrollRecords: PayrollRecord[] = generateMockPayrollRecords();
-
-// Mock Payroll Summary
-export const mockPayrollSummary: PayrollSummary = {
-  totalPayrollRecords: mockPayrollRecords.length,
-  totalEmployees: new Set(mockPayrollRecords.map((r) => r.employeeId)).size,
-  paidPayroll: mockPayrollRecords.filter((r) => r.status === "PAID").length,
-  pendingPayroll: mockPayrollRecords.filter((r) => r.status === "PENDING").length,
-  approvedPayroll: mockPayrollRecords.filter((r) => r.status === "APPROVED").length,
-  draftPayroll: mockPayrollRecords.filter((r) => r.status === "DRAFT").length,
-};
-
-
-// Mock Payroll Stats
-export const mockPayrollStats: PayrollStats = {
-  employeeCount: new Set(mockPayrollRecords.map((r) => r.employeeId)).size,
-  totalGrossSalary: mockPayrollRecords.reduce((sum, r) => sum + r.salaryBreakdown.grossSalary, 0),
-  totalNetSalary: mockPayrollRecords.reduce((sum, r) => sum + r.salaryBreakdown.netSalary, 0),
-  totalAllowances: mockPayrollRecords.reduce((sum, r) => sum + r.salaryBreakdown.totalAllowances, 0),
-  totalDeductions: mockPayrollRecords.reduce((sum, r) => sum + r.salaryBreakdown.totalDeductions, 0),
-  averageNetSalary: mockPayrollRecords.length > 0
-    ? Math.round(mockPayrollRecords.reduce((sum, r) => sum + r.salaryBreakdown.netSalary, 0) / mockPayrollRecords.length)
-    : 0,
-};
-
-// Helper Functions
-export const getPayrollById = (id: string): PayrollRecord | undefined => {
-  return mockPayrollRecords.find((r) => r.id === id || r.payrollNumber === id);
-};
-
-export const getPayrollByEmployee = (employeeId: string): PayrollRecord[] => {
-  return mockPayrollRecords.filter((r) => r.employeeId === employeeId);
-};
-
-export const getPayrollByStatus = (status: PayrollStatus): PayrollRecord[] => {
-  return mockPayrollRecords.filter((r) => r.status === status);
-};
-
-export const getPayrollByMonth = (month: PayrollMonth): PayrollRecord[] => {
-  return mockPayrollRecords.filter((r) => r.month === month);
-};
+export const mockPayrollRecords: PayrollRecord[] = [
+  ...januaryRecords,
+  ...decemberRecords,
+];

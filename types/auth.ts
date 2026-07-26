@@ -1,86 +1,80 @@
-/**
- * Readonly array representing the authorized system roles in the HRMS.
- */
-export const AUTH_ROLES = ["ADMIN", "HR", "MANAGER", "EMPLOYEE"] as const;
+export const AUTH_ROLES = [
+  "ADMIN",
+  "HR",
+  "ACCOUNTANT",
+  "MANAGER",
+  "SUPERVISOR",
+  "EMPLOYEE",
+] as const;
+
+export type AuthRole = typeof AUTH_ROLES[number];
+
+export const AUTH_PROVIDERS = ["credentials", "google", "github"] as const;
+
+export type AuthProvider = typeof AUTH_PROVIDERS[number];
 
 /**
- * Union type representing the possible system roles.
+ * Lightweight, optimized slice of Tenant metadata stored directly inside the
+ * authentication context. Keeps token and session footprints minimal.
  */
-export type AuthRole = (typeof AUTH_ROLES)[number];
-
-/**
- * Readonly array representing supported authentication providers.
- */
-export const AUTH_PROVIDERS = ["CREDENTIALS"] as const;
-
-/**
- * Union type representing supported authentication providers.
- */
-export type AuthProvider = (typeof AUTH_PROVIDERS)[number];
-
-/**
- * Readonly array representing authentication operation statuses.
- */
-export const AUTH_STATUS = ["IDLE", "LOADING", "SUCCESS", "ERROR"] as const;
-
-/**
- * Union type representing the current authentication operation state.
- */
-export type AuthStatus = (typeof AUTH_STATUS)[number];
-
-/**
- * Interface representing credentials submitted for login.
- */
-export interface LoginCredentials {
-  email: string;
-  password: string;
-  rememberMe: boolean;
+export interface AuthUserTenant {
+  readonly id: string;
+  readonly name: string;
+  readonly slug: string;
 }
 
 /**
- * Interface representing a request payload to trigger a password recovery email.
+ * Represents the current authenticated user session context.
+ * Partitioned and fully isolated by Tenant.
  */
-export interface ForgotPasswordRequest {
-  email: string;
+export interface User {
+  readonly loginId: string;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly role: AuthRole;
+  
+  // Single source of truth for Tenant context
+  readonly tenant: AuthUserTenant;
+  
+  // Predictable state representing system-wide operator permissions
+  readonly isSuperAdmin: boolean; 
+  
+  // Optional collection to support interactive cross-tenant switching
+  readonly allowedTenants?: readonly AuthUserTenant[];
 }
 
 /**
- * Interface representing a payload to verify and complete password reset.
+ * Alias to support backward compatibility for parts of the application
+ * that directly reference the AuthUser signature.
  */
-export interface ResetPasswordRequest {
-  token: string;
-  password: string;
-  confirmPassword: string;
-}
+export type AuthUser = User;
 
 /**
- * Interface representing the authenticated identity in the system.
- */
-export interface AuthUser {
-  id: string;
-  employeeId: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  role: AuthRole;
-  avatar?: string;
-}
-
-/**
- * Interface representing session metadata for an authenticated user.
+ * Represents an active security session context.
  */
 export interface AuthSession {
-  user: AuthUser;
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt: string; // ISO format string
+  readonly token: string;
+  readonly user: User;
+  readonly expiresAt?: string;
 }
 
 /**
- * Interface representing a standardized response payload for authentication actions.
+ * Represents the structured response returned by authentication actions.
  */
 export interface AuthResponse {
-  success: boolean;
-  message: string;
-  session?: AuthSession;
+  readonly success: boolean;
+  readonly message: string;
+  readonly user: User;
+  readonly token: string;
+  readonly session?: AuthSession;
+}
+
+/**
+ * Represents the global authentication state.
+ */
+export interface AuthState {
+  readonly user: User | null;
+  readonly isAuthenticated: boolean;
+  readonly isLoading: boolean;
 }

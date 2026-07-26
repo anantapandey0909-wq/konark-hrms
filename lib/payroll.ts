@@ -1,342 +1,218 @@
-import {
-  PayrollRecord,
-  PayrollSummary,
-  PayrollStats,
-  PayrollStatus,
-  PayrollMonth,
-  PayrollAllowance,
-  PayrollDeduction,
-  PayrollFilters
-} from "../types/payroll";
+import { PayrollRecord, PayrollStatus, PayrollFilters } from "@/types/payroll";
 
-// ==========================================
-// Shared Types
-// ==========================================
-export type PayrollSortField = "employeeName" | "generatedAt" | "month" | "netSalary";
-export type PayrollSortDirection = "asc" | "desc";
+export interface PayrollSummary {
+  readonly totalBasicSalary: number;
+  readonly totalAllowances: number;
+  readonly totalDeductions: number;
+  readonly totalNetSalary: number;
+}
 
-// ==========================================
-// 1. Formatting Helpers
-// ==========================================
+export interface PayrollStatistics {
+  readonly totalRecordsCount: number;
+  readonly paidCount: number;
+  readonly pendingCount: number;
+  readonly approvedCount: number;
+  readonly draftCount: number;
+  readonly cancelledCount: number;
+  readonly averageNetSalary: number;
+}
 
 /**
- * Formats a numeric amount into Indian Rupees (INR) currency format.
- * Example: 125000 -> ₹1,25,000
- * 
- * @param amount - The numeric salary or amount to format.
- * @returns The formatted currency string.
+ * Calculates gross salary by adding allowances to basic salary.
  */
-export const formatPayrollCurrency = (amount: number): string => {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
+export function calculateGrossSalary(basicSalary: number, totalAllowances: number): number {
+  return Math.round((basicSalary + totalAllowances) * 100) / 100;
+}
 
 /**
- * Converts a string-based PayrollMonth into a capitalized, readable string.
- * Example: JANUARY -> January
- * 
- * @param month - The uppercase payroll month enum value.
- * @returns Capitalized readable month string.
+ * Calculates net salary by subtracting total deductions from gross salary.
  */
-export const formatPayrollMonth = (month: PayrollMonth): string => {
-  if (!month) return "";
-  const lower = month.toLowerCase();
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-};
+export function calculateNetSalary(grossSalary: number, totalDeductions: number): number {
+  const net = grossSalary - totalDeductions;
+  return Math.max(0, Math.round(net * 100) / 100);
+}
 
 /**
- * Converts a string-based PayrollStatus into a capitalized, readable string.
- * Example: PAID -> Paid
- * 
- * @param status - The uppercase payroll status enum value.
- * @returns Capitalized readable status string.
+ * Calculates overtime compensation pay.
  */
-export const formatPayrollStatus = (status: PayrollStatus): string => {
-  if (!status) return "";
-  const lower = status.toLowerCase();
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-};
-
-// ==========================================
-// 2. Salary Helpers
-// ==========================================
+export function calculateOvertimePay(hourlyRate: number, overtimeHours: number, multiplier = 1.5): number {
+  if (overtimeHours <= 0) return 0;
+  return Math.round(hourlyRate * overtimeHours * multiplier * 100) / 100;
+}
 
 /**
- * Calculates the total sum of allowances.
+ * Calculates pro-rata salary impact based on attendance work days.
  */
-export const calculateTotalAllowances = (allowances: PayrollAllowance[]): number => {
-  return allowances.reduce((sum, item) => sum + item.amount, 0);
-};
+export function calculateAttendanceImpact(basicSalary: number, totalWorkDays: number, presentDays: number): number {
+  if (totalWorkDays <= 0 || presentDays >= totalWorkDays) return basicSalary;
+  const proRataSalary = (basicSalary / totalWorkDays) * presentDays;
+  return Math.round(proRataSalary * 100) / 100;
+}
 
 /**
- * Calculates the total sum of deductions.
+ * Calculates deduction impact for unpaid leave days.
  */
-export const calculateTotalDeductions = (deductions: PayrollDeduction[]): number => {
-  return deductions.reduce((sum, item) => sum + item.amount, 0);
-};
+export function calculateLeaveImpact(basicSalary: number, totalWorkDays: number, unpaidLeaveDays: number): number {
+  if (totalWorkDays <= 0 || unpaidLeaveDays <= 0) return 0;
+  const deduction = (basicSalary / totalWorkDays) * unpaidLeaveDays;
+  return Math.round(deduction * 100) / 100;
+}
 
 /**
- * Calculates the gross salary as base salary + total allowances.
+ * Computes a compiled fiscal summary for a set of payroll records using the structured salary breakdown.
  */
-export const calculateGrossSalary = (basicSalary: number, allowances: PayrollAllowance[]): number => {
-  return basicSalary + calculateTotalAllowances(allowances);
-};
+export function calculatePayrollSummary(records: readonly PayrollRecord[]): PayrollSummary {
+  let totalBasicSalary = 0;
+  let totalAllowances = 0;
+  let totalDeductions = 0;
+  let totalNetSalary = 0;
 
-/**
- * Calculates the net salary as gross salary - total deductions.
- */
-export const calculateNetSalary = (
-  basicSalary: number,
-  allowances: PayrollAllowance[],
-  deductions: PayrollDeduction[]
-): number => {
-  return calculateGrossSalary(basicSalary, allowances) - calculateTotalDeductions(deductions);
-};
-
-/**
- * Calculates taxable income by subtracting standard PF and Professional Tax.
- */
-export const calculateTaxableIncome = (
-  grossSalary: number,
-  deductions: PayrollDeduction[]
-): number => {
-  const pfDeduction = deductions.find((d) => d.name.toUpperCase() === "PF")?.amount || 0;
-  const ptDeduction = deductions.find((d) => d.name.toUpperCase() === "PROFESSIONAL TAX")?.amount || 0;
-  return Math.max(0, grossSalary - pfDeduction - ptDeduction);
-};
-
-// ==========================================
-// 3. Statistics Helpers
-// ==========================================
-
-/**
- * Aggregate all global payroll totals.
- */
-export const getPayrollTotals = (records: PayrollRecord[]) => {
-  return {
-    totalGrossSalary: records.reduce((sum, r) => sum + r.salaryBreakdown.grossSalary, 0),
-    totalNetSalary: records.reduce((sum, r) => sum + r.salaryBreakdown.netSalary, 0),
-    totalAllowances: records.reduce((sum, r) => sum + r.salaryBreakdown.totalAllowances, 0),
-    totalDeductions: records.reduce((sum, r) => sum + r.salaryBreakdown.totalDeductions, 0),
-  };
-};
-
-// ==========================================
-// 4. Dashboard Helpers
-// ==========================================
-
-/**
- * Generates an overall summary calculation of payroll records.
- */
-export const calculatePayrollSummary = (records: PayrollRecord[]): PayrollSummary => {
-  return {
-    totalPayrollRecords: records.length,
-    totalEmployees: new Set(records.map((r) => r.employeeId)).size,
-    paidPayroll: records.filter((r) => r.status === "PAID").length,
-    pendingPayroll: records.filter((r) => r.status === "PENDING").length,
-    approvedPayroll: records.filter((r) => r.status === "APPROVED").length,
-    draftPayroll: records.filter((r) => r.status === "DRAFT").length,
-  };
-};
-
-/**
- * Generates overall analytics/statistics of payroll records.
- * Reuses getPayrollTotals to eliminate duplicate reductions.
- */
-export const calculatePayrollStats = (records: PayrollRecord[]): PayrollStats => {
-  const totals = getPayrollTotals(records);
-  const averageNetSalary = records.length > 0 ? Math.round(totals.totalNetSalary / records.length) : 0;
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const breakdown = record.salaryBreakdown;
+    totalBasicSalary += breakdown.basicSalary;
+    totalAllowances += breakdown.totalAllowances;
+    totalDeductions += breakdown.totalDeductions;
+    totalNetSalary += breakdown.netSalary;
+  }
 
   return {
-    employeeCount: new Set(records.map((r) => r.employeeId)).size,
-    totalGrossSalary: totals.totalGrossSalary,
-    totalNetSalary: totals.totalNetSalary,
-    totalAllowances: totals.totalAllowances,
-    totalDeductions: totals.totalDeductions,
-    averageNetSalary,
+    totalBasicSalary: Math.round(totalBasicSalary * 100) / 100,
+    totalAllowances: Math.round(totalAllowances * 100) / 100,
+    totalDeductions: Math.round(totalDeductions * 100) / 100,
+    totalNetSalary: Math.round(totalNetSalary * 100) / 100,
   };
-};
-
-// ==========================================
-// 5. Filter Helpers
-// ==========================================
+}
 
 /**
- * Filters the list of payroll records based on criteria.
- * Supports bypassing filter constraints when values are set to "ALL".
+ * Generates status statistics for a collection of payroll records using the structured salary breakdown.
  */
-export const filterPayrollRecords = (
-  records: PayrollRecord[],
-  filters: PayrollFilters
-): PayrollRecord[] => {
-  let filteredRecords = [...records];
-
-  if (filters.search) {
-    filteredRecords = searchPayrollRecords(filteredRecords, filters.search);
-  }
-  if (filters.department && filters.department !== "ALL") {
-    filteredRecords = filteredRecords.filter(
-      (r) => r.department.toLowerCase() === filters.department?.toLowerCase()
-    );
-  }
-  if (filters.status && filters.status !== "ALL") {
-    filteredRecords = filteredRecords.filter((r) => r.status === filters.status);
-  }
-  if (filters.month && filters.month !== "ALL") {
-    filteredRecords = filteredRecords.filter((r) => r.month === filters.month);
-  }
-  if (filters.year && String(filters.year) !== "ALL") {
-    filteredRecords = filteredRecords.filter((r) => r.year === Number(filters.year));
+export function calculatePayrollStatistics(records: readonly PayrollRecord[]): PayrollStatistics {
+  const totalRecordsCount = records.length;
+  if (totalRecordsCount === 0) {
+    return {
+      totalRecordsCount: 0,
+      paidCount: 0,
+      pendingCount: 0,
+      approvedCount: 0,
+      draftCount: 0,
+      cancelledCount: 0,
+      averageNetSalary: 0,
+    };
   }
 
-  return filteredRecords;
-};
+  let paidCount = 0;
+  let pendingCount = 0;
+  let approvedCount = 0;
+  let draftCount = 0;
+  let cancelledCount = 0;
+  let accumulatedNetSalary = 0;
 
-// ==========================================
-// 6. Search Helpers
-// ==========================================
+  for (let i = 0; i < totalRecordsCount; i++) {
+    const record = records[i];
+    accumulatedNetSalary += record.salaryBreakdown.netSalary;
 
-/**
- * Searches payroll records by employeeName, employeeCode or payrollNumber.
- */
-export const searchPayrollRecords = (records: PayrollRecord[], query: string): PayrollRecord[] => {
-  const cleanQuery = query.trim().toLowerCase();
-  if (!cleanQuery) return records;
-
-  return records.filter(
-    (r) =>
-      r.employeeName.toLowerCase().includes(cleanQuery) ||
-      r.employeeCode.toLowerCase().includes(cleanQuery) ||
-      r.payrollNumber.toLowerCase().includes(cleanQuery)
-  );
-};
-
-// ==========================================
-// 7. Sort Helpers
-// ==========================================
-
-/**
- * Sorts payroll records copy without mutating original array.
- */
-export const sortPayrollRecords = (
-  records: PayrollRecord[],
-  sortBy: PayrollSortField,
-  sortOrder: PayrollSortDirection
-): PayrollRecord[] => {
-  const sortedRecords = [...records];
-  const orderModifier = sortOrder === "desc" ? -1 : 1;
-
-  const monthWeight: Record<PayrollMonth, number> = {
-    JANUARY: 1, FEBRUARY: 2, MARCH: 3, APRIL: 4, MAY: 5, JUNE: 6,
-    JULY: 7, AUGUST: 8, SEPTEMBER: 9, OCTOBER: 10, NOVEMBER: 11, DECEMBER: 12
-  };
-
-  sortedRecords.sort((a, b) => {
-    switch (sortBy) {
-      case "employeeName":
-        return a.employeeName.localeCompare(b.employeeName) * orderModifier;
-      case "generatedAt":
-        return (new Date(a.generatedAt).getTime() - new Date(b.generatedAt).getTime()) * orderModifier;
-      case "month":
-        return (monthWeight[a.month] - monthWeight[b.month]) * orderModifier;
-      case "netSalary":
-        return (a.salaryBreakdown.netSalary - b.salaryBreakdown.netSalary) * orderModifier;
-      default:
-        return 0;
+    switch (record.status) {
+      case "PAID":
+        paidCount++;
+        break;
+      case "PENDING":
+        pendingCount++;
+        break;
+      case "APPROVED":
+        approvedCount++;
+        break;
+      case "DRAFT":
+        draftCount++;
+        break;
+      case "CANCELLED":
+        cancelledCount++;
+        break;
     }
+  }
+
+  return {
+    totalRecordsCount,
+    paidCount,
+    pendingCount,
+    approvedCount,
+    draftCount,
+    cancelledCount,
+    averageNetSalary: Math.round((accumulatedNetSalary / totalRecordsCount) * 100) / 100,
+  };
+}
+
+/**
+ * Filters payroll records using the structured PayrollFilters options.
+ * Safely accesses potentially dynamic filter properties to guarantee TS compilation.
+ */
+export function filterPayrollRecords(
+  records: readonly PayrollRecord[],
+  filters: PayrollFilters
+): readonly PayrollRecord[] {
+  let result = [...records];
+
+  if (filters.month && filters.month !== "ALL") {
+    result = result.filter((r) => r.month === filters.month);
+  }
+
+  if (filters.status && filters.status !== "ALL") {
+    result = result.filter((r) => r.status === filters.status);
+  }
+
+  const filterObj = filters as unknown as Record<string, unknown>;
+  
+  if (typeof filterObj.employeeId === "string" && filterObj.employeeId) {
+    result = result.filter((r) => r.employeeId === filterObj.employeeId);
+  }
+
+  if (typeof filterObj.department === "string" && filterObj.department && filterObj.department !== "ALL") {
+    result = result.filter((r) => {
+      const recordObj = r as unknown as Record<string, unknown>;
+      return recordObj.department === filterObj.department;
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Sorts payroll records safely using the structured salary breakdown (returns a new sorted array).
+ */
+export function sortPayrollRecords(
+  records: readonly PayrollRecord[],
+  field: "month" | "netSalary" | "basicSalary",
+  order: "asc" | "desc" = "asc"
+): readonly PayrollRecord[] {
+  const result = [...records];
+
+  result.sort((a, b) => {
+    let comparison = 0;
+
+    switch (field) {
+      case "month":
+        comparison = a.month.localeCompare(b.month);
+        break;
+      case "netSalary":
+        comparison = a.salaryBreakdown.netSalary - b.salaryBreakdown.netSalary;
+        break;
+      case "basicSalary":
+        comparison = a.salaryBreakdown.basicSalary - b.salaryBreakdown.basicSalary;
+        break;
+    }
+
+    return order === "asc" ? comparison : -comparison;
   });
 
-  return sortedRecords;
-};
-
-// ==========================================
-// 8. Find Helpers
-// ==========================================
+  return result;
+}
 
 /**
- * Finds a payroll record by id or payroll number.
+ * Formats a numeric value into a specific currency locale.
  */
-export const getPayrollRecordById = (
-  records: PayrollRecord[],
-  id: string
-): PayrollRecord | undefined => {
-  return records.find((r) => r.id === id || r.payrollNumber === id);
-};
-
-/**
- * Filters and retrieves history records of a specific employee.
- */
-export const getEmployeePayrollHistory = (
-  records: PayrollRecord[],
-  employeeId: string
-): PayrollRecord[] => {
-  return records.filter((r) => r.employeeId === employeeId);
-};
-
-// ==========================================
-// 9. Status Helpers
-// ==========================================
-
-export const isPayrollPaid = (record: PayrollRecord): boolean => {
-  return record.status === "PAID";
-};
-
-export const isPayrollApproved = (record: PayrollRecord): boolean => {
-  return record.status === "APPROVED";
-};
-
-export const isPayrollPending = (record: PayrollRecord): boolean => {
-  return record.status === "PENDING";
-};
-
-export const isPayrollDraft = (record: PayrollRecord): boolean => {
-  return record.status === "DRAFT";
-};
-
-// ==========================================
-// 10. Edit Helpers
-// ==========================================
-
-/**
- * Checks if a payroll record status allows it to be edited.
- */
-export const canEditPayroll = (status: PayrollStatus): boolean => {
-  return status === "DRAFT" || status === "PENDING";
-};
-
-/**
- * Checks if a payroll record status allows it to be approved.
- */
-export const canApprovePayroll = (status: PayrollStatus): boolean => {
-  return status === "PENDING";
-};
-
-// ==========================================
-// 11. Validation Helpers
-// ==========================================
-
-export const hasPayrollBeenPaid = (record: PayrollRecord): boolean => {
-  return !!record.paidAt;
-};
-
-export const hasPayrollNotes = (record: PayrollRecord): boolean => {
-  return !!record.notes && record.notes.trim().length > 0;
-};
-
-export const hasPayrollAllowances = (record: PayrollRecord): boolean => {
-  return record.salaryBreakdown.allowances.length > 0;
-};
-
-export const hasPayrollDeductions = (record: PayrollRecord): boolean => {
-  return record.salaryBreakdown.deductions.length > 0;
-};
-export function formatPayrollDate(date: string): string {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(date));
+export function formatCurrency(amount: number, locale = "en-US", currency = "USD"): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: currency,
+  }).format(amount);
 }
