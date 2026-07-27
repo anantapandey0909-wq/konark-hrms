@@ -1,4 +1,4 @@
-"use client";
+/*"use client";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -14,10 +14,9 @@ export default function CreatePayrollPage() {
       router.push("/dashboard/payroll");
     }
   };
-
-  const handleCancel = () => {
-    router.back();
-  };
+const handleCancel = () => {
+  router.push("/dashboard/payroll");
+};
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -50,4 +49,10 @@ export default function CreatePayrollPage() {
       </div>
     </div>
   );
+}*/
+import * as React from "react";
+import { PayrollDashboard } from "@/components/payroll/payroll-dashboard";
+
+export default function PayrollPage() {
+  return <PayrollDashboard />;
 }
