@@ -105,94 +105,102 @@ export interface DataModuleItem {
   id: string;
   name: string;
   description: string;
+  href: string;
   formats: string[];
   lastImported: string;
-  status: 'synced' | 'active' | 'maintenance';
+  status: "synced" | "active" | "maintenance";
   recordCount: number;
   historyCount: number;
 }
-
 const dataModules: DataModuleItem[] = [
   {
-    id: 'employees',
-    name: 'Employees',
-    description: 'System profiles, personal settings, corporate role keys, and dynamic metadata registers.',
-    formats: ['CSV', 'XLSX'],
-    lastImported: '2 hours ago',
-    status: 'synced',
+    id: "employee-import",
+    name: "Employee Import",
+    description: "Import employee records from CSV or Excel files.",
+    href: "/dashboard/data-management/employee-import",
+    formats: ["CSV", "XLSX"],
+    lastImported: "2 hours ago",
+    status: "synced",
     recordCount: 412,
-    historyCount: 42
+    historyCount: 42,
   },
   {
-    id: 'departments',
-    name: 'Departments',
-    description: 'Corporate hierarchies, dynamic division cost centers, managers, and operational structures.',
-    formats: ['CSV', 'XLSX'],
-    lastImported: '3 days ago',
-    status: 'synced',
-    recordCount: 14,
-    historyCount: 6
-  },
-  {
-    id: 'attendance',
-    name: 'Attendance',
-    description: 'Biometric card terminal entries, working shift checkins, schedules, and overrides.',
-    formats: ['CSV', 'XLSX'],
-    lastImported: '1 day ago',
-    status: 'active',
+    id: "attendance-import",
+    name: "Attendance Import",
+    description: "Bulk upload attendance records.",
+    href: "/dashboard/data-management/attendance-import",
+    formats: ["CSV", "XLSX"],
+    lastImported: "1 day ago",
+    status: "active",
     recordCount: 28410,
-    historyCount: 68
+    historyCount: 68,
   },
   {
-    id: 'leave',
-    name: 'Leave',
-    description: 'Staff allocation allowances, current leave balances, requested absences, and approvals.',
-    formats: ['CSV', 'XLSX'],
-    lastImported: '1 week ago',
-    status: 'synced',
+    id: "leave-import",
+    name: "Leave Import",
+    description: "Import leave balances and requests.",
+    href: "/dashboard/data-management/leave-import",
+    formats: ["CSV", "XLSX"],
+    lastImported: "1 week ago",
+    status: "synced",
     recordCount: 1280,
-    historyCount: 15
+    historyCount: 15,
   },
   {
-    id: 'payroll',
-    name: 'Payroll',
-    description: 'Base salaries, structural payroll models, extra commissions, and tax parameter logs.',
-    formats: ['CSV', 'XLSX'],
-    lastImported: '5 days ago',
-    status: 'active',
+    id: "payroll-import",
+    name: "Payroll Import",
+    description: "Bulk upload payroll data.",
+    href: "/dashboard/data-management/payroll-import",
+    formats: ["CSV", "XLSX"],
+    lastImported: "5 days ago",
+    status: "active",
     recordCount: 395,
-    historyCount: 12
+    historyCount: 12,
   },
   {
-    id: 'holidays',
-    name: 'Holidays',
-    description: 'Recognized official national day-offs, enterprise holidays, and structural breaks.',
-    formats: ['CSV'],
-    lastImported: '1 month ago',
-    status: 'synced',
-    recordCount: 26,
-    historyCount: 5
+    id: "master-data",
+    name: "Master Data",
+    description: "Manage departments, shifts, holidays and organization data.",
+    href: "/dashboard/data-management/master-data",
+    formats: ["CSV", "XLSX"],
+    lastImported: "3 days ago",
+    status: "synced",
+    recordCount: 122,
+    historyCount: 18,
   },
   {
-    id: 'shifts',
-    name: 'Shifts',
-    description: 'Organizational roster tables, core schedule rules, operational hourly limits.',
-    formats: ['CSV', 'XLSX'],
-    lastImported: '2 weeks ago',
-    status: 'synced',
-    recordCount: 82,
-    historyCount: 8
+    id: "export-center",
+    name: "Export Center",
+    description: "Export HRMS data in multiple formats.",
+    href: "/dashboard/data-management/export-center",
+    formats: ["CSV", "XLSX", "PDF"],
+    lastImported: "Today",
+    status: "active",
+    recordCount: 192,
+    historyCount: 84,
   },
   {
-    id: 'organization',
-    name: 'Organization',
-    description: 'Central system details, branch locations, configuration parameters.',
-    formats: ['CSV', 'XLSX'],
-    lastImported: '6 months ago',
-    status: 'maintenance',
-    recordCount: 1,
-    historyCount: 2
-  }
+    id: "history",
+    name: "History",
+    description: "View import and export history.",
+    href: "/dashboard/data-management/history",
+    formats: ["Logs"],
+    lastImported: "Today",
+    status: "synced",
+    recordCount: 384,
+    historyCount: 384,
+  },
+  {
+    id: "bulk-operations",
+    name: "Bulk Operations",
+    description: "Perform bulk updates across HR modules.",
+    href: "/dashboard/data-management/bulk-operations",
+    formats: ["CSV", "XLSX"],
+    lastImported: "Today",
+    status: "active",
+    recordCount: 94,
+    historyCount: 29,
+  },
 ];
 
 export default function DataManagementDashboard() {

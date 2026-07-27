@@ -4,6 +4,7 @@ import {
   Briefcase,
   CalendarDays,
   Clock,
+  Database,
   FileText,
   HelpCircle,
   LayoutDashboard,
@@ -75,10 +76,22 @@ export const mainNavigation: SidebarNavItem[] = [
     icon: FileText,
     roles: ["ADMIN", "ACCOUNTANT"],
   },
-  {
+    {
     name: "Reports",
     href: "/dashboard/reports",
     icon: BarChart3,
+    roles: [
+      "ADMIN",
+      "HR",
+      "ACCOUNTANT",
+      "MANAGER",
+      "SUPERVISOR",
+    ],
+  },
+  {
+    name: "Data Management",
+    href: "/dashboard/data-management",
+    icon: Database,
     roles: [
       "ADMIN",
       "HR",
