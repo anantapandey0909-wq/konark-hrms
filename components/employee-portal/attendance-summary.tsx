@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { AttendanceSummary } from "@/types/employee-portal";
@@ -52,12 +51,12 @@ export function AttendanceSummaryCard({ summary }: AttendanceSummaryProps) {
         <div className="flex items-start gap-2.5 rounded-lg bg-indigo-50/40 p-3 text-xs text-indigo-900 border border-indigo-100/30 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-950/40">
           <Hourglass className="h-4 w-4 text-indigo-500 shrink-0 mt-0.5" />
           <div>
-            <div className="font-semibold">Today's Timeline</div>
+            <div className="font-semibold">Today&apos;s Timeline</div>
             <div className="mt-0.5 text-slate-500 dark:text-slate-400">
               {summary.todayFirstPunch ? (
                 <>Punch-In: <span className="font-medium text-slate-700 dark:text-slate-300">{summary.todayFirstPunch}</span></>
               ) : (
-                "Not clocked in yet. Complete punch validation to register today's timeline."
+                "Not clocked in yet. Complete punch validation to register today&apos;s timeline."
               )}
             </div>
           </div>

@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft } from "lucide-react";
+
 import { EmployeeForm } from "@/components/employee/form/employee-form";
 import type { EmployeeFormData } from "@/components/employee/form/employee-form";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Employee } from "@/types/employee";
 import { mockEmployees } from "@/mock/employee";
 import { mockDepartments } from "@/mock/department";
 
@@ -23,8 +23,19 @@ export default function EditEmployeePage() {
   const router = useRouter();
   const [submitting, setSubmitting] = React.useState(false);
 
-  const id = params?.id as string;
-  const employee = mockEmployees.find((e: Employee) => e.id === id);
+  // Safely narrow the parameter type without relying on unchecked assertions
+  const id = typeof params?.id === "string" ? params.id : "";
+
+  // Memoize employee search to prevent re-scanning on state changes
+  const employee = React.useMemo(() => {
+    if (!id) return null;
+    return mockEmployees.find((e) => e.id === id) ?? null;
+  }, [id]);
+
+  // Prevent list filtering recalculation during form submission cycles
+  const managers = React.useMemo(() => {
+    return mockEmployees.filter((e) => e.id !== id);
+  }, [id]);
 
   const handleSubmit = async (formData: EmployeeFormData) => {
     setSubmitting(true);
@@ -46,12 +57,12 @@ export default function EditEmployeePage() {
     return (
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-8 max-w-4xl mx-auto">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard/employees" passHref>
-            <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-xs">
+          <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-xs" asChild>
+            <Link href="/dashboard/employees">
               <ArrowLeft className="h-4 w-4" />
               <span>Back to Directory</span>
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
         <Card className="border border-red-200/40 bg-red-500/5 rounded-xl shadow-sm">
           <CardHeader className="flex flex-row items-center gap-3 pb-2">
@@ -60,7 +71,7 @@ export default function EditEmployeePage() {
           </CardHeader>
           <CardContent>
             <CardDescription className="text-xs text-red-500/80">
-              The employee profile with ID "{id}" could not be retrieved from the active workspace.
+              The employee profile with ID &ldquo;{id}&rdquo; could not be retrieved from the active workspace.
             </CardDescription>
           </CardContent>
         </Card>
@@ -84,7 +95,7 @@ export default function EditEmployeePage() {
         mode="edit"
         defaultValues={employee}
         departments={mockDepartments}
-        managers={mockEmployees.filter((e: Employee) => e.id !== id)} // Block self-reporting
+        managers={managers} // Block self-reporting
         isSubmitting={submitting}
         onSubmit={handleSubmit}
         onCancel={handleCancel}

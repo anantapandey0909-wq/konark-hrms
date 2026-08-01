@@ -1,26 +1,41 @@
 import type { AuthRole } from "@/types/auth";
 
-/**
- * Default route for each authenticated role.
- * These routes are used immediately after a successful login.
- */
-export const ROLE_ROUTES: Record<AuthRole, string> = {
-  ADMIN: "/dashboard",
+// ==============================================================================
+// Dashboard Routes
+// ==============================================================================
 
-  HR: "/dashboard/employees",
+export const DASHBOARD_ROUTES = {
+  ROOT: "/dashboard",
+  EMPLOYEES: "/dashboard/employees",
+  PAYROLL: "/dashboard/payroll",
+  ATTENDANCE: "/dashboard/attendance",
+  EMPLOYEE_PORTAL: "/dashboard/employee",
+} as const;
 
-  ACCOUNTANT: "/dashboard/payroll",
+const DEFAULT_ROUTE = DASHBOARD_ROUTES.ROOT;
 
-  MANAGER: "/dashboard",
+// ==============================================================================
+// Default Landing Routes
+// ==============================================================================
 
-  SUPERVISOR: "/dashboard/attendance",
+export const DEFAULT_ROLE_ROUTES: Record<AuthRole, string> = {
+  ADMIN: DEFAULT_ROUTE,
 
-  EMPLOYEE: "/employee",
+  HR: DASHBOARD_ROUTES.EMPLOYEES,
+
+  ACCOUNTANT: DASHBOARD_ROUTES.PAYROLL,
+
+  MANAGER: "/dashboard/manager",
+
+  SUPERVISOR: DASHBOARD_ROUTES.ATTENDANCE,
+
+  EMPLOYEE: DASHBOARD_ROUTES.EMPLOYEE_PORTAL,
 };
 
-/**
- * Returns the default route for a given role.
- */
+// ==============================================================================
+// Helpers
+// ==============================================================================
+
 export function getRoleRoute(role: AuthRole): string {
-  return ROLE_ROUTES[role];
+  return DEFAULT_ROLE_ROUTES[role] ?? DEFAULT_ROUTE;
 }

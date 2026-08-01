@@ -1,118 +1,145 @@
-import type { AuthUser } from "@/types/auth";
+import type { AuthUser, AuthUserTenant } from "@/types/auth";
 
-/**
- * Extends the production AuthUser model with local, mock-only credentials.
- * Ensures strict alignment with session contexts while preserving local verification fields.
- */
 export interface MockAuthUser extends AuthUser {
-  readonly password?: string;
+  readonly password: string;
 }
 
-export const mockUsers: readonly MockAuthUser[] = [
+// ==============================================================================
+// Shared Tenant
+// ==============================================================================
+
+const KONARK_TENANT: AuthUserTenant = {
+  id: "tenant-001",
+  name: "Konark Enterprises Pvt. Ltd.",
+  slug: "konark",
+};
+
+// ==============================================================================
+// Mock Users
+// ==============================================================================
+
+export const mockUsers: MockAuthUser[] = [
   {
-    loginId: "ananta_pandey",
+    id: "user-admin-001",
+
+    loginId: "admin",
+    password: "admin123",
+
     firstName: "Ananta",
     lastName: "Pandey",
-    email: "ananta.pandey@konarktech.co.in",
+    fullName: "Ananta Pandey",
+
+    email: "ananta@konark.org",
+
     role: "ADMIN",
-    password: "password123",
-    isSuperAdmin: false,
-    tenant: {
-      id: "tenant-konark-tech",
-      name: "Konark Technologies",
-      slug: "konark-tech"
-    },
-    allowedTenants: [
-      { id: "tenant-konark-tech", name: "Konark Technologies", slug: "konark-tech" }
-    ]
-  },
-  {
-    loginId: "rita_sharma",
-    firstName: "Rita",
-    lastName: "Sharma",
-    email: "hr@konarktech.co.in",
-    role: "HR",
-    password: "password123",
-    isSuperAdmin: false,
-    tenant: {
-      id: "tenant-konark-tech",
-      name: "Konark Technologies",
-      slug: "konark-tech"
-    }
-  },
-  {
-    loginId: "amit_patel",
-    firstName: "Amit",
-    lastName: "Patel",
-    email: "accountant@ayurcare.com",
-    role: "ACCOUNTANT",
-    password: "password123",
-    isSuperAdmin: false,
-    tenant: {
-      id: "tenant-ayurcare",
-      name: "AyurCare Wellness",
-      slug: "ayurcare"
-    }
-  },
-  {
-    loginId: "rajesh_kumar",
-    firstName: "Rajesh",
-    lastName: "Kumar",
-    email: "manager@shaktiauto.com",
-    role: "MANAGER",
-    password: "password123",
-    isSuperAdmin: false,
-    tenant: {
-      id: "tenant-shakti-auto",
-      name: "Shakti Auto Components",
-      slug: "shakti-auto"
-    }
-  },
-  {
-    loginId: "sanjay_verma",
-    firstName: "Sanjay",
-    lastName: "Verma",
-    email: "supervisor@shaktiauto.com",
-    role: "SUPERVISOR",
-    password: "password123",
-    isSuperAdmin: false,
-    tenant: {
-      id: "tenant-shakti-auto",
-      name: "Shakti Auto Components",
-      slug: "shakti-auto"
-    }
-  },
-  {
-    loginId: "deepak_singh",
-    firstName: "Deepak",
-    lastName: "Singh",
-    email: "employee@konarktech.co.in",
-    role: "EMPLOYEE",
-    password: "password123",
-    isSuperAdmin: false,
-    tenant: {
-      id: "tenant-konark-tech",
-      name: "Konark Technologies",
-      slug: "konark-tech"
-    }
-  },
-  {
-    loginId: "system_operator",
-    firstName: "System",
-    lastName: "Operator",
-    email: "superadmin@konark.io",
-    role: "ADMIN",
-    password: "password123",
+
+    employeeId: "EMP-0001",
+    phone: "+91 9286336309",
+
+    department: "Administration",
+    designation: "System Administrator",
+
+    company: KONARK_TENANT.name,
+
+    avatarUrl: "",
+
+    tenant: KONARK_TENANT,
+
     isSuperAdmin: true,
-    tenant: {
-      id: "tenant-konark-tech",
-      name: "Konark Technologies",
-      slug: "konark-tech"
-    },
-    allowedTenants: [
-      { id: "tenant-konark-tech", name: "Konark Technologies", slug: "konark-tech" },
-      { id: "tenant-shakti-auto", name: "Shakti Auto Components", slug: "shakti-auto" },
-      { id: "tenant-ayurcare", name: "AyurCare Wellness", slug: "ayurcare" }
-    ]
-  }
+
+    allowedTenants: [KONARK_TENANT],
+  },
+
+  {
+    id: "user-hr-001",
+
+    loginId: "hr",
+    password: "hr123456",
+
+    firstName: "Harshita",
+    lastName: "Sharma",
+    fullName: "Harshita Sharma",
+
+    email: "h.sharma@konark.org",
+
+    role: "HR",
+
+    employeeId: "EMP-0128",
+    phone: "+91 9876543210",
+
+    department: "Human Resources",
+    designation: "HR Manager",
+
+    company: KONARK_TENANT.name,
+
+    avatarUrl: "",
+
+    tenant: KONARK_TENANT,
+
+    isSuperAdmin: false,
+
+    allowedTenants: [KONARK_TENANT],
+  },
+
+  {
+    id: "user-manager-001",
+
+    loginId: "manager",
+    password: "manager123",
+
+    firstName: "Arvind",
+    lastName: "Swamy",
+    fullName: "Arvind Swamy",
+
+    email: "a.swamy@konark.org",
+
+    role: "MANAGER",
+
+    employeeId: "EMP-0012",
+    phone: "+91 9876500012",
+
+    department: "Product & Design",
+    designation: "Director of Design",
+
+    company: KONARK_TENANT.name,
+
+    avatarUrl: "",
+
+    tenant: KONARK_TENANT,
+
+    isSuperAdmin: false,
+
+    allowedTenants: [KONARK_TENANT],
+  },
+
+  {
+    id: "user-employee-001",
+
+    loginId: "employee",
+    password: "employee123",
+
+    firstName: "Rahul",
+    lastName: "Verma",
+    fullName: "Rahul Verma",
+
+    email: "rahul.verma@konark.org",
+
+    role: "EMPLOYEE",
+
+    employeeId: "EMP-0456",
+    phone: "+91 9876512345",
+
+    department: "Engineering",
+    designation: "Software Engineer",
+
+    company: KONARK_TENANT.name,
+
+    avatarUrl: "",
+
+    tenant: KONARK_TENANT,
+
+    isSuperAdmin: false,
+
+    allowedTenants: [KONARK_TENANT],
+  },
 ];

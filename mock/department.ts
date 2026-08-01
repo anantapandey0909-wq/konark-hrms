@@ -1,14 +1,22 @@
-import { Department, ResolvedDepartment, DepartmentSummary } from "@/types/department";
+import {
+  Department,
+  DepartmentSummary,
+  ResolvedDepartment,
+} from "@/types/department";
 import { mockEmployees } from "@/mock/employee";
-import { Employee } from "@/types/employee";
 
-const baseDepartments: Department[] = [
+// ==============================================================================
+// Base Department Data
+// ==============================================================================
+
+export const baseDepartments: Department[] = [
   {
     id: "dept-1",
     tenantId: "tenant-konark-tech",
     name: "Engineering",
     code: "ENG",
-    description: "Core software development, product engineering, and technical platforms.",
+    description:
+      "Core software development, product engineering, and technical platforms.",
     managerId: "emp-101",
     parentDepartmentId: null,
     status: "ACTIVE",
@@ -22,7 +30,8 @@ const baseDepartments: Department[] = [
     tenantId: "tenant-konark-tech",
     name: "Human Resources",
     code: "HR",
-    description: "Talent acquisition, organizational development, and compliance.",
+    description:
+      "Talent acquisition, organizational development, and compliance.",
     managerId: "emp-102",
     parentDepartmentId: null,
     status: "ACTIVE",
@@ -36,7 +45,8 @@ const baseDepartments: Department[] = [
     tenantId: "tenant-konark-tech",
     name: "Product Management",
     code: "PM",
-    description: "Product roadmap planning, market analysis, and UI/UX design.",
+    description:
+      "Product roadmap planning, market analysis, and UI/UX design.",
     managerId: "emp-103",
     parentDepartmentId: null,
     status: "ACTIVE",
@@ -50,7 +60,8 @@ const baseDepartments: Department[] = [
     tenantId: "tenant-konark-tech",
     name: "QA & Automation",
     code: "QA",
-    description: "Quality control, automated testing pipelines, and release stability.",
+    description:
+      "Quality control, automated testing pipelines, and release stability.",
     managerId: "emp-104",
     parentDepartmentId: "dept-1",
     status: "ACTIVE",
@@ -64,7 +75,8 @@ const baseDepartments: Department[] = [
     tenantId: "tenant-konark-tech",
     name: "Growth & Marketing",
     code: "MKT",
-    description: "Global advertising campaigns and inbound demand generation.",
+    description:
+      "Global advertising campaigns and inbound demand generation.",
     managerId: null,
     parentDepartmentId: null,
     status: "INACTIVE",
@@ -78,7 +90,8 @@ const baseDepartments: Department[] = [
     tenantId: "tenant-shakti-auto",
     name: "Operations",
     code: "OPS",
-    description: "Industrial engineering and floor inventory operations.",
+    description:
+      "Industrial engineering and floor inventory operations.",
     managerId: "emp-109",
     parentDepartmentId: null,
     status: "ACTIVE",
@@ -92,7 +105,8 @@ const baseDepartments: Department[] = [
     tenantId: "tenant-ayurcare",
     name: "Finance & Accounts",
     code: "FIN",
-    description: "Ledger management, tax reconciliation, and financial strategy.",
+    description:
+      "Ledger management, tax reconciliation, and financial strategy.",
     managerId: "emp-108",
     parentDepartmentId: null,
     status: "ACTIVE",
@@ -100,39 +114,85 @@ const baseDepartments: Department[] = [
     budget: 200000,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
-  }
+  },
 ];
 
-export const mockDepartments: ResolvedDepartment[] = baseDepartments.map((dept) => {
-  const manager = (mockEmployees.find((e) => e.id === dept.managerId) as Employee) || null;
-  const parentDepartment = baseDepartments.find((p) => p.id === dept.parentDepartmentId) || null;
-  const employeeCount = mockEmployees.filter((e) => e.departmentId === dept.id).length;
+// ==============================================================================
+// Resolved Departments
+// ==============================================================================
 
-  return {
-    ...dept,
-    manager,
-    parentDepartment,
-    employeeCount,
-  };
-});
+export const mockDepartments: ResolvedDepartment[] = baseDepartments
+  .map((department) => {
+    const manager =
+      mockEmployees.find(
+        (employee) => employee.id === department.managerId
+      ) ?? null;
+
+    const parentDepartment =
+      baseDepartments.find(
+        (parent) => parent.id === department.parentDepartmentId
+      ) ?? null;
+
+    const employeeCount = mockEmployees.filter(
+      (employee) => employee.departmentId === department.id
+    ).length;
+
+    return {
+      ...department,
+      manager,
+      parentDepartment,
+      employeeCount,
+    };
+  })
+  .sort((first, second) => first.sortOrder - second.sortOrder);
+
+// ==============================================================================
+// Summary
+// ==============================================================================
+
+const activeDepartments = baseDepartments.filter(
+  (department) => department.status === "ACTIVE"
+);
+
+const inactiveDepartments = baseDepartments.filter(
+  (department) => department.status === "INACTIVE"
+);
 
 export const mockDepartmentSummary: DepartmentSummary = {
   totalDepartments: baseDepartments.length,
-  activeDepartments: baseDepartments.filter((d) => d.status === "ACTIVE").length,
-  inactiveDepartments: baseDepartments.filter((d) => d.status === "INACTIVE").length,
+  activeDepartments: activeDepartments.length,
+  inactiveDepartments: inactiveDepartments.length,
   totalEmployees: mockEmployees.length,
 };
 
-export function getDepartmentById(id: string): ResolvedDepartment | null {
-  return mockDepartments.find((d) => d.id === id) || null;
+// ==============================================================================
+// Helpers
+// ==============================================================================
+
+export function getDepartmentById(
+  id: string
+): ResolvedDepartment | null {
+  return mockDepartments.find((department) => department.id === id) ?? null;
 }
 
-export function getDepartmentsByTenant(tenantId: string): ResolvedDepartment[] {
-  return mockDepartments.filter((d) => d.tenantId === tenantId);
+export function getDepartmentsByTenant(
+  tenantId: string
+): ResolvedDepartment[] {
+  return mockDepartments.filter(
+    (department) => department.tenantId === tenantId
+  );
 }
 
-export function getDepartmentName(departmentId: string | null): string {
-  if (!departmentId) return "N/A";
-  const dept = mockDepartments.find((d) => d.id === departmentId);
-  return dept ? dept.name : "N/A";
+export function getDepartmentName(
+  departmentId: string | null
+): string {
+  if (!departmentId) {
+    return "N/A";
+  }
+
+  return (
+    mockDepartments.find(
+      (department) => department.id === departmentId
+    )?.name ?? "N/A"
+  );
 }

@@ -2,17 +2,21 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+
 import { AttendanceForm } from "@/components/attendance/attendance-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
 
 export default function CreateAttendancePage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const handleFormSubmit = async (values: any) => {
+  // Dynamically resolve form values from the child form component interface
+  const handleFormSubmit = async (
+    values: Parameters<React.ComponentProps<typeof AttendanceForm>["onSubmit"]>[0]
+  ) => {
     setIsSubmitting(true);
     try {
       // In a real application, we would call a Server Action or an API route here:

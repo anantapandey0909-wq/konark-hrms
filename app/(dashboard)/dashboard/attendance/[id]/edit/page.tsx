@@ -2,36 +2,35 @@
 
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft, AlertCircle } from "lucide-react";
+
 import { mockAttendanceWithEmployees } from "@/mock/attendance";
 import { AttendanceForm } from "@/components/attendance/attendance-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, AlertCircle } from "lucide-react";
-import Link from "next/link";
 
 export default function EditAttendancePage() {
   const params = useParams();
   const router = useRouter();
   const [isSaving, setIsSaving] = React.useState(false);
 
-  const attendanceId = React.useMemo(() => {
-    return typeof params?.id === "string" ? params.id : "";
-  }, [params?.id]);
+  // Directly derive attendance ID (unnecessary useMemo removed for a primitive type check)
+  const attendanceId = typeof params?.id === "string" ? params.id : "";
 
   const record = React.useMemo(() => {
     if (!attendanceId) return null;
     return mockAttendanceWithEmployees.find((r) => r.id === attendanceId) ?? null;
   }, [attendanceId]);
 
-  const handleFormSubmit = async (values: any) => {
+  // Safely infer and bind the correct dynamic parameter type from the AttendanceForm's onSubmit callback
+  const handleFormSubmit = async (
+    values: Parameters<React.ComponentProps<typeof AttendanceForm>["onSubmit"]>[0]
+  ) => {
     setIsSaving(true);
     try {
-      // In a real application, we would call a Server Action or API here:
-      // await updateAttendanceRecord(attendanceId, values);
-      
       // Simulate backend latency
       await new Promise((resolve) => setTimeout(resolve, 800));
-      
       router.push("/dashboard/attendance");
     } catch (error) {
       console.error("Failed to save attendance record", error);
@@ -59,7 +58,7 @@ export default function EditAttendancePage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              The requested attendance record with ID <span className="font-mono font-bold text-foreground">"{attendanceId}"</span> could not be located in our systems.
+              The requested attendance record with ID <span className="font-mono font-bold text-foreground">&ldquo;{attendanceId}&rdquo;</span> could not be located in our systems.
             </p>
           </CardContent>
         </Card>

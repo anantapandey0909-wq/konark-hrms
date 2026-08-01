@@ -1,81 +1,173 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
-import type { AuthUser } from "@/types/auth";
+
+import type { AuthState } from "@/types/auth";
 import { authService } from "@/lib/auth/auth-service";
 
-interface AuthContextType {
-  readonly user: AuthUser | null;
-  readonly isAuthenticated: boolean;
-  readonly isLoading: boolean;
-  readonly login: (usernameOrEmail: string, password?: string) => Promise<void>;
+interface AuthContextType extends AuthState {
+  readonly login: (
+    usernameOrEmail: string,
+    password?: string
+  ) => Promise<void>;
+
   readonly logout: () => Promise<void>;
+
+  /**
+   * Reload the authenticated user from storage.
+   * Useful after profile updates or future backend refreshes.
+   */
+  readonly refresh: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(
+  undefined
+);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+const INITIAL_AUTH_STATE: AuthState = {
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
+};
 
-  // Restore the active session on application initialization
-  useEffect(() => {
+export function AuthProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const [authState, setAuthState] =
+    useState<AuthState>(INITIAL_AUTH_STATE);
+
+  /**
+   * Restores the stored authentication session.
+   */
+  const initializeAuth = useCallback(() => {
     const session = authService.getStoredSession();
-    if (session) {
-      setUser(session.user);
-    }
-    setIsLoading(false);
+
+    setAuthState({
+      user: session?.user ?? null,
+      isAuthenticated: !!session,
+      isLoading: false,
+    });
   }, []);
 
-  const login = useCallback(async (usernameOrEmail: string, password?: string) => {
-    setIsLoading(true);
-    try {
-      const response = await authService.login(usernameOrEmail, password);
-      setUser(response.user);
-    } catch (error) {
-      setUser(null);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  /**
+   * Initialize authentication after hydration.
+   * This avoids hydration mismatches between the server
+   * and client caused by reading localStorage during render.
+   */
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
+  /**
+   * Synchronize authentication state across browser tabs.
+   */
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "konark_hrms_session") {
+        initializeAuth();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        handleStorage
+      );
+    };
+  }, [initializeAuth]);
+
+  const login = useCallback(
+    async (
+      usernameOrEmail: string,
+      password?: string
+    ) => {
+      setAuthState((prev) => ({
+        ...prev,
+        isLoading: true,
+      }));
+
+      try {
+        const response = await authService.login(
+          usernameOrEmail,
+          password
+        );
+
+        setAuthState({
+          user: response.user ?? null,
+          isAuthenticated: response.success,
+          isLoading: false,
+        });
+      } catch (error) {
+        setAuthState({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
+
+        throw error;
+      }
+    },
+    []
+  );
 
   const logout = useCallback(async () => {
-    setIsLoading(true);
+    setAuthState((prev) => ({
+      ...prev,
+      isLoading: true,
+    }));
+
     try {
       await authService.logout();
     } finally {
-      setUser(null);
-      setIsLoading(false);
+      setAuthState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
     }
   }, []);
 
-  const isAuthenticated = !!user;
+  const refresh = useCallback(() => {
+    initializeAuth();
+  }, [initializeAuth]);
 
-  // Memoize the value object to optimize consumer rendering trees
-  const contextValue = useMemo<AuthContextType>(() => ({
-    user,
-    isAuthenticated,
-    isLoading,
-    login,
-    logout,
-  }), [user, isAuthenticated, isLoading, login, logout]);
+  const value = useMemo<AuthContextType>(
+    () => ({
+      ...authState,
+      login,
+      logout,
+      refresh,
+    }),
+    [authState, login, logout, refresh]
+  );
 
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-/**
- * Custom hook to safely consume authentication and tenant session contexts.
- */
 export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+
+  if (!context) {
+    throw new Error(
+      "useAuth must be used within an AuthProvider."
+    );
   }
+
   return context;
 }

@@ -17,13 +17,16 @@ import {
   AUTH_ROUTES,
 } from "@/constants/auth";
 
-import { login } from "@/lib/auth/auth-service";
+import { useAuth } from "@/hooks/use-auth";
 import { getRoleRoute } from "@/lib/auth/role-routes";
 
 import type { LoginSchema } from "@/schemas/auth";
 
 export default function LoginPage() {
   const router = useRouter();
+
+  const { login, user } = useAuth();
+
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = useCallback(
@@ -31,36 +34,50 @@ export default function LoginPage() {
       setIsLoading(true);
 
       try {
-        const response = await login(
+        await login(
           values.email,
           values.password
         );
 
-        if (!response.success || !response.session) {
-          toast.error(response.message);
+        /*
+         * Read the freshly stored session after AuthProvider login.
+         * This guarantees we redirect using the authenticated role.
+         */
+        const storedSession = JSON.parse(
+          localStorage.getItem("konark_hrms_session") ?? "null"
+        );
+
+        if (!storedSession?.user) {
+          toast.error(
+            "Unable to create authentication session."
+          );
           return;
         }
 
+        const authenticatedUser = storedSession.user;
+
         toast.success(
-          `Welcome back, ${response.session.user.firstName}!`
+          `Welcome back, ${authenticatedUser.firstName}!`
         );
 
         const redirectPath = getRoleRoute(
-          response.session.user.role
+          authenticatedUser.role
         );
 
-        router.push(redirectPath);
+        router.replace(redirectPath);
       } catch (error) {
-        console.error(error);
+        console.error("Login failed:", error);
 
         toast.error(
-          "Something went wrong while signing in. Please try again."
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while signing in."
         );
       } finally {
         setIsLoading(false);
       }
     },
-    [router]
+    [login, router]
   );
 
   return (

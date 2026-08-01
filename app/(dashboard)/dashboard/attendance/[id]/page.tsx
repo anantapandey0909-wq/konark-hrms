@@ -1,9 +1,7 @@
-import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { 
   ChevronLeft, 
-  Calendar, 
   Clock, 
   MapPin, 
   ShieldAlert, 
@@ -57,7 +55,7 @@ function resolveAttendanceDetails(id: string): AttendanceWithEmployee | null {
       isRegularized: false,
       createdAt: "2025-01-15T18:15:30.000Z",
       updatedAt: "2025-01-15T18:15:30.000Z"
-    } as any, // Cast as any if local ts config is ahead of current mock validations
+    },
     employee: {
       firstName: employee.firstName,
       lastName: employee.lastName,
@@ -100,21 +98,21 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
   const fullName = `${employee.firstName} ${employee.lastName}`;
   const departmentName = employee.departmentId?.replace("dept-", "").replace("-", " ") || "General";
 
-  // Single source of truth references directly from the extended Attendance entity
-  const shiftName = (attendance as any).shiftName || "General Office Shift (09:00 AM - 06:00 PM)";
-  const isRegularized = (attendance as any).isRegularized ?? false;
-  const locationDisplay = (attendance as any).location || "On-Site";
+  // Single source of truth references directly from the Attendance entity
+  const shiftName = attendance.shiftName || "General Office Shift (09:00 AM - 06:00 PM)";
+  const isRegularized = attendance.isRegularized ?? false;
+  const locationDisplay = attendance.location || "On-Site";
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto p-4 md:p-6">
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
-        <Link href="/dashboard/attendance" passHref>
-          <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-xs">
+        <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-xs" asChild>
+          <Link href="/dashboard/attendance">
             <ChevronLeft className="h-4 w-4" />
             <span>Back to Attendance</span>
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <span className="text-xs font-medium text-muted-foreground font-mono">
           ID: {attendance.id}
         </span>

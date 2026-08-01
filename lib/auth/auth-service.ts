@@ -1,111 +1,157 @@
-import { AuthResponse, AuthSession, AuthUser } from "@/types/auth";
+import type { AuthResponse, AuthSession, AuthUser } from "@/types/auth";
 import { mockUsers } from "@/mock/auth";
 
 const SESSION_STORAGE_KEY = "konark_hrms_session";
+const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Validates authentication credentials and establishes an isolated tenant session.
- * Supports matching against either loginId or email address.
- */
-export async function login(usernameOrEmail: string, password?: string): Promise<AuthResponse> {
-  const normalizedInput = usernameOrEmail.trim().toLowerCase();
+// ==============================================================================
+// Token
+// ==============================================================================
 
-  const userMatch = mockUsers.find((u) => {
-    const loginMatch = u.loginId.toLowerCase() === normalizedInput;
-    const emailMatch = u.email.toLowerCase() === normalizedInput;
-    const passwordMatch = u.password === password;
-    return (loginMatch || emailMatch) && passwordMatch;
-  });
+function generateMockToken(): string {
+  return `mock-token-${crypto.randomUUID()}`;
+}
 
-  if (!userMatch) {
-    throw new Error("Invalid username, email, or password.");
-  }
+// ==============================================================================
+// Session
+// ==============================================================================
 
-  // Remove the mock password from the user object sent to memory
-  const { password: _, ...user }: typeof userMatch = userMatch;
+function createSession(user: AuthUser): AuthSession {
+  const issuedAt = new Date();
 
-  const mockToken = `mock-token-${crypto.randomUUID()}`;
-  
-  const session: AuthSession = {
-    token: mockToken,
+  return {
+    token: generateMockToken(),
+    refreshToken: `refresh-${crypto.randomUUID()}`,
     user,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24-hour lifetime
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: new Date(
+      issuedAt.getTime() + SESSION_DURATION_MS
+    ).toISOString(),
+    provider: "credentials",
   };
-
-  if (typeof window !== "undefined") {
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-  }
-
-return {
-  success: true,
-  message: "Login successful.",
-  user,
-  token: mockToken,
-  session,
-};
 }
 
-/**
- * Purges the active tenant session from client storage.
- */
-export async function logout(): Promise<void> {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-  }
+// ==============================================================================
+// Storage
+// ==============================================================================
+
+function saveSession(session: AuthSession): void {
+  if (typeof window === "undefined") return;
+
+  localStorage.setItem(
+    SESSION_STORAGE_KEY,
+    JSON.stringify(session)
+  );
 }
 
-/**
- * Safely deserializes the active tenant session from local storage.
- * Actively validates both structural integrity and the expiresAt timestamp.
- * Automatically clears and returns null on expired or malformed sessions.
- */
-export function getStoredSession(): AuthSession | null {
+function clearSession(): void {
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function loadSession(): AuthSession | null {
   if (typeof window === "undefined") {
     return null;
   }
 
-  const serializedSession = localStorage.getItem(SESSION_STORAGE_KEY);
-  if (!serializedSession) {
+  const value = localStorage.getItem(SESSION_STORAGE_KEY);
+
+  if (!value) {
     return null;
   }
 
   try {
-    const session = JSON.parse(serializedSession) as AuthSession;
-    
-    if (session && session.token && session.user) {
-      if (session.expiresAt) {
-        const expirationTime = new Date(session.expiresAt).getTime();
-        
-        if (isNaN(expirationTime) || expirationTime < Date.now()) {
-          localStorage.removeItem(SESSION_STORAGE_KEY);
-          return null;
-        }
-      }
-      return session;
-    }
+    return JSON.parse(value) as AuthSession;
   } catch {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+    clearSession();
+    return null;
+  }
+}
+
+// ==============================================================================
+// Public API
+// ==============================================================================
+
+export async function login(
+  usernameOrEmail: string,
+  password?: string
+): Promise<AuthResponse> {
+  const normalizedInput = usernameOrEmail.trim().toLowerCase();
+  console.log("Received:", usernameOrEmail);
+console.log("Password:", password);
+
+  const userMatch = mockUsers.find((user) => {
+    const loginMatch =
+      user.loginId.toLowerCase() === normalizedInput;
+
+    const emailMatch =
+      user.email.toLowerCase() === normalizedInput;
+
+    return (
+      (loginMatch || emailMatch) &&
+      user.password === password
+    );
+  });
+  console.log("Input:", usernameOrEmail, password);
+console.log("Matched User:", userMatch);
+console.log("Matched:", userMatch);
+
+  if (!userMatch) {
+    throw new Error("Invalid credentials.");
   }
 
-  return null;
+  const { password: _, ...user } = userMatch;
+
+  const session = createSession(user);
+
+  saveSession(session);
+
+  return {
+    success: true,
+    message: "Login successful.",
+    user,
+    token: session.token,
+    session,
+  };
 }
 
-/**
- * Directly extracts the current isolated User context from client storage.
- */
+export async function logout(): Promise<void> {
+  clearSession();
+}
+
+export function getStoredSession(): AuthSession | null {
+  const session = loadSession();
+
+  if (!session) {
+    return null;
+  }
+
+  if (
+    session.expiresAt &&
+    new Date(session.expiresAt).getTime() < Date.now()
+  ) {
+    clearSession();
+    return null;
+  }
+
+  return session;
+}
+
 export function getStoredUser(): AuthUser | null {
-  const session = getStoredSession();
-  return session ? session.user : null;
+  return getStoredSession()?.user ?? null;
 }
 
-/**
- * Unified namespace wrapper supporting both named and unified imports.
- */
+export function restoreSession(): AuthSession | null {
+  return getStoredSession();
+}
+
 export const authService = {
   login,
   logout,
   getStoredSession,
   getStoredUser,
+  restoreSession,
 };
 
 export default authService;

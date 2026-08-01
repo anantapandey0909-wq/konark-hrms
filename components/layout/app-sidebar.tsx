@@ -12,28 +12,27 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { mainNavigation, secondaryNavigation } from "@/lib/navigation/sidebar-navigation";
-
-type SidebarNavItem = typeof mainNavigation[number];
+import { getNavigationByRole } from "@/lib/navigation";
+import type { SidebarNavItem } from "@/lib/navigation";
 
 interface AppSidebarProps {
-  isCollapsed: boolean;
-  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-  isMobileOpen: boolean;
-  setIsMobileOpen: (open: boolean) => void;
+  readonly isCollapsed: boolean;
+  readonly setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  readonly isMobileOpen: boolean;
+  readonly setIsMobileOpen: (open: boolean) => void;
 }
 
 interface SidebarContentProps {
-  isCollapsed: boolean;
-  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-  pathname: string;
+  readonly isCollapsed: boolean;
+  readonly setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  readonly pathname: string;
 }
 
 interface NavigationItemProps {
-  item: SidebarNavItem;
-  isActive: boolean;
-  isCollapsed: boolean;
-  layoutId: string;
+  readonly item: SidebarNavItem;
+  readonly isActive: boolean;
+  readonly isCollapsed: boolean;
+  readonly layoutId: string;
 }
 
 const NavigationItem = React.memo(function NavigationItem({
@@ -78,20 +77,17 @@ function SidebarContent({
   setIsCollapsed,
   pathname,
 }: SidebarContentProps) {
-  const { user } = useAuth();
+const { user } = useAuth();
 
-  if (!user) {
-    return null;
-  }
+if (!user) {
+  return null;
+}
 
-  // Filter paths natively based on authorized access rules
-  const mainNavItems = mainNavigation.filter((item) =>
-    item.roles.includes(user.role)
-  );
+const navigation = getNavigationByRole(user.role);
 
-  const secondaryNavItems = secondaryNavigation.filter((item) =>
-    item.roles.includes(user.role)
-  );
+const mainNavItems = navigation.main;
+
+const secondaryNavItems = navigation.secondary;
 
   const userInitials = (
     (user.firstName?.trim().charAt(0) || "") + 
@@ -144,7 +140,10 @@ function SidebarContent({
               <NavigationItem
                 key={item.name}
                 item={item}
-                isActive={pathname === item.href}
+                isActive={
+  pathname === item.href ||
+  pathname.startsWith(`${item.href}/`)
+}
                 isCollapsed={isCollapsed}
                 layoutId="activeNavIndicator"
               />
@@ -164,7 +163,10 @@ function SidebarContent({
               <NavigationItem
                 key={item.name}
                 item={item}
-                isActive={pathname === item.href}
+                isActive={
+  pathname === item.href ||
+  pathname.startsWith(`${item.href}/`)
+}
                 isCollapsed={isCollapsed}
                 layoutId="activeNavIndicatorSecondary"
               />
@@ -207,7 +209,7 @@ function SidebarContent({
             </div>
           )}
           <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
+            onClick={() => setIsCollapsed((previous) => !previous)}
             className="hidden md:flex h-8 w-8 items-center justify-center rounded-md hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             aria-expanded={!isCollapsed}

@@ -1,25 +1,47 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import {
+  useEffect,
+  useMemo,
+  type ReactNode,
+} from "react";
+
+import {
+  usePathname,
+  useRouter,
+} from "next/navigation";
+
+import type { AuthRole } from "@/types/auth";
 
 import { useAuth } from "@/hooks/use-auth";
+
 import { AUTH_ROUTES } from "@/constants/auth";
 
 interface ProtectedRouteProps {
-  children: ReactNode;
+  readonly children: ReactNode;
+
+  readonly allowedRoles?: readonly AuthRole[];
 }
 
 export function ProtectedRoute({
   children,
+  allowedRoles,
 }: ProtectedRouteProps) {
   const router = useRouter();
+
   const pathname = usePathname();
 
   const {
+    user,
     isAuthenticated,
     isLoading,
   } = useAuth();
+
+  const loginRedirect = useMemo(() => {
+    return `${AUTH_ROUTES.login}?redirect=${encodeURIComponent(
+      pathname
+    )}`;
+  }, [pathname]);
 
   useEffect(() => {
     if (isLoading) {
@@ -27,15 +49,24 @@ export function ProtectedRoute({
     }
 
     if (!isAuthenticated) {
-      router.replace(
-        `${AUTH_ROUTES.login}?redirect=${encodeURIComponent(pathname)}`
-      );
+      router.replace(loginRedirect);
+      return;
+    }
+
+    if (
+      allowedRoles &&
+      user &&
+      !allowedRoles.includes(user.role)
+    ) {
+      router.replace("/unauthorized");
     }
   }, [
+    allowedRoles,
     isAuthenticated,
     isLoading,
-    pathname,
+    loginRedirect,
     router,
+    user,
   ]);
 
   if (isLoading) {
@@ -49,6 +80,14 @@ export function ProtectedRoute({
   }
 
   if (!isAuthenticated) {
+    return null;
+  }
+
+  if (
+    allowedRoles &&
+    user &&
+    !allowedRoles.includes(user.role)
+  ) {
     return null;
   }
 
