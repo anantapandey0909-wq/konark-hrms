@@ -20,6 +20,41 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Architecture & Setup (Phase 0)
+
+Konark HRMS is a multi-tenant Human Resource Management System. The frontend is currently driven by **mock data** and remains fully functional without a database.
+
+### Stack
+
+- **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS, shadcn/ui
+- **Data (planned):** Prisma + PostgreSQL
+- **Auth (current):** Mock credentials + localStorage session (real auth in later phases)
+
+### Environment
+
+1. Copy `.env.example` to `.env`.
+2. Set `DATABASE_URL` when you are ready to use Prisma (not required for mock-driven UI).
+
+```bash
+cp .env.example .env
+```
+
+### Prisma scripts
+
+```bash
+npm run db:generate   # Generate Prisma Client
+npm run db:push       # Push schema (dev)
+npm run db:migrate    # Create/apply migrations (dev)
+npm run db:studio     # Open Prisma Studio
+```
+
+Prisma Client is available via `lib/prisma.ts` (singleton). No frontend module depends on it yet; all UI continues to use mocks.
+
+### Important
+
+- Do not commit real secrets. `.env` is gitignored; `.env.example` is safe to commit.
+- Backend work is introduced in controlled phases. Phase 0 only establishes the foundation.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

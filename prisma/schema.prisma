@@ -1,18 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-generator client {
-  provider = "prisma-client"
-  output   = "../app/generated/prisma"
-}
-
-datasource db {
-  provider = "postgresql"
-}
-
-////////////////
 generator client {
   provider = "prisma-client-js"
 }
@@ -84,30 +72,30 @@ enum EmployeeStatus {
 /////////////////////////////////////////////////////
 
 model Company {
-  id                 String         @id @default(uuid())
-  companyCode        String         @unique
+  id                 String        @id @default(uuid())
+  companyCode        String        @unique
   companyName        String
-  email              String         @unique
+  email              String        @unique
   phone              String
   website            String?
   logo               String?
   taxId              String?
-  registrationNumber String         @unique
-  baseCurrency       Currency       @default(INR)
-  timezone           String         @default("Asia/Kolkata")
+  registrationNumber String        @unique
+  baseCurrency       Currency      @default(INR)
+  timezone           String        @default("Asia/Kolkata")
   address            String
   city               String
   state              String
   country            String
   postalCode         String
-  status             CompanyStatus  @default(ACTIVE)
+  status             CompanyStatus @default(ACTIVE)
 
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  departments        Department[]
-  users              User[]
-  employees          Employee[]
+  departments Department[]
+  users       User[]
+  employees   Employee[]
 
   @@index([companyCode])
 }
@@ -117,22 +105,22 @@ model Company {
 /////////////////////////////////////////////////////
 
 model Department {
-  id               String             @id @default(uuid())
-  departmentCode   String             @unique
-  departmentName   String
-  description      String?
-  status           DepartmentStatus   @default(ACTIVE)
+  id             String           @id @default(uuid())
+  departmentCode String           @unique
+  departmentName String
+  description    String?
+  status         DepartmentStatus @default(ACTIVE)
 
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companyId        String
-  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  managerId        String?
-  manager          Employee?          @relation("DepartmentManager", fields: [managerId], references: [id])
+  managerId String?
+  manager   Employee? @relation("DepartmentManager", fields: [managerId], references: [id])
 
-  employees        Employee[]         @relation("DepartmentEmployees")
+  employees Employee[] @relation("DepartmentEmployees")
 
   @@index([companyId])
 }
@@ -142,16 +130,16 @@ model Department {
 /////////////////////////////////////////////////////
 
 model Role {
-  id            String       @id @default(uuid())
-  roleCode      String       @unique
-  roleName      String       @unique
-  description   String?
-  status        RoleStatus   @default(ACTIVE)
+  id          String     @id @default(uuid())
+  roleCode    String     @unique
+  roleName    String     @unique
+  description String?
+  status      RoleStatus @default(ACTIVE)
 
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users         User[]
+  users User[]
 }
 
 /////////////////////////////////////////////////////
@@ -159,33 +147,27 @@ model Role {
 /////////////////////////////////////////////////////
 
 model User {
-  id                     String          @id @default(uuid())
+  id                  String        @id @default(uuid())
+  userCode            String        @unique
+  email               String        @unique
+  password            String
+  accountStatus       AccountStatus @default(ACTIVE)
+  isEmailVerified     Boolean       @default(false)
+  failedLoginAttempts Int           @default(0)
+  lastLogin           DateTime?
+  passwordResetToken  String?
+  passwordResetExpiry DateTime?
 
-  userCode               String          @unique
-  email                  String          @unique
-  password               String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  accountStatus          AccountStatus   @default(ACTIVE)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  isEmailVerified        Boolean         @default(false)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
 
-  failedLoginAttempts    Int             @default(0)
-
-  lastLogin              DateTime?
-
-  passwordResetToken     String?
-  passwordResetExpiry    DateTime?
-
-  createdAt              DateTime        @default(now())
-  updatedAt              DateTime        @updatedAt
-
-  companyId              String
-  company                Company         @relation(fields: [companyId], references: [id])
-
-  roleId                 String
-  role                   Role            @relation(fields: [roleId], references: [id])
-
-  employee               Employee?
+  employee Employee?
 
   @@index([companyId])
   @@index([roleId])
@@ -196,57 +178,41 @@ model User {
 /////////////////////////////////////////////////////
 
 model Employee {
-  id                        String            @id @default(uuid())
+  id                    String         @id @default(uuid())
+  employeeCode          String         @unique
+  firstName             String
+  lastName              String
+  email                 String         @unique
+  phone                 String
+  gender                Gender
+  dateOfBirth           DateTime
+  profileImage          String?
+  designation           String
+  employmentType        EmploymentType
+  joiningDate           DateTime
+  status                EmployeeStatus @default(ACTIVE)
+  emergencyContactName  String?
+  emergencyContactPhone String?
 
-  employeeCode              String            @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  firstName                 String
-  lastName                  String
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  email                     String            @unique
+  departmentId String
+  department   Department @relation("DepartmentEmployees", fields: [departmentId], references: [id])
 
-  phone                     String
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
-  gender                    Gender
+  managerId    String?
+  manager      Employee?  @relation("ReportingManager", fields: [managerId], references: [id])
+  subordinates Employee[] @relation("ReportingManager")
 
-  dateOfBirth               DateTime
-
-  profileImage              String?
-
-  designation               String
-
-  employmentType            EmploymentType
-
-  joiningDate               DateTime
-
-  status                    EmployeeStatus    @default(ACTIVE)
-
-  emergencyContactName      String?
-
-  emergencyContactPhone     String?
-
-  createdAt                 DateTime          @default(now())
-
-  updatedAt                 DateTime          @updatedAt
-
-  companyId                 String
-  company                   Company           @relation(fields: [companyId], references: [id])
-
-  departmentId              String
-  department                Department        @relation("DepartmentEmployees", fields: [departmentId], references: [id])
-
-  userId                    String            @unique
-  user                      User              @relation(fields: [userId], references: [id])
-
-  managerId                 String?
-  manager                   Employee?         @relation("ReportingManager", fields: [managerId], references: [id])
-
-  subordinates              Employee[]        @relation("ReportingManager")
-
-  managedDepartments        Department[]      @relation("DepartmentManager")
+  managedDepartments Department[] @relation("DepartmentManager")
 
   @@index([companyId])
   @@index([departmentId])
   @@index([managerId])
 }
-```
