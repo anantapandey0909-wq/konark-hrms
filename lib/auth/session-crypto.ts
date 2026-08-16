@@ -5,7 +5,12 @@
  * Uses AUTH_SECRET (min 32 chars). Never expose this secret to the client.
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import {
+  createHmac,
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from "crypto";
 import type { AuthSession } from "@/types/auth";
 
 function getSecret(): Buffer {
@@ -29,7 +34,8 @@ function b64url(input: Buffer | string): string {
 
 function fromB64url(value: string): Buffer {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/");
-  const pad = padded.length % 4 === 0 ? "" : "=".repeat(4 - (padded.length % 4));
+  const pad =
+    padded.length % 4 === 0 ? "" : "=".repeat(4 - (padded.length % 4));
   return Buffer.from(padded + pad, "base64");
 }
 
@@ -50,7 +56,9 @@ export function sealSession(session: AuthSession): string {
 /**
  * Unseal and validate a cookie value. Returns null on any failure.
  */
-export function unsealSession(value: string | undefined | null): AuthSession | null {
+export function unsealSession(
+  value: string | undefined | null
+): AuthSession | null {
   if (!value || typeof value !== "string") return null;
 
   const parts = value.split(".");
@@ -78,7 +86,10 @@ export function unsealSession(value: string | undefined | null): AuthSession | n
     const json = fromB64url(payloadB64).toString("utf8");
     const session = JSON.parse(json) as AuthSession;
     if (!session?.user?.id || !session.token) return null;
-    if (session.expiresAt && new Date(session.expiresAt).getTime() < Date.now()) {
+    if (
+      session.expiresAt &&
+      new Date(session.expiresAt).getTime() < Date.now()
+    ) {
       return null;
     }
     return session;
@@ -94,6 +105,5 @@ export function generateSecureToken(bytes = 32): string {
 
 /** SHA-256 hash of a token for safe DB storage. */
 export function hashToken(token: string): string {
-  const { createHash } = require("crypto") as typeof import("crypto");
   return createHash("sha256").update(token).digest("hex");
 }
