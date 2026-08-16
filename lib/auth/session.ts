@@ -1,12 +1,12 @@
 /**
  * Session helpers for Konark HRMS.
- * Phase 2: cookie/session foundation only — production login is Phase 3.
  *
  * Mock auth continues to use localStorage via auth-service when USE_REAL_AUTH=false.
- * These helpers prepare HTTP-only cookie support for the real-auth path.
+ * Real auth uses HTTP-only signed cookies (HMAC-SHA256 via session-crypto).
  */
 
 import type { AuthSession, AuthUser, AuthUserTenant } from "@/types/auth";
+import { sealSession, unsealSession } from "@/lib/auth/session-crypto";
 
 export const SESSION_COOKIE_NAME = "konark_hrms_session";
 export const SESSION_STORAGE_KEY = "konark_hrms_session";
@@ -14,20 +14,9 @@ export const SESSION_STORAGE_KEY = "konark_hrms_session";
 /** Default session lifetime (24h). */
 export const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Server-side session payload carried by secure cookies (Phase 3+).
- * Mirrors AuthSession shape so frontend contracts stay stable.
- */
-export interface ServerSessionPayload {
-  readonly token: string;
-  readonly refreshToken?: string;
-  readonly user: AuthUser;
-  readonly issuedAt: string;
-  readonly expiresAt: string;
-  readonly provider?: AuthSession["provider"];
-}
-
-export function isSessionExpired(session: Pick<AuthSession, "expiresAt">): boolean {
+export function isSessionExpired(
+  session: Pick<AuthSession, "expiresAt">
+): boolean {
   if (!session.expiresAt) return false;
   return new Date(session.expiresAt).getTime() < Date.now();
 }
@@ -55,28 +44,24 @@ export function buildSessionForUser(
 }
 
 /**
- * Serialize session for cookie storage (Phase 3 will sign/encrypt).
- * Phase 2: plain JSON string — not used by mock login path.
+ * Seal session for secure HTTP-only cookie (real-auth path).
  */
 export function serializeSession(session: AuthSession): string {
-  return JSON.stringify(session);
-}
-
-export function parseSession(value: string | undefined | null): AuthSession | null {
-  if (!value) return null;
-  try {
-    const session = JSON.parse(value) as AuthSession;
-    if (!session?.user?.id || !session.token) return null;
-    if (isSessionExpired(session)) return null;
-    return session;
-  } catch {
-    return null;
-  }
+  return sealSession(session);
 }
 
 /**
- * Cookie options for future secure session cookie (Phase 3).
- * httpOnly + secure + sameSite=lax; path=/
+ * Parse a sealed cookie value (real-auth). Returns null if invalid/expired.
+ */
+export function parseSession(
+  value: string | undefined | null
+): AuthSession | null {
+  return unsealSession(value);
+}
+
+/**
+ * Cookie options for secure session cookie.
+ * httpOnly + secure (prod) + sameSite=lax; path=/
  */
 export function getSessionCookieOptions(maxAgeSeconds?: number): {
   httpOnly: boolean;
@@ -99,7 +84,9 @@ export function getTenantFromUser(user: AuthUser): AuthUserTenant {
   return user.tenant;
 }
 
-export function getAllowedTenants(user: AuthUser): readonly AuthUserTenant[] {
+export function getAllowedTenants(
+  user: AuthUser
+): readonly AuthUserTenant[] {
   if (user.allowedTenants && user.allowedTenants.length > 0) {
     return user.allowedTenants;
   }
