@@ -7,9 +7,13 @@
 /**
  * When false (default), authentication uses the existing mock service
  * (localStorage session + mockUsers). Real DB auth is Phase 3.
+ *
+ * Named without a "use" prefix so ESLint rules-of-hooks does not treat
+ * this pure flag helper as a React Hook.
  */
-export function useRealAuth(): boolean {
-  const value = process.env.USE_REAL_AUTH ?? process.env.NEXT_PUBLIC_USE_REAL_AUTH;
+export function isRealAuthEnabled(): boolean {
+  const value =
+    process.env.USE_REAL_AUTH ?? process.env.NEXT_PUBLIC_USE_REAL_AUTH;
   return value === "true" || value === "1";
 }
 
