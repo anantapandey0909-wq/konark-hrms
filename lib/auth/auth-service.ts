@@ -1,6 +1,6 @@
 import type { AuthResponse, AuthSession, AuthUser } from "@/types/auth";
 import { mockUsers } from "@/mock/auth";
-import { useRealAuth } from "@/lib/config/flags";
+import { isRealAuthEnabled } from "@/lib/config/flags";
 import {
   SESSION_STORAGE_KEY,
   buildSessionForUser,
@@ -99,14 +99,14 @@ export async function login(
   usernameOrEmail: string,
   password?: string
 ): Promise<AuthResponse> {
-  if (useRealAuth()) {
+  if (isRealAuthEnabled()) {
     return realLogin(usernameOrEmail, password);
   }
   return mockLogin(usernameOrEmail, password);
 }
 
 export async function logout(): Promise<void> {
-  if (useRealAuth()) {
+  if (isRealAuthEnabled()) {
     return realLogout();
   }
   return mockLogout();
