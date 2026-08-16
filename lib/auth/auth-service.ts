@@ -73,22 +73,72 @@ async function mockLogout(): Promise<void> {
 }
 
 // ==============================================================================
-// Real authentication skeleton (Phase 3 — not implemented yet)
+// Real authentication (calls server routes that set HTTP-only cookies)
 // ==============================================================================
 
 async function realLogin(
-  _usernameOrEmail: string,
-  _password?: string
+  usernameOrEmail: string,
+  password?: string
 ): Promise<AuthResponse> {
-  // Phase 3 will: validate against User table, hash verify, set HTTP-only cookie.
-  throw new Error(
-    "Real authentication is not enabled yet. Set USE_REAL_AUTH=false or wait for Phase 3."
-  );
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      usernameOrEmail,
+      password: password ?? "",
+    }),
+  });
+
+  const data = (await res.json()) as AuthResponse & { message?: string };
+
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || "Invalid credentials.");
+  }
+
+  // Mirror session into localStorage so existing AuthProvider / login page
+  // contracts that read konark_hrms_session continue to work without redesign.
+  if (data.session) {
+    saveSession(data.session);
+  }
+
+  return data;
 }
 
 async function realLogout(): Promise<void> {
-  // Phase 3 will clear HTTP-only session cookie server-side.
-  clearSession();
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+  } finally {
+    clearSession();
+  }
+}
+
+async function realRestoreSession(): Promise<AuthSession | null> {
+  try {
+    const res = await fetch("/api/auth/me", {
+      method: "GET",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      clearSession();
+      return null;
+    }
+    const data = (await res.json()) as {
+      success: boolean;
+      session?: AuthSession;
+    };
+    if (data.success && data.session) {
+      saveSession(data.session);
+      return data.session;
+    }
+    clearSession();
+    return null;
+  } catch {
+    return loadSession();
+  }
 }
 
 // ==============================================================================
@@ -130,12 +180,24 @@ export function restoreSession(): AuthSession | null {
   return getStoredSession();
 }
 
+/**
+ * Async session restore — used by AuthProvider when real auth is enabled
+ * so the HTTP-only cookie is the source of truth after refresh.
+ */
+export async function restoreSessionAsync(): Promise<AuthSession | null> {
+  if (isRealAuthEnabled()) {
+    return realRestoreSession();
+  }
+  return getStoredSession();
+}
+
 export const authService = {
   login,
   logout,
   getStoredSession,
   getStoredUser,
   restoreSession,
+  restoreSessionAsync,
 };
 
 export default authService;
