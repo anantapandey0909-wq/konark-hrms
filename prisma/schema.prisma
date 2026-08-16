@@ -11,7 +11,7 @@ datasource db {
 }
 
 /////////////////////////////////////////////////////
-// ENUMS
+// ENUMS — Core
 /////////////////////////////////////////////////////
 
 enum Currency {
@@ -68,6 +68,115 @@ enum EmployeeStatus {
 }
 
 /////////////////////////////////////////////////////
+// ENUMS — Attendance
+/////////////////////////////////////////////////////
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  ON_LEAVE
+}
+
+enum WorkMode {
+  OFFICE
+  REMOTE
+  HYBRID
+}
+
+/////////////////////////////////////////////////////
+// ENUMS — Leave
+/////////////////////////////////////////////////////
+
+enum LeaveType {
+  CASUAL_LEAVE
+  SICK_LEAVE
+  EARNED_LEAVE
+  MATERNITY_LEAVE
+  PATERNITY_LEAVE
+  WORK_FROM_HOME
+  HALF_DAY
+  COMP_OFF
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum HalfDaySession {
+  FIRST_HALF
+  SECOND_HALF
+}
+
+/////////////////////////////////////////////////////
+// ENUMS — Payroll
+/////////////////////////////////////////////////////
+
+enum PayrollStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum PayrollMonth {
+  JANUARY
+  FEBRUARY
+  MARCH
+  APRIL
+  MAY
+  JUNE
+  JULY
+  AUGUST
+  SEPTEMBER
+  OCTOBER
+  NOVEMBER
+  DECEMBER
+}
+
+/////////////////////////////////////////////////////
+// ENUMS — Notification
+/////////////////////////////////////////////////////
+
+enum NotificationCategory {
+  EMPLOYEE
+  ATTENDANCE
+  LEAVE
+  PAYROLL
+  DEPARTMENT
+  SUPPORT
+  SECURITY
+  SYSTEM
+  REMINDER
+  ANNOUNCEMENT
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/////////////////////////////////////////////////////
+// ENUMS — Document / Audit
+/////////////////////////////////////////////////////
+
+enum DocumentType {
+  IDENTITY
+  CONTRACT
+  CERTIFICATE
+  PAYSLIP
+  MEDICAL
+  OTHER
+}
+
+/////////////////////////////////////////////////////
 // COMPANY
 /////////////////////////////////////////////////////
 
@@ -93,9 +202,17 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  departments Department[]
-  users       User[]
-  employees   Employee[]
+  departments   Department[]
+  users         User[]
+  employees     Employee[]
+  attendances   Attendance[]
+  leaveRequests LeaveRequest[]
+  leaveBalances LeaveBalance[]
+  payrolls      Payroll[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  settings      Setting[]
+  documents     Document[]
 
   @@index([companyCode])
 }
@@ -169,6 +286,9 @@ model User {
 
   employee Employee?
 
+  auditLogs     AuditLog[]     @relation("AuditLogActor")
+  notifications Notification[] @relation("NotificationRecipient")
+
   @@index([companyId])
   @@index([roleId])
 }
@@ -212,7 +332,267 @@ model Employee {
 
   managedDepartments Department[] @relation("DepartmentManager")
 
+  attendances        Attendance[]
+  leaveRequests      LeaveRequest[]  @relation("LeaveRequestEmployee")
+  approvedLeaves     LeaveRequest[]  @relation("LeaveRequestApprover")
+  leaveBalances      LeaveBalance[]
+  payrolls           Payroll[]
+  documents          Document[]
+
   @@index([companyId])
   @@index([departmentId])
   @@index([managerId])
+}
+
+/////////////////////////////////////////////////////
+// ATTENDANCE
+/////////////////////////////////////////////////////
+
+model Attendance {
+  id             String           @id @default(uuid())
+  attendanceDate DateTime         @db.Date
+  checkIn        DateTime?
+  checkOut       DateTime?
+  totalHours     Float?
+  overtimeHours  Float?
+  breakDuration  Int? // minutes
+  status         AttendanceStatus
+  workMode       WorkMode         @default(OFFICE)
+  location       String?
+  shiftName      String?
+  isRegularized  Boolean          @default(false)
+  remarks        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, attendanceDate])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([attendanceDate])
+  @@index([companyId, attendanceDate])
+}
+
+/////////////////////////////////////////////////////
+// LEAVE REQUEST
+/////////////////////////////////////////////////////
+
+model LeaveRequest {
+  id              String          @id @default(uuid())
+  leaveType       LeaveType
+  startDate       DateTime        @db.Date
+  endDate         DateTime        @db.Date
+  totalDays       Float
+  reason          String
+  halfDaySession  HalfDaySession?
+  appliedOn       DateTime        @db.Date
+  status          LeaveStatus     @default(PENDING)
+  approvedOn      DateTime?       @db.Date
+  approvalRemarks String?
+  attachment      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee  @relation("LeaveRequestEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  approvedById String?
+  approvedBy   Employee? @relation("LeaveRequestApprover", fields: [approvedById], references: [id])
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@index([companyId, status])
+}
+
+/////////////////////////////////////////////////////
+// LEAVE BALANCE
+/////////////////////////////////////////////////////
+
+model LeaveBalance {
+  id             String @id @default(uuid())
+  year           Int
+  casualLeave    Float  @default(0)
+  sickLeave      Float  @default(0)
+  earnedLeave    Float  @default(0)
+  maternityLeave Float  @default(0)
+  paternityLeave Float  @default(0)
+  compOff        Float  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, year])
+  @@index([companyId])
+  @@index([employeeId])
+}
+
+/////////////////////////////////////////////////////
+// PAYROLL
+/////////////////////////////////////////////////////
+
+model Payroll {
+  id            String        @id @default(uuid())
+  payrollNumber String        @unique
+  month         PayrollMonth
+  year          Int
+  status        PayrollStatus @default(DRAFT)
+  payPeriodStart DateTime     @db.Date
+  payPeriodEnd   DateTime     @db.Date
+
+  // Denormalized snapshot fields for historical payslips
+  employeeCode  String
+  employeeName  String
+  designation   String
+  departmentName String?
+
+  // Structured amounts (JSON aligned with frontend SalaryBreakdown / summaries)
+  basicSalary       Float  @default(0)
+  grossSalary       Float  @default(0)
+  netSalary         Float  @default(0)
+  totalAllowances   Float  @default(0)
+  totalDeductions   Float  @default(0)
+  taxableIncome     Float  @default(0)
+  allowances        Json   @default("[]")
+  deductions        Json   @default("[]")
+  attendanceSummary Json?
+  leaveSummary      Json?
+
+  generatedAt DateTime?
+  paidAt      DateTime?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, month, year])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([year, month])
+  @@index([companyId, year, month])
+}
+
+/////////////////////////////////////////////////////
+// NOTIFICATION
+/////////////////////////////////////////////////////
+
+model Notification {
+  id       String               @id @default(uuid())
+  title    String
+  message  String
+  category NotificationCategory
+  priority NotificationPriority @default(MEDIUM)
+  isRead   Boolean              @default(false)
+  href     String?
+  avatar   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  readAt    DateTime?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Recipient user (optional employee-linked via User)
+  userId String?
+  user   User?   @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([companyId, userId, isRead])
+}
+
+/////////////////////////////////////////////////////
+// AUDIT LOG
+/////////////////////////////////////////////////////
+
+model AuditLog {
+  id        String  @id @default(uuid())
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+/////////////////////////////////////////////////////
+// SETTING (company-scoped key/value configuration)
+/////////////////////////////////////////////////////
+
+model Setting {
+  id      String @id @default(uuid())
+  section String // e.g. general, company, attendance, leave, payroll
+  key     String
+  value   Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, section, key])
+  @@index([companyId])
+  @@index([section])
+}
+
+/////////////////////////////////////////////////////
+// DOCUMENT
+/////////////////////////////////////////////////////
+
+model Document {
+  id           String       @id @default(uuid())
+  name         String
+  type         DocumentType @default(OTHER)
+  url          String
+  mimeType     String?
+  sizeBytes    Int?
+  uploadedAt   DateTime     @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([type])
 }
