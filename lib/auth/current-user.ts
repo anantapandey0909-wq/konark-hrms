@@ -14,7 +14,7 @@ import {
   parseSession,
   getTenantFromUser,
 } from "@/lib/auth/session";
-import { useRealAuth } from "@/lib/config/flags";
+import { isRealAuthEnabled } from "@/lib/config/flags";
 
 export class UnauthenticatedError extends Error {
   constructor(message = "Authentication required.") {
@@ -82,6 +82,6 @@ export async function requireCurrentCompanyId(): Promise<string> {
  * Whether the server is configured for real auth (flag only).
  * Does not imply a session exists.
  */
-export function isRealAuthEnabled(): boolean {
-  return useRealAuth();
+export function isRealAuthEnabledFlag(): boolean {
+  return isRealAuthEnabled();
 }
