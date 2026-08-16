@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { Tenant } from "@/types/tenant";
 import {
   TENANT_STATUSES,
   SUBSCRIPTION_PLANS,
