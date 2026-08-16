@@ -22,15 +22,12 @@ interface AuthContextType extends AuthState {
   readonly logout: () => Promise<void>;
 
   /**
-   * Reload the authenticated user from storage.
-   * Useful after profile updates or future backend refreshes.
+   * Reload the authenticated user from storage / server session.
    */
   readonly refresh: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
-);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const INITIAL_AUTH_STATE: AuthState = {
   user: null,
@@ -46,32 +43,29 @@ export function AuthProvider({
   const [authState, setAuthState] =
     useState<AuthState>(INITIAL_AUTH_STATE);
 
-  /**
-   * Restores the stored authentication session from localStorage.
-   * Safe to call from effects, event handlers, or after async work.
-   */
-  const initializeAuth = useCallback(() => {
-    const session = authService.getStoredSession();
-
-    setAuthState({
-      user: session?.user ?? null,
-      isAuthenticated: !!session,
-      isLoading: false,
-    });
+  const initializeAuth = useCallback(async () => {
+    try {
+      const session = await authService.restoreSessionAsync();
+      setAuthState({
+        user: session?.user ?? null,
+        isAuthenticated: !!session,
+        isLoading: false,
+      });
+    } catch {
+      setAuthState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
+    }
   }, []);
 
-  /**
-   * Initialize authentication after hydration.
-   * Deferred via queueMicrotask so setState is not synchronous inside the
-   * effect body (satisfies react-hooks/set-state-in-effect) while still
-   * running before the next paint in practice.
-   */
   useEffect(() => {
     let cancelled = false;
 
     queueMicrotask(() => {
       if (!cancelled) {
-        initializeAuth();
+        void initializeAuth();
       }
     });
 
@@ -80,31 +74,22 @@ export function AuthProvider({
     };
   }, [initializeAuth]);
 
-  /**
-   * Synchronize authentication state across browser tabs.
-   */
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === "konark_hrms_session") {
-        initializeAuth();
+        void initializeAuth();
       }
     };
 
     window.addEventListener("storage", handleStorage);
 
     return () => {
-      window.removeEventListener(
-        "storage",
-        handleStorage
-      );
+      window.removeEventListener("storage", handleStorage);
     };
   }, [initializeAuth]);
 
   const login = useCallback(
-    async (
-      usernameOrEmail: string,
-      password?: string
-    ) => {
+    async (usernameOrEmail: string, password?: string) => {
       setAuthState((prev) => ({
         ...prev,
         isLoading: true,
@@ -152,7 +137,7 @@ export function AuthProvider({
   }, []);
 
   const refresh = useCallback(() => {
-    initializeAuth();
+    void initializeAuth();
   }, [initializeAuth]);
 
   const value = useMemo<AuthContextType>(
