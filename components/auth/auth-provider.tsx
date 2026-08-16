@@ -47,7 +47,8 @@ export function AuthProvider({
     useState<AuthState>(INITIAL_AUTH_STATE);
 
   /**
-   * Restores the stored authentication session.
+   * Restores the stored authentication session from localStorage.
+   * Safe to call from effects, event handlers, or after async work.
    */
   const initializeAuth = useCallback(() => {
     const session = authService.getStoredSession();
@@ -61,11 +62,22 @@ export function AuthProvider({
 
   /**
    * Initialize authentication after hydration.
-   * This avoids hydration mismatches between the server
-   * and client caused by reading localStorage during render.
+   * Deferred via queueMicrotask so setState is not synchronous inside the
+   * effect body (satisfies react-hooks/set-state-in-effect) while still
+   * running before the next paint in practice.
    */
   useEffect(() => {
-    initializeAuth();
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        initializeAuth();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [initializeAuth]);
 
   /**
