@@ -1,65 +1,31 @@
 import type { AuthResponse, AuthSession, AuthUser } from "@/types/auth";
 import { mockUsers } from "@/mock/auth";
-
-const SESSION_STORAGE_KEY = "konark_hrms_session";
-const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
-
-// ==============================================================================
-// Token
-// ==============================================================================
-
-function generateMockToken(): string {
-  return `mock-token-${crypto.randomUUID()}`;
-}
+import { useRealAuth } from "@/lib/config/flags";
+import {
+  SESSION_STORAGE_KEY,
+  buildSessionForUser,
+  isSessionExpired,
+} from "@/lib/auth/session";
 
 // ==============================================================================
-// Session
-// ==============================================================================
-
-function createSession(user: AuthUser): AuthSession {
-  const issuedAt = new Date();
-
-  return {
-    token: generateMockToken(),
-    refreshToken: `refresh-${crypto.randomUUID()}`,
-    user,
-    issuedAt: issuedAt.toISOString(),
-    expiresAt: new Date(
-      issuedAt.getTime() + SESSION_DURATION_MS
-    ).toISOString(),
-    provider: "credentials",
-  };
-}
-
-// ==============================================================================
-// Storage
+// Storage (client mock path — localStorage)
 // ==============================================================================
 
 function saveSession(session: AuthSession): void {
   if (typeof window === "undefined") return;
-
-  localStorage.setItem(
-    SESSION_STORAGE_KEY,
-    JSON.stringify(session)
-  );
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
 
 function clearSession(): void {
   if (typeof window === "undefined") return;
-
   localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
 function loadSession(): AuthSession | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
+  if (typeof window === "undefined") return null;
 
   const value = localStorage.getItem(SESSION_STORAGE_KEY);
-
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
 
   try {
     return JSON.parse(value) as AuthSession;
@@ -70,41 +36,27 @@ function loadSession(): AuthSession | null {
 }
 
 // ==============================================================================
-// Public API
+// Mock authentication (default when USE_REAL_AUTH is false)
 // ==============================================================================
 
-export async function login(
+async function mockLogin(
   usernameOrEmail: string,
   password?: string
 ): Promise<AuthResponse> {
   const normalizedInput = usernameOrEmail.trim().toLowerCase();
-  console.log("Received:", usernameOrEmail);
-console.log("Password:", password);
 
   const userMatch = mockUsers.find((user) => {
-    const loginMatch =
-      user.loginId.toLowerCase() === normalizedInput;
-
-    const emailMatch =
-      user.email.toLowerCase() === normalizedInput;
-
-    return (
-      (loginMatch || emailMatch) &&
-      user.password === password
-    );
+    const loginMatch = user.loginId.toLowerCase() === normalizedInput;
+    const emailMatch = user.email.toLowerCase() === normalizedInput;
+    return (loginMatch || emailMatch) && user.password === password;
   });
-  console.log("Input:", usernameOrEmail, password);
-console.log("Matched User:", userMatch);
-console.log("Matched:", userMatch);
 
   if (!userMatch) {
     throw new Error("Invalid credentials.");
   }
 
-  const { password: _, ...user } = userMatch;
-
-  const session = createSession(user);
-
+  const { password: _password, ...user } = userMatch;
+  const session = buildSessionForUser(user);
   saveSession(session);
 
   return {
@@ -116,25 +68,57 @@ console.log("Matched:", userMatch);
   };
 }
 
-export async function logout(): Promise<void> {
+async function mockLogout(): Promise<void> {
   clearSession();
+}
+
+// ==============================================================================
+// Real authentication skeleton (Phase 3 — not implemented yet)
+// ==============================================================================
+
+async function realLogin(
+  _usernameOrEmail: string,
+  _password?: string
+): Promise<AuthResponse> {
+  // Phase 3 will: validate against User table, hash verify, set HTTP-only cookie.
+  throw new Error(
+    "Real authentication is not enabled yet. Set USE_REAL_AUTH=false or wait for Phase 3."
+  );
+}
+
+async function realLogout(): Promise<void> {
+  // Phase 3 will clear HTTP-only session cookie server-side.
+  clearSession();
+}
+
+// ==============================================================================
+// Public API (stable for AuthProvider / login forms)
+// ==============================================================================
+
+export async function login(
+  usernameOrEmail: string,
+  password?: string
+): Promise<AuthResponse> {
+  if (useRealAuth()) {
+    return realLogin(usernameOrEmail, password);
+  }
+  return mockLogin(usernameOrEmail, password);
+}
+
+export async function logout(): Promise<void> {
+  if (useRealAuth()) {
+    return realLogout();
+  }
+  return mockLogout();
 }
 
 export function getStoredSession(): AuthSession | null {
   const session = loadSession();
-
-  if (!session) {
-    return null;
-  }
-
-  if (
-    session.expiresAt &&
-    new Date(session.expiresAt).getTime() < Date.now()
-  ) {
+  if (!session) return null;
+  if (isSessionExpired(session)) {
     clearSession();
     return null;
   }
-
   return session;
 }
 
