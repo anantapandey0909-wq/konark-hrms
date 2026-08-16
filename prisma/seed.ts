@@ -1,17 +1,18 @@
 /**
- * Phase 1 development seed for Konark HRMS.
+ * Development seed for Konark HRMS.
  * Creates realistic core + transactional data aligned with mock shapes.
- * Idempotent-ish: uses fixed codes; re-run after migrate on a fresh DB.
+ * Phase 3: passwords stored as Argon2id hashes only.
  *
  * Usage: npx prisma db seed  (requires DATABASE_URL)
  */
 
 import { PrismaClient } from "@prisma/client";
+import { hashPassword } from "../lib/auth/password";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Seeding Konark HRMS (Phase 1)...");
+  console.log("Seeding Konark HRMS...");
 
   // --------------------------------------------------------------------------
   // Roles
@@ -126,7 +127,7 @@ async function main() {
     },
   });
 
-  const depOps = await prisma.department.upsert({
+  await prisma.department.upsert({
     where: { departmentCode: "DEP-003" },
     update: {},
     create: {
@@ -138,8 +139,12 @@ async function main() {
   });
 
   // --------------------------------------------------------------------------
-  // Users + Employees (linked 1:1)
-  // Passwords are plain for seed only — real auth hashing comes in Phase 3.
+  // Users + Employees — passwords hashed with Argon2id
+  // Development credentials (plaintext only in this comment / local docs):
+  //   ananta@konark.org / admin123
+  //   h.sharma@konark.org / hr123456
+  //   a.swamy@konark.org / manager123
+  //   rahul.verma@konark.org / employee123
   // --------------------------------------------------------------------------
   async function ensureUserEmployee(opts: {
     userCode: string;
@@ -156,13 +161,22 @@ async function main() {
     departmentId: string;
     employmentType?: "FULL_TIME" | "PART_TIME" | "INTERN" | "CONTRACT";
   }) {
+    const passwordHash = await hashPassword(opts.password);
+
     const user = await prisma.user.upsert({
       where: { email: opts.email },
-      update: {},
+      update: {
+        // Re-hash on re-seed so local password changes stay consistent
+        password: passwordHash,
+        accountStatus: "ACTIVE",
+        failedLoginAttempts: 0,
+        passwordResetToken: null,
+        passwordResetExpiry: null,
+      },
       create: {
         userCode: opts.userCode,
         email: opts.email,
-        password: opts.password,
+        password: passwordHash,
         companyId: opts.companyId,
         roleId: opts.roleId,
         isEmailVerified: true,
@@ -209,7 +223,7 @@ async function main() {
     departmentId: depHr.id,
   });
 
-  const hr = await ensureUserEmployee({
+  await ensureUserEmployee({
     userCode: "USER-HR",
     email: "h.sharma@konark.org",
     password: "hr123456",
@@ -254,7 +268,6 @@ async function main() {
     departmentId: depEng.id,
   });
 
-  // Wire manager hierarchy + department manager
   await prisma.employee.update({
     where: { id: employee.employee.id },
     data: { managerId: manager.employee.id },
@@ -265,7 +278,6 @@ async function main() {
     data: { managerId: manager.employee.id },
   });
 
-  // Second company sample employee
   await ensureUserEmployee({
     userCode: "USER-SHAKTI-HR",
     email: "ops@shaktiauto.in",
@@ -292,7 +304,7 @@ async function main() {
   });
 
   // --------------------------------------------------------------------------
-  // Attendance (Konark sample day)
+  // Attendance sample
   // --------------------------------------------------------------------------
   const attDate = new Date("2025-01-15");
 
@@ -518,9 +530,6 @@ async function main() {
     });
   }
 
-  // --------------------------------------------------------------------------
-  // Settings samples
-  // --------------------------------------------------------------------------
   await prisma.setting.upsert({
     where: {
       companyId_section_key: {
@@ -555,9 +564,6 @@ async function main() {
     },
   });
 
-  // --------------------------------------------------------------------------
-  // Document + Audit log samples
-  // --------------------------------------------------------------------------
   const docCount = await prisma.document.count({
     where: { companyId: konark.id, employeeId: employee.employee.id },
   });
@@ -583,20 +589,20 @@ async function main() {
       action: "SEED",
       entity: "System",
       entityId: null,
-      metadata: { phase: 1, message: "Phase 1 seed completed" },
+      metadata: { phase: 3, message: "Seed completed with hashed passwords" },
     },
   });
 
   console.log("Seed completed successfully.");
   console.log({
     companies: [konark.companyCode, shakti.companyCode],
-    roles: [roleAdmin.roleName, roleHr.roleName, roleManager.roleName, roleEmployee.roleName],
-    sampleLogins: [
-      { email: "ananta@konark.org", password: "admin123" },
-      { email: "h.sharma@konark.org", password: "hr123456" },
-      { email: "a.swamy@konark.org", password: "manager123" },
-      { email: "rahul.verma@konark.org", password: "employee123" },
+    roles: [
+      roleAdmin.roleName,
+      roleHr.roleName,
+      roleManager.roleName,
+      roleEmployee.roleName,
     ],
+    note: "Development passwords are hashed in the database. See project README / Phase 3 docs for local credentials.",
   });
 }
 
