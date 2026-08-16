@@ -17,19 +17,25 @@ export interface ResetPasswordFormProps {
   onSubmit?: (values: ResetPasswordSchema) => Promise<void> | void;
   isLoading?: boolean;
   className?: string;
+  /** Pre-fill token from query string when present. */
+  defaultToken?: string;
 }
 
 export function ResetPasswordForm({
   onSubmit,
   isLoading = false,
   className,
+  defaultToken = "",
 }: ResetPasswordFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const form = useForm<ResetPasswordSchema>({
     resolver: zodResolver(resetPasswordSchema),
-    defaultValues: RESET_PASSWORD_DEFAULT_VALUES,
+    defaultValues: {
+      ...RESET_PASSWORD_DEFAULT_VALUES,
+      token: defaultToken || RESET_PASSWORD_DEFAULT_VALUES.token || "",
+    },
   });
 
   const handleFormSubmit = async (values: ResetPasswordSchema) => {
@@ -45,7 +51,6 @@ export function ResetPasswordForm({
         className={cn("space-y-4", className)}
         noValidate
       >
-        {/* Token/Code Field */}
         <FormField
           control={form.control}
           name="token"
@@ -67,7 +72,6 @@ export function ResetPasswordForm({
           )}
         />
 
-        {/* New Password Field */}
         <FormField
           control={form.control}
           name="password"
@@ -104,7 +108,6 @@ export function ResetPasswordForm({
           )}
         />
 
-        {/* Confirm Password Field */}
         <FormField
           control={form.control}
           name="confirmPassword"
@@ -141,7 +144,6 @@ export function ResetPasswordForm({
           )}
         />
 
-        {/* Animated Submit Button */}
         <motion.div
           whileHover={{ scale: isLoading ? 1 : 1.01 }}
           whileTap={{ scale: isLoading ? 1 : 0.99 }}
@@ -160,7 +162,6 @@ export function ResetPasswordForm({
           </Button>
         </motion.div>
 
-        {/* Back to Login Link */}
         <div className="flex justify-center pt-2">
           <Link
             href={AUTH_ROUTES.login}
