@@ -48,11 +48,16 @@ export async function listAttendance(filters?: {
   departmentId?: string;
 }): Promise<AttendanceWithEmployee[]> {
   const { companyId } = await getTenantPrisma();
-  const rows = await attendanceRepo.findAttendancesByCompany(companyId, filters ?? {});
+  const rows = await attendanceRepo.findAttendancesByCompany(
+    companyId,
+    filters ?? {}
+  );
   return rows.map(mapAttendanceWithEmployee);
 }
 
-export async function getAttendance(id: string): Promise<AttendanceWithEmployee> {
+export async function getAttendance(
+  id: string
+): Promise<AttendanceWithEmployee> {
   const { companyId } = await getTenantPrisma();
   const row = await attendanceRepo.findAttendanceById(companyId, id);
   if (!row) {
@@ -67,9 +72,15 @@ export async function createAttendance(
   const { companyId, user } = await getTenantPrisma();
   const parsed = createAttendanceSchema.parse(input);
 
-  const employee = await employeeRepo.findEmployeeById(companyId, parsed.employeeId);
+  const employee = await employeeRepo.findEmployeeById(
+    companyId,
+    parsed.employeeId
+  );
   if (!employee) {
-    throw new AppError("VALIDATION", "Employee not found in your organization.");
+    throw new AppError(
+      "VALIDATION",
+      "Employee not found in your organization."
+    );
   }
 
   const attendanceDate = parseDateOnly(parsed.attendanceDate);
@@ -143,9 +154,15 @@ export async function updateAttendance(
   }
 
   if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
-    const emp = await employeeRepo.findEmployeeById(companyId, parsed.employeeId);
+    const emp = await employeeRepo.findEmployeeById(
+      companyId,
+      parsed.employeeId
+    );
     if (!emp) {
-      throw new AppError("VALIDATION", "Employee not found in your organization.");
+      throw new AppError(
+        "VALIDATION",
+        "Employee not found in your organization."
+      );
     }
   }
 
@@ -216,20 +233,16 @@ export async function updateAttendance(
   return mapAttendanceWithEmployee(updated);
 }
 
-/** Check-in for the authenticated user's linked employee (today, company TZ via UTC date). */
+/** Check-in for the authenticated user's linked employee. */
 export async function checkIn(options?: {
   workMode?: WorkMode;
   location?: string | null;
 }): Promise<AttendanceWithEmployee> {
-  const { companyId, user } = await getTenantPrisma();
+  const { companyId, user, prisma } = await getTenantPrisma();
 
-  const employees = await employeeRepo.findEmployeesByCompany(companyId, {});
-  // Prefer employee linked via User.employee — look up by matching user id through prisma path
-  const { prisma } = await getTenantPrisma();
-  const linked = await prisma.employee.findFirst({
+  const employee = await prisma.employee.findFirst({
     where: { companyId, userId: user.id },
   });
-  const employee = linked ?? null;
   if (!employee) {
     throw new AppError(
       "VALIDATION",
@@ -254,12 +267,16 @@ export async function checkIn(options?: {
   const now = new Date();
 
   if (existing) {
-    const updated = await attendanceRepo.updateAttendance(companyId, existing.id, {
-      checkIn: now,
-      status: "PRESENT",
-      workMode: options?.workMode ?? existing.workMode,
-      location: options?.location ?? existing.location,
-    });
+    const updated = await attendanceRepo.updateAttendance(
+      companyId,
+      existing.id,
+      {
+        checkIn: now,
+        status: "PRESENT",
+        workMode: options?.workMode ?? existing.workMode,
+        location: options?.location ?? existing.location,
+      }
+    );
     if (!updated) {
       throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
     }
@@ -354,6 +371,3 @@ export async function checkOut(): Promise<AttendanceWithEmployee> {
 
   return mapAttendanceWithEmployee(updated);
 }
-
-// silence unused variable in checkIn if employees list was leftover
-void employees;
