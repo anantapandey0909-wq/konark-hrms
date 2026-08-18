@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+"use client";
+
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -26,9 +28,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-import { mockEmployees } from "@/mock/employee";
-import { mockDepartments } from "@/mock/department";
+import type { Employee } from "@/types/employee";
+import type { Department } from "@/types/department";
 import type { LeaveFormData } from "@/types/leave";
+import { fetchEmployees } from "@/lib/data/employees";
+import { fetchDepartments } from "@/lib/data/departments";
 
 const leaveFormSchema = z.object({
   employeeId: z.string().min(1, "Employee selection is required"),
@@ -52,22 +56,53 @@ type LeaveFormValues = z.infer<typeof leaveFormSchema>;
 interface LeaveFormProps {
   mode?: "create" | "edit";
   initialData?: Partial<LeaveFormData>;
-  onSubmit?: (values: LeaveFormData) => void;
+  onSubmit?: (values: LeaveFormData) => void | Promise<void>;
   onCancel?: () => void;
   onSuccess?: () => void;
 }
 
-export const LeaveForm: React.FC<LeaveFormProps> = ({ 
-  mode = "create", 
-  initialData, 
-  onSubmit: parentOnSubmit, 
-  onCancel, 
-  onSuccess 
+export const LeaveForm: React.FC<LeaveFormProps> = ({
+  mode = "create",
+  initialData,
+  onSubmit: parentOnSubmit,
+  onCancel,
+  onSuccess,
 }) => {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [listsLoading, setListsLoading] = useState(true);
 
-  const defaultLeaveType = (initialData?.leaveType && [
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setListsLoading(true);
+      try {
+        const [emps, depts] = await Promise.all([
+          fetchEmployees(),
+          fetchDepartments(),
+        ]);
+        if (!cancelled) {
+          setEmployees(emps);
+          setDepartments(depts);
+        }
+      } catch {
+        if (!cancelled) {
+          setEmployees([]);
+          setDepartments([]);
+        }
+      } finally {
+        if (!cancelled) setListsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const defaultLeaveType = (initialData?.leaveType &&
+  [
     "CASUAL_LEAVE",
     "SICK_LEAVE",
     "EARNED_LEAVE",
@@ -75,7 +110,7 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
     "PATERNITY_LEAVE",
     "COMP_OFF",
     "HALF_DAY",
-    "WORK_FROM_HOME"
+    "WORK_FROM_HOME",
   ].includes(initialData.leaveType)
     ? initialData.leaveType
     : "CASUAL_LEAVE") as LeaveFormValues["leaveType"];
@@ -92,25 +127,19 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
   });
 
   const selectedEmployeeId = form.watch("employeeId");
-
-  const selectedEmployee = mockEmployees.find((emp) => emp.id === selectedEmployeeId);
-
+  const selectedEmployee = employees.find((emp) => emp.id === selectedEmployeeId);
   const resolvedDepartment = selectedEmployee
-    ? mockDepartments.find((dept) => dept.id === selectedEmployee.departmentId)
+    ? departments.find((dept) => dept.id === selectedEmployee.departmentId)
     : null;
-
   const resolvedManager = selectedEmployee
-    ? mockEmployees.find((emp) => emp.id === selectedEmployee.managerId)
+    ? employees.find((emp) => emp.id === selectedEmployee.managerId)
     : null;
 
   const employeeName = selectedEmployee
     ? `${selectedEmployee.firstName} ${selectedEmployee.lastName}`
     : "";
-
   const employeeCode = selectedEmployee ? selectedEmployee.employeeId : "";
-
   const departmentName = resolvedDepartment ? resolvedDepartment.name : "";
-
   const managerName = resolvedManager
     ? `${resolvedManager.firstName} ${resolvedManager.lastName}`
     : "";
@@ -125,32 +154,36 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
           startDate: values.startDate,
           endDate: values.endDate,
           reason: values.reason,
-          isHalfDay: initialData?.isHalfDay ?? false,
+          isHalfDay: values.leaveType === "HALF_DAY",
           duration: initialData?.duration ?? 0,
           status: initialData?.status ?? "PENDING",
           notes: initialData?.notes ?? "",
           attachmentName: initialData?.attachmentName ?? "",
           approver: initialData?.approver ?? "",
+          employeeName,
+          department: departmentName,
+          employeeDisplayId: employeeCode,
         };
         await parentOnSubmit(formData);
       } else {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        
-        toast.success(mode === "create" ? "Leave Applied Successfully" : "Leave Updated Successfully", {
-          description: `Leave request has been submitted for ${employeeName}.`,
-        });
-        
+        toast.success(
+          mode === "create"
+            ? "Leave Applied Successfully"
+            : "Leave Updated Successfully",
+          {
+            description: `Leave request has been submitted for ${employeeName}.`,
+          }
+        );
         form.reset();
-        
-        if (onSuccess) {
-          onSuccess();
-        } else {
-          router.push("/dashboard/leave");
-        }
+        if (onSuccess) onSuccess();
+        else router.push("/dashboard/leave");
       }
     } catch (error) {
       toast.error("Submission Failed", {
-        description: "An unexpected error occurred. Please try again.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred. Please try again.",
       });
     } finally {
       setIsSubmitting(false);
@@ -158,11 +191,8 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
   };
 
   const handleCancel = () => {
-    if (onCancel) {
-      onCancel();
-    } else {
-      router.push("/dashboard/leave");
-    }
+    if (onCancel) onCancel();
+    else router.push("/dashboard/leave");
   };
 
   return (
@@ -174,14 +204,22 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Select Employee</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <Select
+                onValueChange={field.onChange}
+                defaultValue={field.value}
+                disabled={listsLoading}
+              >
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an employee" />
+                    <SelectValue
+                      placeholder={
+                        listsLoading ? "Loading employees…" : "Select an employee"
+                      }
+                    />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {mockEmployees.map((emp) => (
+                  {employees.map((emp) => (
                     <SelectItem key={emp.id} value={emp.id}>
                       {emp.firstName} {emp.lastName} ({emp.employeeId})
                     </SelectItem>
@@ -214,7 +252,9 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
                 </span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-xs">Reporting Manager</span>
+                <span className="text-muted-foreground block text-xs">
+                  Reporting Manager
+                </span>
                 <span className="font-medium text-foreground">
                   {managerName || "No Manager Assigned"}
                 </span>
@@ -317,8 +357,10 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {mode === "create" ? "Applying..." : "Saving..."}
               </>
+            ) : mode === "create" ? (
+              "Submit Request"
             ) : (
-              mode === "create" ? "Submit Request" : "Save Changes"
+              "Save Changes"
             )}
           </Button>
         </div>
