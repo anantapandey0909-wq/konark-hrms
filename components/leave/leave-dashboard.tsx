@@ -10,125 +10,53 @@ import LeaveStats from "@/components/leave/leave-stats";
 import LeaveFilters from "@/components/leave/leave-filters";
 import LeaveTable from "@/components/leave/leave-table";
 
-import { mockLeaveRequests } from "@/mock/leave";
-
-import {
+import type {
   LeaveStatus,
   LeaveType,
   LeaveStatsSummary,
+  LeaveRequest,
 } from "@/types/leave";
 
 const ITEMS_PER_PAGE = 10;
 
-export default function LeaveDashboard() {
-  /* -------------------------------------------------------------------------- */
-  /*                                  State                                     */
-  /* -------------------------------------------------------------------------- */
+interface LeaveDashboardProps {
+  readonly initialRequests: LeaveRequest[];
+  readonly initialStats: LeaveStatsSummary;
+}
 
+export default function LeaveDashboard({
+  initialRequests,
+  initialStats,
+}: LeaveDashboardProps) {
   const [searchQuery, setSearchQuery] = useState("");
-
   const [statusFilter, setStatusFilter] =
     useState<LeaveStatus | "ALL">("ALL");
-
-  const [typeFilter, setTypeFilter] =
-    useState<LeaveType | "ALL">("ALL");
-
+  const [typeFilter, setTypeFilter] = useState<LeaveType | "ALL">("ALL");
   const [departmentFilter, setDepartmentFilter] =
     useState<string | "ALL">("ALL");
-
   const [currentPage, setCurrentPage] = useState(1);
 
-  /**
-   * Frontend only.
-   * This will later come from API state.
-   */
   const isLoading = false;
+  const leaveRequests = initialRequests;
+  const stats = initialStats;
 
-  /**
-   * Normalize the search query once.
-   * Prevents repeated string operations during filtering.
-   */
   const normalizedQuery = useMemo(
     () => searchQuery.trim().toLowerCase(),
     [searchQuery]
   );
-    /* -------------------------------------------------------------------------- */
-  /*                             Department Options                             */
-  /* -------------------------------------------------------------------------- */
 
   const departments = useMemo(() => {
     return [
       ...new Set(
-        mockLeaveRequests
+        leaveRequests
           .map((leave) => leave.department)
           .filter((department): department is string => Boolean(department))
       ),
     ].sort();
-  }, []);
-
-  /* -------------------------------------------------------------------------- */
-  /*                           Dashboard Statistics                             */
-  /* -------------------------------------------------------------------------- */
-
-  const stats: LeaveStatsSummary = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const summary: LeaveStatsSummary = {
-      totalRequests: mockLeaveRequests.length,
-      pending: 0,
-      approved: 0,
-      rejected: 0,
-      cancelled: 0,
-      onLeaveToday: 0,
-    };
-
-    mockLeaveRequests.forEach((leave) => {
-      switch (leave.status) {
-        case "PENDING":
-          summary.pending++;
-          break;
-
-        case "APPROVED":
-          summary.approved++;
-          break;
-
-        case "REJECTED":
-          summary.rejected++;
-          break;
-
-        case "CANCELLED":
-          summary.cancelled++;
-          break;
-      }
-
-      if (
-        leave.status === "APPROVED" &&
-        leave.startDate &&
-        leave.endDate
-      ) {
-        const startDate = new Date(leave.startDate);
-        const endDate = new Date(leave.endDate);
-
-        startDate.setHours(0, 0, 0, 0);
-
-        // Include the complete end day
-        endDate.setHours(23, 59, 59, 999);
-
-        if (today >= startDate && today <= endDate) {
-          summary.onLeaveToday++;
-        }
-      }
-    });
-
-    return summary;
-  }, []);
-    /* -------------------------------------------------------------------------- */
-  /*                           Filter Leave Requests                            */
-  /* -------------------------------------------------------------------------- */
+  }, [leaveRequests]);
 
   const filteredLeaveRequests = useMemo(() => {
-    return mockLeaveRequests.filter((leave) => {
+    return leaveRequests.filter((leave) => {
       const matchesSearch =
         !normalizedQuery ||
         leave.employeeName.toLowerCase().includes(normalizedQuery) ||
@@ -142,8 +70,7 @@ export default function LeaveDashboard() {
         typeFilter === "ALL" || leave.leaveType === typeFilter;
 
       const matchesDepartment =
-        departmentFilter === "ALL" ||
-        leave.department === departmentFilter;
+        departmentFilter === "ALL" || leave.department === departmentFilter;
 
       return (
         matchesSearch &&
@@ -153,88 +80,35 @@ export default function LeaveDashboard() {
       );
     });
   }, [
+    leaveRequests,
     normalizedQuery,
     statusFilter,
     typeFilter,
     departmentFilter,
   ]);
 
-  /* -------------------------------------------------------------------------- */
-  /*                                Pagination                                  */
-  /* -------------------------------------------------------------------------- */
-
   const totalItems = filteredLeaveRequests.length;
-
-  const totalPages = Math.max(
-    1,
-    Math.ceil(totalItems / ITEMS_PER_PAGE)
-  );
-
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
   const activePage = Math.min(currentPage, totalPages);
 
   const paginatedLeaveRequests = useMemo(() => {
     const startIndex = (activePage - 1) * ITEMS_PER_PAGE;
-
     return filteredLeaveRequests.slice(
       startIndex,
       startIndex + ITEMS_PER_PAGE
     );
   }, [filteredLeaveRequests, activePage]);
-    /* -------------------------------------------------------------------------- */
-  /*                               Event Handlers                               */
-  /* -------------------------------------------------------------------------- */
 
-  const resetPagination = () => {
-    setCurrentPage(1);
-  };
-
-  const handleSearchQueryChange = (value: string) => {
-    setSearchQuery(value);
-    resetPagination();
-  };
-
-  const handleStatusFilterChange = (
-    value: LeaveStatus | "ALL"
-  ) => {
-    setStatusFilter(value);
-    resetPagination();
-  };
-
-  const handleTypeFilterChange = (
-    value: LeaveType | "ALL"
-  ) => {
-    setTypeFilter(value);
-    resetPagination();
-  };
-
-  const handleDepartmentFilterChange = (
-    value: string | "ALL"
-  ) => {
-    setDepartmentFilter(value);
-    resetPagination();
-  };
-
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-  };
-    /* -------------------------------------------------------------------------- */
-  /*                                   Render                                   */
-  /* -------------------------------------------------------------------------- */
+  const resetPagination = () => setCurrentPage(1);
 
   return (
     <div className="space-y-6 p-6 md:p-8">
-      {/* ---------------------------------------------------------------------- */}
-      {/* Header */}
-      {/* ---------------------------------------------------------------------- */}
-
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Leave Management
-          </h1>
-
+          <h1 className="text-3xl font-bold tracking-tight">Leave Management</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage employee leave requests, approvals, balances, and leave history.
+            Manage employee leave requests, approvals, balances, and leave
+            history.
           </p>
         </div>
 
@@ -246,31 +120,31 @@ export default function LeaveDashboard() {
         </Button>
       </div>
 
-      {/* ---------------------------------------------------------------------- */}
-      {/* Statistics */}
-      {/* ---------------------------------------------------------------------- */}
-
       <LeaveStats stats={stats} />
-
-      {/* ---------------------------------------------------------------------- */}
-      {/* Filters */}
-      {/* ---------------------------------------------------------------------- */}
 
       <LeaveFilters
         searchQuery={searchQuery}
-        onSearchChange={handleSearchQueryChange}
+        onSearchChange={(value) => {
+          setSearchQuery(value);
+          resetPagination();
+        }}
         statusFilter={statusFilter}
-        onStatusChange={handleStatusFilterChange}
+        onStatusChange={(value) => {
+          setStatusFilter(value);
+          resetPagination();
+        }}
         typeFilter={typeFilter}
-        onTypeChange={handleTypeFilterChange}
+        onTypeChange={(value) => {
+          setTypeFilter(value);
+          resetPagination();
+        }}
         departmentFilter={departmentFilter}
-        onDepartmentChange={handleDepartmentFilterChange}
+        onDepartmentChange={(value) => {
+          setDepartmentFilter(value);
+          resetPagination();
+        }}
         departments={departments}
       />
-
-      {/* ---------------------------------------------------------------------- */}
-      {/* Leave Table */}
-      {/* ---------------------------------------------------------------------- */}
 
       <LeaveTable
         records={paginatedLeaveRequests}
@@ -278,7 +152,7 @@ export default function LeaveDashboard() {
         totalPages={totalPages}
         totalItems={totalItems}
         itemsPerPage={ITEMS_PER_PAGE}
-        onPageChange={handlePageChange}
+        onPageChange={setCurrentPage}
         isLoading={isLoading}
       />
     </div>
