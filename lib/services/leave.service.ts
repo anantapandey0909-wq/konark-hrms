@@ -1,0 +1,536 @@
+/**
+ * Leave service — business rules, balance deduction, tenant isolation.
+ */
+
+import type { LeaveStatus, LeaveType, HalfDaySession } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { getTenantPrisma } from "@/lib/db/prisma-with-tenant";
+import { AppError } from "@/lib/errors/app-error";
+import * as leaveRepo from "@/lib/repositories/leave.repository";
+import * as employeeRepo from "@/lib/repositories/employee.repository";
+import {
+  mapLeaveRequestToFrontend,
+  mapLeaveBalanceToFrontend,
+  calculateLeaveDays,
+  balanceFieldForLeaveType,
+} from "@/lib/mappers/leave.mapper";
+import { writeAuditLog } from "@/lib/services/audit.service";
+import {
+  createLeaveSchema,
+  updateLeaveSchema,
+  type CreateLeaveInput,
+  type UpdateLeaveInput,
+} from "@/lib/validation/leave";
+import type {
+  LeaveRequest,
+  LeaveBalance,
+  LeaveStatsSummary,
+} from "@/types/leave";
+import type { AuthRole } from "@/types/auth";
+
+const APPROVER_ROLES: readonly AuthRole[] = [
+  "ADMIN",
+  "HR",
+  "MANAGER",
+  "SUPERVISOR",
+];
+
+function parseDateOnly(iso: string): Date {
+  return new Date(`${iso}T00:00:00.000Z`);
+}
+
+function assertCanApprove(role: AuthRole) {
+  if (!APPROVER_ROLES.includes(role)) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You are not authorized to approve or reject leave requests.",
+      403
+    );
+  }
+}
+
+export async function listLeaveRequests(filters?: {
+  status?: string;
+  leaveType?: string;
+  employeeId?: string;
+  departmentId?: string;
+}): Promise<LeaveRequest[]> {
+  const { companyId } = await getTenantPrisma();
+  const rows = await leaveRepo.findLeaveRequestsByCompany(
+    companyId,
+    filters ?? {}
+  );
+  return rows.map(mapLeaveRequestToFrontend);
+}
+
+export async function getLeaveRequest(id: string): Promise<LeaveRequest> {
+  const { companyId } = await getTenantPrisma();
+  const row = await leaveRepo.findLeaveRequestById(companyId, id);
+  if (!row) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+  return mapLeaveRequestToFrontend(row);
+}
+
+export async function getLeaveStats(): Promise<LeaveStatsSummary> {
+  const requests = await listLeaveRequests();
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  const summary: LeaveStatsSummary = {
+    totalRequests: requests.length,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    cancelled: 0,
+    onLeaveToday: 0,
+  };
+
+  for (const leave of requests) {
+    switch (leave.status) {
+      case "PENDING":
+        summary.pending++;
+        break;
+      case "APPROVED":
+        summary.approved++;
+        break;
+      case "REJECTED":
+        summary.rejected++;
+        break;
+      case "CANCELLED":
+        summary.cancelled++;
+        break;
+    }
+    if (leave.status === "APPROVED") {
+      const start = parseDateOnly(leave.startDate);
+      const end = parseDateOnly(leave.endDate);
+      if (today >= start && today <= end) summary.onLeaveToday++;
+    }
+  }
+  return summary;
+}
+
+export async function getLeaveBalance(
+  employeeId: string
+): Promise<LeaveBalance> {
+  const { companyId } = await getTenantPrisma();
+  const emp = await employeeRepo.findEmployeeById(companyId, employeeId);
+  if (!emp) {
+    throw new AppError("NOT_FOUND", "Employee not found.", 404);
+  }
+  const year = new Date().getUTCFullYear();
+  let balance = await leaveRepo.findLeaveBalance(companyId, employeeId, year);
+  if (!balance) {
+    balance = await leaveRepo.upsertLeaveBalance(companyId, employeeId, year, {});
+  }
+  return mapLeaveBalanceToFrontend(balance);
+}
+
+export async function createLeaveRequest(
+  input: CreateLeaveInput
+): Promise<LeaveRequest> {
+  const { companyId, user } = await getTenantPrisma();
+  const parsed = createLeaveSchema.parse(input);
+
+  const employee = await employeeRepo.findEmployeeById(
+    companyId,
+    parsed.employeeId
+  );
+  if (!employee) {
+    throw new AppError(
+      "VALIDATION",
+      "Employee not found in your organization."
+    );
+  }
+
+  const startDate = parseDateOnly(parsed.startDate);
+  const endDate = parseDateOnly(parsed.endDate);
+  if (endDate < startDate) {
+    throw new AppError("VALIDATION", "End date cannot be before start date.");
+  }
+
+  const isHalfDay =
+    parsed.leaveType === "HALF_DAY" || parsed.isHalfDay === true;
+  const totalDays = calculateLeaveDays(
+    startDate,
+    endDate,
+    parsed.leaveType,
+    isHalfDay
+  );
+
+  const overlaps = await leaveRepo.findOverlappingLeaves(
+    companyId,
+    parsed.employeeId,
+    startDate,
+    endDate
+  );
+  if (overlaps.length > 0) {
+    throw new AppError(
+      "CONFLICT",
+      "This request overlaps an existing pending or approved leave."
+    );
+  }
+
+  // Soft balance check on create (hard check on approve)
+  const field = balanceFieldForLeaveType(parsed.leaveType);
+  if (field) {
+    const year = startDate.getUTCFullYear();
+    const balance = await leaveRepo.findLeaveBalance(
+      companyId,
+      parsed.employeeId,
+      year
+    );
+    if (balance && (balance[field] as number) < totalDays) {
+      throw new AppError(
+        "VALIDATION",
+        "Insufficient leave balance for this request."
+      );
+    }
+  }
+
+  const created = await leaveRepo.createLeaveRequest({
+    leaveType: parsed.leaveType as LeaveType,
+    startDate,
+    endDate,
+    totalDays,
+    reason: parsed.reason,
+    halfDaySession: isHalfDay
+      ? ((parsed.halfDaySession as HalfDaySession) ?? "FIRST_HALF")
+      : null,
+    appliedOn: new Date(),
+    status: "PENDING",
+    attachment: parsed.attachment ?? null,
+    company: { connect: { id: companyId } },
+    employee: { connect: { id: parsed.employeeId } },
+  });
+
+  await writeAuditLog({
+    companyId,
+    actorId: user.id,
+    action: "LEAVE_REQUEST_CREATED",
+    entity: "LeaveRequest",
+    entityId: created.id,
+    metadata: {
+      employeeId: parsed.employeeId,
+      leaveType: parsed.leaveType,
+      totalDays,
+    },
+  });
+
+  return mapLeaveRequestToFrontend(created);
+}
+
+export async function updateLeaveRequest(
+  id: string,
+  input: UpdateLeaveInput
+): Promise<LeaveRequest> {
+  const { companyId, user } = await getTenantPrisma();
+  const parsed = updateLeaveSchema.parse(input);
+
+  const existing = await leaveRepo.findLeaveRequestById(companyId, id);
+  if (!existing) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+  if (existing.status !== "PENDING") {
+    throw new AppError(
+      "CONFLICT",
+      "Only pending leave requests can be edited."
+    );
+  }
+
+  const startDate = parsed.startDate
+    ? parseDateOnly(parsed.startDate)
+    : existing.startDate;
+  const endDate = parsed.endDate
+    ? parseDateOnly(parsed.endDate)
+    : existing.endDate;
+  if (endDate < startDate) {
+    throw new AppError("VALIDATION", "End date cannot be before start date.");
+  }
+
+  const leaveType = (parsed.leaveType ?? existing.leaveType) as string;
+  const isHalfDay = leaveType === "HALF_DAY" || parsed.isHalfDay === true;
+  const totalDays = calculateLeaveDays(startDate, endDate, leaveType, isHalfDay);
+
+  const employeeId = parsed.employeeId ?? existing.employeeId;
+  const overlaps = await leaveRepo.findOverlappingLeaves(
+    companyId,
+    employeeId,
+    startDate,
+    endDate,
+    id
+  );
+  if (overlaps.length > 0) {
+    throw new AppError(
+      "CONFLICT",
+      "This request overlaps an existing pending or approved leave."
+    );
+  }
+
+  const updated = await leaveRepo.updateLeaveRequest(companyId, id, {
+    ...(parsed.employeeId
+      ? { employee: { connect: { id: parsed.employeeId } } }
+      : {}),
+    ...(parsed.leaveType
+      ? { leaveType: parsed.leaveType as LeaveType }
+      : {}),
+    startDate,
+    endDate,
+    totalDays,
+    ...(parsed.reason !== undefined ? { reason: parsed.reason } : {}),
+    halfDaySession: isHalfDay
+      ? ((parsed.halfDaySession as HalfDaySession) ??
+        existing.halfDaySession ??
+        "FIRST_HALF")
+      : null,
+  });
+
+  if (!updated) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+
+  await writeAuditLog({
+    companyId,
+    actorId: user.id,
+    action: "LEAVE_REQUEST_UPDATED",
+    entity: "LeaveRequest",
+    entityId: id,
+  });
+
+  return mapLeaveRequestToFrontend(updated);
+}
+
+export async function approveLeaveRequest(
+  id: string,
+  remarks?: string | null
+): Promise<LeaveRequest> {
+  const { companyId, user } = await getTenantPrisma();
+  assertCanApprove(user.role);
+
+  const existing = await leaveRepo.findLeaveRequestById(companyId, id);
+  if (!existing) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+  if (existing.status !== "PENDING") {
+    throw new AppError("CONFLICT", "Only pending requests can be approved.");
+  }
+
+  const year = existing.startDate.getUTCFullYear();
+  const field = balanceFieldForLeaveType(existing.leaveType);
+
+  // Resolve approver employee id for FK (approvedBy is Employee)
+  const approverEmployee = await prisma.employee.findFirst({
+    where: { companyId, userId: user.id },
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (field) {
+      let balance = await tx.leaveBalance.findFirst({
+        where: {
+          companyId,
+          employeeId: existing.employeeId,
+          year,
+        },
+      });
+      if (!balance) {
+        balance = await tx.leaveBalance.create({
+          data: {
+            companyId,
+            employeeId: existing.employeeId,
+            year,
+            casualLeave: 12,
+            sickLeave: 8,
+            earnedLeave: 15,
+            maternityLeave: 0,
+            paternityLeave: 0,
+            compOff: 0,
+          },
+        });
+      }
+      const current = balance[field] as number;
+      if (current < existing.totalDays) {
+        throw new AppError(
+          "VALIDATION",
+          "Insufficient leave balance for approval."
+        );
+      }
+      await tx.leaveBalance.update({
+        where: { id: balance.id },
+        data: { [field]: current - existing.totalDays },
+      });
+    }
+
+    return tx.leaveRequest.update({
+      where: { id },
+      data: {
+        status: "APPROVED" as LeaveStatus,
+        approvedOn: new Date(),
+        approvalRemarks: remarks ?? null,
+        ...(approverEmployee
+          ? { approvedBy: { connect: { id: approverEmployee.id } } }
+          : {}),
+      },
+      include: {
+        employee: {
+          include: { department: { select: { departmentName: true } } },
+        },
+        approvedBy: { select: { firstName: true, lastName: true } },
+      },
+    });
+  });
+
+  await writeAuditLog({
+    companyId,
+    actorId: user.id,
+    action: "LEAVE_REQUEST_APPROVED",
+    entity: "LeaveRequest",
+    entityId: id,
+  });
+  if (field) {
+    await writeAuditLog({
+      companyId,
+      actorId: user.id,
+      action: "LEAVE_BALANCE_UPDATED",
+      entity: "LeaveBalance",
+      entityId: existing.employeeId,
+      metadata: { leaveRequestId: id, deducted: existing.totalDays },
+    });
+  }
+
+  return mapLeaveRequestToFrontend(updated);
+}
+
+export async function rejectLeaveRequest(
+  id: string,
+  remarks?: string | null
+): Promise<LeaveRequest> {
+  const { companyId, user } = await getTenantPrisma();
+  assertCanApprove(user.role);
+
+  const existing = await leaveRepo.findLeaveRequestById(companyId, id);
+  if (!existing) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+  if (existing.status !== "PENDING") {
+    throw new AppError("CONFLICT", "Only pending requests can be rejected.");
+  }
+
+  const approverEmployee = await prisma.employee.findFirst({
+    where: { companyId, userId: user.id },
+  });
+
+  const updated = await leaveRepo.updateLeaveRequest(companyId, id, {
+    status: "REJECTED",
+    approvedOn: new Date(),
+    approvalRemarks: remarks ?? null,
+    ...(approverEmployee
+      ? { approvedBy: { connect: { id: approverEmployee.id } } }
+      : {}),
+  });
+
+  if (!updated) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+
+  await writeAuditLog({
+    companyId,
+    actorId: user.id,
+    action: "LEAVE_REQUEST_REJECTED",
+    entity: "LeaveRequest",
+    entityId: id,
+  });
+
+  return mapLeaveRequestToFrontend(updated);
+}
+
+export async function cancelLeaveRequest(id: string): Promise<LeaveRequest> {
+  const { companyId, user, prisma: db } = await getTenantPrisma();
+
+  const existing = await leaveRepo.findLeaveRequestById(companyId, id);
+  if (!existing) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+
+  // Owner or approver roles may cancel pending; only approvers restore approved balance
+  const linked = await db.employee.findFirst({
+    where: { companyId, userId: user.id },
+  });
+  const isOwner = linked?.id === existing.employeeId;
+  const isApprover = APPROVER_ROLES.includes(user.role);
+
+  if (existing.status === "PENDING") {
+    if (!isOwner && !isApprover) {
+      throw new AppError("FORBIDDEN", "Not allowed to cancel this request.", 403);
+    }
+    const updated = await leaveRepo.updateLeaveRequest(companyId, id, {
+      status: "CANCELLED",
+    });
+    if (!updated) {
+      throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+    }
+    await writeAuditLog({
+      companyId,
+      actorId: user.id,
+      action: "LEAVE_REQUEST_CANCELLED",
+      entity: "LeaveRequest",
+      entityId: id,
+    });
+    return mapLeaveRequestToFrontend(updated);
+  }
+
+  if (existing.status === "APPROVED") {
+    if (!isApprover) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Only managers/HR can cancel approved leave.",
+        403
+      );
+    }
+    const year = existing.startDate.getUTCFullYear();
+    const field = balanceFieldForLeaveType(existing.leaveType);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (field) {
+        const balance = await tx.leaveBalance.findFirst({
+          where: {
+            companyId,
+            employeeId: existing.employeeId,
+            year,
+          },
+        });
+        if (balance) {
+          await tx.leaveBalance.update({
+            where: { id: balance.id },
+            data: {
+              [field]: (balance[field] as number) + existing.totalDays,
+            },
+          });
+        }
+      }
+      return tx.leaveRequest.update({
+        where: { id },
+        data: { status: "CANCELLED" },
+        include: {
+          employee: {
+            include: { department: { select: { departmentName: true } } },
+          },
+          approvedBy: { select: { firstName: true, lastName: true } },
+        },
+      });
+    });
+
+    await writeAuditLog({
+      companyId,
+      actorId: user.id,
+      action: "LEAVE_REQUEST_CANCELLED",
+      entity: "LeaveRequest",
+      entityId: id,
+    });
+    return mapLeaveRequestToFrontend(updated);
+  }
+
+  throw new AppError(
+    "CONFLICT",
+    "This leave request cannot be cancelled in its current status."
+  );
+}
