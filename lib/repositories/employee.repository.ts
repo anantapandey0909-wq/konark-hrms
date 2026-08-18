@@ -3,7 +3,7 @@
  * Always filter by companyId (caller supplies trusted session companyId).
  */
 
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
@@ -70,10 +70,21 @@ export async function findEmployeeByCode(
 }
 
 export async function findEmployeeByEmail(companyId: string, email: string) {
+  // Build EmployeeWhereInput directly so `mode` is contextually typed as
+  // Prisma.QueryMode. Do not pass the StringFilter through tenantScope's
+  // generic merge (that widens "insensitive" to string).
+  // companyId still comes only from the trusted server parameter.
+  const where: Prisma.EmployeeWhereInput = {
+    companyId,
+    email: {
+      equals: email,
+      mode: Prisma.QueryMode.insensitive,
+    },
+  };
+
   return prisma.employee.findFirst({
-    where: tenantScope(companyId, {
-      email: { equals: email, mode: "insensitive" },
-    }),
+    where,
+    include: employeeInclude,
   });
 }
 
