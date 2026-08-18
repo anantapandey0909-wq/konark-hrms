@@ -47,6 +47,10 @@ export interface TenantPrismaContext {
   /**
    * Merge trusted companyId into a Prisma `where` clause.
    * Always prefer this over passing companyId from the client.
+   *
+   * Prefer calling with an explicit Prisma WhereInput type argument when the
+   * filter includes enum fields, e.g.:
+   *   scope<Prisma.DepartmentWhereInput>({ status: DepartmentStatus.ACTIVE })
    */
   scope: <T extends object>(where?: T) => T & { companyId: string };
   /**
@@ -72,8 +76,13 @@ export async function getTenantPrisma(): Promise<TenantPrismaContext> {
     prisma,
     companyId,
     user,
-    scope: <T extends object>(where?: T) =>
-      ({ ...(where ?? {}), companyId }) as T & { companyId: string },
+    scope: <T extends object>(where?: T) => {
+      if (!companyId) {
+        throw new TenantIsolationError("companyId is required for tenant scope.");
+      }
+      // Object.assign preserves the caller's T without re-inferring object literals.
+      return Object.assign({}, where, { companyId }) as T & { companyId: string };
+    },
     assertRecord: (resourceCompanyId) =>
       assertSameTenant(companyId, resourceCompanyId),
     trustCompanyId: (clientProvided) =>
@@ -84,14 +93,19 @@ export async function getTenantPrisma(): Promise<TenantPrismaContext> {
 /**
  * Build a where filter with forced companyId (when companyId is already known
  * from a trusted server context).
+ *
+ * Tip: when filtering on Prisma enums, either:
+ * 1. Use Prisma enum members (DepartmentStatus.ACTIVE), or
+ * 2. Assign the result to an explicit Prisma.*WhereInput variable, or
+ * 3. Pass the WhereInput as the type argument: tenantScope<Prisma.XWhereInput>(...)
  */
 export function tenantScope<
-  T extends object,
+  T extends object = Record<string, never>,
 >(companyId: string, where?: T): T & { companyId: string } {
   if (!companyId) {
     throw new TenantIsolationError("companyId is required for tenantScope.");
   }
-  return { ...(where ?? {}), companyId } as T & { companyId: string };
+  return Object.assign({}, where, { companyId }) as T & { companyId: string };
 }
 
 export { TenantIsolationError };
