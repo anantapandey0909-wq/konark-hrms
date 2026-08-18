@@ -27,3 +27,12 @@ export function useMockData(): boolean {
   if (value === undefined || value === "") return true;
   return value !== "false" && value !== "0";
 }
+
+/**
+ * Phase 4+: when true, Employee/Department (and later modules) use real DB
+ * via server actions. Default false — mock data remains the default.
+ */
+export function isRealDataEnabled(): boolean {
+  const value = process.env.NEXT_PUBLIC_USE_REAL_DATA;
+  return value === "true" || value === "1";
+}
