@@ -8,7 +8,8 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { DepartmentForm } from "@/components/departments/department-form";
-import { DepartmentFormData } from "@/types/department";
+import type { DepartmentFormData } from "@/types/department";
+import { saveDepartment } from "@/lib/data/departments";
 
 export default function CreateDepartmentPage() {
   const router = useRouter();
@@ -19,21 +20,14 @@ export default function CreateDepartmentPage() {
       setIsSubmitting(true);
 
       try {
-        console.log("Creating Department:", data);
-
-        // ------------------------------------------------------------------
-        // TODO:
-        // await createDepartment(data);
-        // ------------------------------------------------------------------
-
+        await saveDepartment(data);
         toast.success("Department created successfully.");
-
         router.push("/dashboard/departments");
       } catch (error) {
-        console.error(error);
-
         toast.error(
-          "Something went wrong while creating the department."
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while creating the department."
         );
       } finally {
         setIsSubmitting(false);
@@ -49,12 +43,7 @@ export default function CreateDepartmentPage() {
   return (
     <main className="mx-auto flex max-w-3xl flex-1 flex-col space-y-6 p-8 pt-6">
       <div className="space-y-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className="w-fit"
-        >
+        <Button variant="ghost" size="sm" asChild className="w-fit">
           <Link href="/dashboard/departments">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back
