@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Users } from "lucide-react";
 
@@ -12,9 +12,10 @@ import {
 } from "@/components/employee/table/toolbar";
 
 import type { Employee } from "@/types/employee";
+import type { Department } from "@/types/department";
 
-import { mockEmployees } from "@/mock/employee";
-import { mockDepartments } from "@/mock/department";
+import { fetchEmployees } from "@/lib/data/employees";
+import { fetchDepartments } from "@/lib/data/departments";
 
 export default function EmployeesPage() {
   const [filters, setFilters] = useState<EmployeeFilters>({
@@ -23,46 +24,45 @@ export default function EmployeesPage() {
     status: "ALL",
     employmentType: "ALL",
   });
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filteredEmployees = useMemo(() => {
-    return mockEmployees.filter((emp: Employee) => {
-      const fullName =
-        `${emp.firstName} ${emp.lastName}`.toLowerCase();
-
-      const matchesSearch =
-        fullName.includes(filters.search.toLowerCase()) ||
-        emp.email
-          .toLowerCase()
-          .includes(filters.search.toLowerCase()) ||
-        emp.employeeId
-          .toLowerCase()
-          .includes(filters.search.toLowerCase());
-
-      const matchesDept =
-        filters.departmentId === "ALL" ||
-        emp.departmentId === filters.departmentId;
-
-      const matchesStatus =
-        filters.status === "ALL" ||
-        emp.status === filters.status;
-
-      const matchesType =
-        filters.employmentType === "ALL" ||
-        emp.employmentType ===
-          filters.employmentType;
-
-      return (
-        matchesSearch &&
-        matchesDept &&
-        matchesStatus &&
-        matchesType
-      );
-    });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      try {
+        const [emps, depts] = await Promise.all([
+          fetchEmployees({
+            search: filters.search || undefined,
+            departmentId: filters.departmentId,
+            status: filters.status,
+            employmentType: filters.employmentType,
+          }),
+          fetchDepartments(),
+        ]);
+        if (!cancelled) {
+          setEmployees(emps);
+          setDepartments(depts);
+        }
+      } catch {
+        if (!cancelled) {
+          setEmployees([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [filters]);
+
+  const filteredEmployees = useMemo(() => employees, [employees]);
 
   return (
     <div className="flex w-full flex-col gap-6 p-4 md:p-8">
-      {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <h1 className="inline-flex items-center gap-2 text-3xl font-bold tracking-tight">
@@ -79,25 +79,20 @@ export default function EmployeesPage() {
           asChild
           className="h-9 self-start rounded-xl gap-2 font-medium sm:self-auto"
         >
-          <Link href="/dashboard/employees/create">
+          <Link href="/dashboard/employees/new">
             <Plus className="h-4 w-4" />
             <span>Add Employee</span>
           </Link>
         </Button>
       </div>
 
-      {/* Filters */}
       <EmployeeTableToolbar
         filters={filters}
         setFilters={setFilters}
-        departments={mockDepartments}
+        departments={departments}
       />
 
-      {/* Employee Table */}
-      <EmployeeTable
-        employees={filteredEmployees}
-        isLoading={false}
-      />
+      <EmployeeTable employees={filteredEmployees} isLoading={isLoading} />
     </div>
   );
 }
