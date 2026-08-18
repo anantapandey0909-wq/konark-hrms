@@ -1,3 +1,4 @@
+import type { AttendanceWithEmployee } from "@/types/attendance";
 import { fetchAttendanceList } from "@/lib/data/attendance";
 import { AttendancePageClient } from "./attendance-page-client";
 
@@ -7,12 +8,12 @@ import { AttendancePageClient } from "./attendance-page-client";
  * Mock vs real is handled inside fetchAttendanceList via feature flag.
  */
 export default async function AttendancePage() {
-  let initialData = [];
+  let initialData: AttendanceWithEmployee[] = [];
 
   try {
     initialData = await fetchAttendanceList();
   } catch {
-    // Unauthenticated / mock-auth without cookie: empty list; client can still operate after login.
+    // Unauthenticated / mock-auth without cookie: empty list.
     initialData = [];
   }
 
