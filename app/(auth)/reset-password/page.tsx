@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useState, useMemo } from "react";
+import { Suspense, useCallback, useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { AuthLayout, AuthLogo, AuthFooter, ResetPasswordForm } from "@/components/auth";
 import { AUTH_PAGE_TITLES, AUTH_PAGE_DESCRIPTIONS, AUTH_ROUTES } from "@/constants/auth";
 import type { ResetPasswordSchema } from "@/schemas/auth";
 
-export default function ResetPasswordPage() {
+/**
+ * Inner content that reads `?token=` via useSearchParams.
+ * Must sit under a React Suspense boundary for Next.js App Router prerender.
+ */
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tokenFromUrl = useMemo(
@@ -72,5 +76,33 @@ export default function ResetPasswordPage() {
         defaultToken={tokenFromUrl}
       />
     </AuthLayout>
+  );
+}
+
+function ResetPasswordFallback() {
+  return (
+    <AuthLayout
+      title={AUTH_PAGE_TITLES.resetPassword}
+      description={AUTH_PAGE_DESCRIPTIONS.resetPassword}
+      footer={
+        <AuthFooter
+          primaryLabel="Back to Login"
+          primaryHref={AUTH_ROUTES.login}
+          secondaryLabel="Back to Home"
+          secondaryHref="/"
+        />
+      }
+    >
+      <AuthLogo size="lg" className="mb-4" />
+      <p className="text-sm text-muted-foreground">Loading reset form…</p>
+    </AuthLayout>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<ResetPasswordFallback />}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }
