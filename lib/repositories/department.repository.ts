@@ -2,7 +2,7 @@
  * Department repository — database access only.
  */
 
-import type { DepartmentStatus, Prisma } from "@prisma/client";
+import { DepartmentStatus, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
@@ -61,7 +61,7 @@ export async function softDeactivateDepartment(
   companyId: string,
   id: string
 ) {
-  return updateDepartment(companyId, id, { status: "INACTIVE" });
+  return updateDepartment(companyId, id, { status: DepartmentStatus.INACTIVE });
 }
 
 export async function countEmployeesInDepartment(
@@ -74,23 +74,24 @@ export async function countEmployeesInDepartment(
 }
 
 export async function getDepartmentSummary(companyId: string) {
-  const activeStatus: DepartmentStatus = "ACTIVE";
-  const inactiveStatus: DepartmentStatus = "INACTIVE";
+  // Build Prisma.DepartmentWhereInput directly so `status` is contextual-typed
+  // as DepartmentStatus. Do not pass status through tenantScope's generic merge
+  // (that widens string literals to `string` and breaks Prisma enum assignability).
+  // companyId still comes only from the trusted server parameter — never the client.
+  const whereCompany: Prisma.DepartmentWhereInput = { companyId };
+  const whereActive: Prisma.DepartmentWhereInput = {
+    companyId,
+    status: DepartmentStatus.ACTIVE,
+  };
+  const whereInactive: Prisma.DepartmentWhereInput = {
+    companyId,
+    status: DepartmentStatus.INACTIVE,
+  };
 
   const [total, active, inactive, totalEmployees] = await Promise.all([
-    prisma.department.count({
-      where: tenantScope<Prisma.DepartmentWhereInput>(companyId, {}),
-    }),
-    prisma.department.count({
-      where: tenantScope<Prisma.DepartmentWhereInput>(companyId, {
-        status: activeStatus,
-      }),
-    }),
-    prisma.department.count({
-      where: tenantScope<Prisma.DepartmentWhereInput>(companyId, {
-        status: inactiveStatus,
-      }),
-    }),
+    prisma.department.count({ where: whereCompany }),
+    prisma.department.count({ where: whereActive }),
+    prisma.department.count({ where: whereInactive }),
     prisma.employee.count({ where: tenantScope(companyId, {}) }),
   ]);
 
