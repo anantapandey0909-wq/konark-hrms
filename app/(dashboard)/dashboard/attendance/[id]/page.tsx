@@ -1,70 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { 
-  ChevronLeft, 
-  Clock, 
-  MapPin, 
-  ShieldAlert, 
-  Award, 
+import {
+  ChevronLeft,
+  Clock,
+  MapPin,
+  ShieldAlert,
+  Award,
   FileText,
   Building,
   CheckCircle2,
-  XCircle
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AttendanceStatusBadge } from "@/components/attendance/attendance-status-badge";
-import { mockEmployees } from "@/mock/employee";
-import type { AttendanceWithEmployee } from "@/types/attendance";
+import { fetchAttendance } from "@/lib/data/attendance";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-}
-
-// Resilient mock resolver to guarantee seamless rendering on click-throughs
-function resolveAttendanceDetails(id: string): AttendanceWithEmployee | null {
-  const cleanId = id.trim();
-  
-  // Find employee by internal id (e.g. emp-101) or business id (e.g. K-00234)
-  const employee = mockEmployees.find(
-    (e) => e.id === cleanId || e.id === cleanId.replace("att-", "emp-") || e.employeeId === cleanId
-  );
-
-  if (!employee) {
-    return null;
-  }
-
-  // Construct a standard normalized AttendanceWithEmployee view object
-  return {
-    id: `att-${employee.id}`,
-    attendance: {
-      id: `att-${employee.id}`,
-      tenantId: employee.tenantId,
-      employeeId: employee.id,
-      attendanceDate: employee.status === "ACTIVE" ? "2025-01-15" : "2025-01-14",
-      checkIn: "2025-01-15T09:02:14.000Z",
-      checkOut: "2025-01-15T18:15:30.000Z",
-      totalHours: 9.2,
-      overtimeHours: 1.2,
-      breakDuration: 45,
-      status: employee.status === "ON_LEAVE" ? "ON_LEAVE" : "PRESENT",
-      workMode: "OFFICE",
-      remarks: "Standard productive day. Completed all designated sprint cycles successfully.",
-      location: "Head Office",
-      shiftName: "General Office Shift (09:00 AM - 06:00 PM)",
-      isRegularized: false,
-      createdAt: "2025-01-15T18:15:30.000Z",
-      updatedAt: "2025-01-15T18:15:30.000Z"
-    },
-    employee: {
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      email: employee.email,
-      avatarUrl: employee.avatarUrl,
-      designation: employee.designation,
-      departmentId: employee.departmentId
-    }
-  };
 }
 
 const formatTime = (isoString: string | null): string => {
@@ -88,7 +41,7 @@ const formatDate = (dateString: string): string => {
 
 export default async function AttendanceDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const record = resolveAttendanceDetails(id);
+  const record = await fetchAttendance(id);
 
   if (!record) {
     notFound();
@@ -96,18 +49,23 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
 
   const { attendance, employee } = record;
   const fullName = `${employee.firstName} ${employee.lastName}`;
-  const departmentName = employee.departmentId?.replace("dept-", "").replace("-", " ") || "General";
+  const departmentName =
+    employee.departmentId?.replace("dept-", "").replace(/-/g, " ") || "General";
 
-  // Single source of truth references directly from the Attendance entity
-  const shiftName = attendance.shiftName || "General Office Shift (09:00 AM - 06:00 PM)";
+  const shiftName =
+    attendance.shiftName || "General Office Shift (09:00 AM - 06:00 PM)";
   const isRegularized = attendance.isRegularized ?? false;
   const locationDisplay = attendance.location || "On-Site";
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto p-4 md:p-6">
-      {/* Top Navigation */}
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-xs" asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 -ml-2 text-xs"
+          asChild
+        >
           <Link href="/dashboard/attendance">
             <ChevronLeft className="h-4 w-4" />
             <span>Back to Attendance</span>
@@ -118,14 +76,14 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
         </span>
       </div>
 
-      {/* Profile Header Block */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-xl border border-border bg-card shadow-sm">
         <div className="flex items-center gap-4">
           <div className="h-14 w-14 rounded-full overflow-hidden border-2 border-primary/10 bg-muted shrink-0">
             {employee.avatarUrl ? (
-              <img 
-                src={employee.avatarUrl} 
-                alt={fullName} 
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={employee.avatarUrl}
+                alt={fullName}
                 className="h-full w-full object-cover"
               />
             ) : (
@@ -142,7 +100,8 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
               <AttendanceStatusBadge status={attendance.status} />
             </div>
             <p className="text-xs text-muted-foreground font-medium mt-0.5">
-              {employee.designation} • <span className="capitalize">{departmentName}</span>
+              {employee.designation} •{" "}
+              <span className="capitalize">{departmentName}</span>
             </p>
             <p className="text-[10px] font-mono text-muted-foreground/80 mt-1">
               Ref: {attendance.employeeId}
@@ -152,7 +111,9 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
 
         <div className="flex items-center gap-3 border-t md:border-t-0 pt-4 md:pt-0 border-border">
           <div className="text-left md:text-right">
-            <p className="text-xs text-muted-foreground font-medium">Attendance Date</p>
+            <p className="text-xs text-muted-foreground font-medium">
+              Attendance Date
+            </p>
             <p className="text-sm font-bold text-foreground mt-0.5">
               {formatDate(attendance.attendanceDate)}
             </p>
@@ -160,9 +121,7 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Main Metric Cards Grid */}
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Time Card */}
         <Card className="shadow-sm border-border">
           <CardHeader className="pb-3 border-b border-border/40 bg-muted/5">
             <CardTitle className="text-sm font-semibold tracking-tight inline-flex items-center gap-2">
@@ -185,15 +144,18 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
             </div>
             <div className="h-px bg-border/50" />
             <div className="flex justify-between items-center text-xs">
-              <span className="text-muted-foreground font-medium">Total Duration</span>
+              <span className="text-muted-foreground font-medium">
+                Total Duration
+              </span>
               <span className="font-bold text-foreground">
-                {attendance.totalHours !== null ? `${attendance.totalHours.toFixed(2)} hrs` : "--"}
+                {attendance.totalHours !== null
+                  ? `${attendance.totalHours.toFixed(2)} hrs`
+                  : "--"}
               </span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Operational Context Card */}
         <Card className="shadow-sm border-border">
           <CardHeader className="pb-3 border-b border-border/40 bg-muted/5">
             <CardTitle className="text-sm font-semibold tracking-tight inline-flex items-center gap-2">
@@ -217,15 +179,18 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
             </div>
             <div className="h-px bg-border/50" />
             <div className="flex justify-between items-center text-xs">
-              <span className="text-muted-foreground font-medium">Break Duration</span>
+              <span className="text-muted-foreground font-medium">
+                Break Duration
+              </span>
               <span className="font-bold text-foreground">
-                {attendance.breakDuration ? `${attendance.breakDuration} mins` : "--"}
+                {attendance.breakDuration
+                  ? `${attendance.breakDuration} mins`
+                  : "--"}
               </span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Overtime & Policy Card */}
         <Card className="shadow-sm border-border">
           <CardHeader className="pb-3 border-b border-border/40 bg-muted/5">
             <CardTitle className="text-sm font-semibold tracking-tight inline-flex items-center gap-2">
@@ -237,10 +202,9 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
             <div className="flex justify-between items-center text-xs">
               <span className="text-muted-foreground font-medium">Overtime Log</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                {attendance.overtimeHours && attendance.overtimeHours > 0 
-                  ? `+${attendance.overtimeHours.toFixed(1)} hrs` 
-                  : "0.0 hrs"
-                }
+                {attendance.overtimeHours && attendance.overtimeHours > 0
+                  ? `+${attendance.overtimeHours.toFixed(1)} hrs`
+                  : "0.0 hrs"}
               </span>
             </div>
             <div className="flex justify-between items-center text-xs">
@@ -270,9 +234,7 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
         </Card>
       </div>
 
-      {/* Detailed Informational Cards */}
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Remarks Panel */}
         <Card className="md:col-span-2 shadow-sm border-border">
           <CardHeader className="pb-3 border-b border-border/40 bg-muted/5">
             <CardTitle className="text-sm font-semibold tracking-tight inline-flex items-center gap-2">
@@ -282,12 +244,12 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
           </CardHeader>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground leading-relaxed">
-              {attendance.remarks || "No operational notes logged for this timesheet period."}
+              {attendance.remarks ||
+                "No operational notes logged for this timesheet period."}
             </p>
           </CardContent>
         </Card>
 
-        {/* Shift Specification Details */}
         <Card className="shadow-sm border-border">
           <CardHeader className="pb-3 border-b border-border/40 bg-muted/5">
             <CardTitle className="text-sm font-semibold tracking-tight inline-flex items-center gap-2">
@@ -302,7 +264,9 @@ export default async function AttendanceDetailPage({ params }: PageProps) {
             </div>
             <div className="pt-2">
               <p className="font-semibold text-foreground">Grace Period</p>
-              <p className="text-[11px] mt-1 leading-snug">15 minutes dynamic buffer threshold</p>
+              <p className="text-[11px] mt-1 leading-snug">
+                15 minutes dynamic buffer threshold
+              </p>
             </div>
           </CardContent>
         </Card>
