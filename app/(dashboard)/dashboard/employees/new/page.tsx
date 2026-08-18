@@ -2,22 +2,69 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { EmployeeForm } from "@/components/employee/form/employee-form";
 import type { EmployeeFormData } from "@/components/employee/form/employee-form";
-import { mockEmployees } from "@/mock/employee";
-import { mockDepartments } from "@/mock/department";
+import type { Employee } from "@/types/employee";
+import type { Department } from "@/types/department";
+import { fetchEmployees, saveEmployee } from "@/lib/data/employees";
+import { fetchDepartments } from "@/lib/data/departments";
 
 export default function NewEmployeePage() {
   const router = useRouter();
   const [submitting, setSubmitting] = React.useState(false);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [managers, setManagers] = React.useState<Employee[]>([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [depts, emps] = await Promise.all([
+          fetchDepartments(),
+          fetchEmployees(),
+        ]);
+        if (!cancelled) {
+          setDepartments(depts);
+          setManagers(emps);
+        }
+      } catch {
+        /* keep empty */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (values: EmployeeFormData) => {
+    if (!values.departmentId) {
+      toast.error("Department is required.");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      // Mock API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log("Successfully Created Employee Record:", values);
+      await saveEmployee({
+        firstName: values.firstName,
+        lastName: values.lastName,
+        email: values.email,
+        phone: values.phone,
+        avatarUrl: values.avatarUrl,
+        departmentId: values.departmentId,
+        managerId: values.managerId,
+        designation: values.designation,
+        status: values.status,
+        employmentType: values.employmentType,
+        joiningDate: values.joiningDate,
+        employeeId: values.employeeId,
+      });
+      toast.success("Employee created successfully.");
       router.push("/dashboard/employees");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create employee."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -38,8 +85,8 @@ export default function NewEmployeePage() {
 
       <EmployeeForm
         mode="create"
-        departments={mockDepartments}
-        managers={mockEmployees}
+        departments={departments}
+        managers={managers}
         isSubmitting={submitting}
         onSubmit={handleSubmit}
         onCancel={handleCancel}
