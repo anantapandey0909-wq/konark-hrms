@@ -1,0 +1,94 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import {
+  listDepartments,
+  getDepartment,
+  getDepartmentSummary,
+  createDepartment,
+  updateDepartment,
+  deactivateDepartment,
+  type DepartmentInput,
+} from "@/lib/services/department.service";
+import { toSafeActionResult } from "@/lib/errors/app-error";
+import type {
+  Department,
+  DepartmentSummary,
+  ResolvedDepartment,
+} from "@/types/department";
+
+export type ActionResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string; code: string };
+
+export async function listDepartmentsAction(): Promise<
+  ActionResult<ResolvedDepartment[]>
+> {
+  try {
+    const data = await listDepartments();
+    return { success: true, data };
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+}
+
+export async function getDepartmentAction(
+  id: string
+): Promise<ActionResult<ResolvedDepartment>> {
+  try {
+    const data = await getDepartment(id);
+    return { success: true, data };
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+}
+
+export async function getDepartmentSummaryAction(): Promise<
+  ActionResult<DepartmentSummary>
+> {
+  try {
+    const data = await getDepartmentSummary();
+    return { success: true, data };
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+}
+
+export async function createDepartmentAction(
+  input: DepartmentInput
+): Promise<ActionResult<Department>> {
+  try {
+    const data = await createDepartment(input);
+    revalidatePath("/dashboard/departments");
+    return { success: true, data };
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+}
+
+export async function updateDepartmentAction(
+  id: string,
+  input: Partial<DepartmentInput>
+): Promise<ActionResult<Department>> {
+  try {
+    const data = await updateDepartment(id, input);
+    revalidatePath("/dashboard/departments");
+    revalidatePath(`/dashboard/departments/${id}`);
+    return { success: true, data };
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+}
+
+export async function deactivateDepartmentAction(
+  id: string
+): Promise<ActionResult<Department>> {
+  try {
+    const data = await deactivateDepartment(id);
+    revalidatePath("/dashboard/departments");
+    revalidatePath(`/dashboard/departments/${id}`);
+    return { success: true, data };
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+}
