@@ -7,7 +7,7 @@ export async function writeAuditLog(input: {
   action: string;
   entity: string;
   entityId?: string | null;
-  /** Nested JSON allowed — typed as Prisma JSON input, not Record<string, unknown>. */
+  /** Nested JSON allowed — Prisma.InputJsonValue (not Record of unknown). */
   metadata?: Prisma.InputJsonValue;
 }) {
   try {
