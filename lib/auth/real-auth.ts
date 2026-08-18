@@ -31,27 +31,20 @@ function normalizeIdentifier(value: string): string {
 
 async function findUserForLogin(identifier: string) {
   const normalized = normalizeIdentifier(identifier);
+  const trimmed = identifier.trim();
 
-  // Prefer email match; also allow userCode (case-insensitive via equals)
-  const byEmail = await prisma.user.findUnique({
-    where: { email: normalized },
-    include: userAuthInclude,
-  });
-  if (byEmail) return byEmail;
-
-  // userCode lookup (stored as-is; compare lower)
-  const candidates = await prisma.user.findMany({
+  // Single case-insensitive lookup for email or userCode
+  const user = await prisma.user.findFirst({
     where: {
       OR: [
-        { userCode: { equals: identifier.trim(), mode: "insensitive" } },
         { email: { equals: normalized, mode: "insensitive" } },
+        { userCode: { equals: trimmed, mode: "insensitive" } },
       ],
     },
     include: userAuthInclude,
-    take: 1,
   });
 
-  return candidates[0] ?? null;
+  return user;
 }
 
 export async function realLogin(
@@ -65,7 +58,6 @@ export async function realLogin(
   const dbUser = await findUserForLogin(usernameOrEmail);
 
   if (!dbUser) {
-    // Constant-time-ish delay could be added; generic error only.
     throw new Error(GENERIC_AUTH_ERROR);
   }
 
@@ -82,7 +74,7 @@ export async function realLogin(
   if (isArgon2Hash(dbUser.password)) {
     valid = await verifyPassword(password, dbUser.password);
   } else {
-    // Legacy plaintext seed path — upgrade hash on successful login
+    // Legacy plaintext (e.g. manual Studio edit) — upgrade hash on success
     valid = dbUser.password === password;
     if (valid) {
       const upgraded = await hashPassword(password);
@@ -147,8 +139,8 @@ export async function requestPasswordReset(email: string): Promise<{
   const normalized = normalizeIdentifier(email);
   if (!normalized) return generic;
 
-  const user = await prisma.user.findUnique({
-    where: { email: normalized },
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: normalized, mode: "insensitive" } },
   });
 
   if (!user || user.accountStatus === "LOCKED") {
@@ -174,7 +166,6 @@ export async function requestPasswordReset(email: string): Promise<{
   const resetUrl = `${baseUrl.replace(/\/$/, "")}/reset-password?token=${rawToken}`;
 
   if (process.env.NODE_ENV !== "production") {
-    // Development-safe delivery path — never log in production.
     console.info(
       "[dev] Password reset prepared (token not logged in production)."
     );
@@ -185,7 +176,6 @@ export async function requestPasswordReset(email: string): Promise<{
     };
   }
 
-  // Production: email provider not wired in Phase 3.
   return generic;
 }
 
