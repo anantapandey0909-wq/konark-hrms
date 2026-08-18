@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { LeaveDetails } from "@/components/leave/leave-details";
 import { fetchLeaveRequest } from "@/lib/data/leave";
+import { LeaveDetailsClient } from "./leave-details-client";
 
 interface LeaveDetailsPageProps {
   params: Promise<{
@@ -18,5 +18,5 @@ export default async function LeaveDetailsPage({
     notFound();
   }
 
-  return <LeaveDetails data={leaveRequest} />;
+  return <LeaveDetailsClient data={leaveRequest} />;
 }
