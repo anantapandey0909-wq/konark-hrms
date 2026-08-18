@@ -1,15 +1,12 @@
 "use client";
 
-// ============================================================================
-// Imports
-// ============================================================================
-
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { AttendanceWithEmployee } from "@/types/attendance";
-import { mockEmployees } from "@/mock/employee";
+import type { Employee } from "@/types/employee";
+import { fetchEmployees } from "@/lib/data/employees";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,20 +27,9 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 
-// ============================================================================
-// Schema
-// ============================================================================
-
-/**
- * Zod schema enforcing typing and validation rules for an individual attendance log.
- * Grouped logically to support multi-tenant operational constraints.
- */
 const attendanceSchema = z.object({
-  // Identity & Timeline
   employeeId: z.string().min(1, "Employee selection is required"),
   attendanceDate: z.string().min(1, "Date is required"),
-
-  // Clock Metadata & Measures
   checkIn: z.string().nullable().optional(),
   checkOut: z.string().nullable().optional(),
   totalHours: z.preprocess(
@@ -58,21 +44,13 @@ const attendanceSchema = z.object({
     (val) => (val === "" || val === undefined ? null : Number(val)),
     z.number().nullable().optional()
   ),
-
-  // Categorization
   status: z.enum(["PRESENT", "ABSENT", "LATE", "ON_LEAVE", "HALF_DAY"]),
   workMode: z.enum(["OFFICE", "REMOTE", "HYBRID"]),
-
-  // Descriptors and audit records
   remarks: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   shiftName: z.string().nullable().optional(),
   isRegularized: z.boolean().default(false),
 });
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export type AttendanceFormValues = z.output<typeof attendanceSchema>;
 type AttendanceFormInput = z.input<typeof attendanceSchema>;
@@ -88,10 +66,6 @@ interface SelectOption {
   readonly label: string;
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const STATUS_OPTIONS: readonly SelectOption[] = [
   { value: "PRESENT", label: "Present" },
   { value: "LATE", label: "Late" },
@@ -106,18 +80,14 @@ const WORK_MODE_OPTIONS: readonly SelectOption[] = [
   { value: "HYBRID", label: "Hybrid" },
 ] as const;
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * Initializes form default state dynamically mapping onto the input schema type.
- * Standardizes empty string/null boundaries to prevent React uncontrolled-to-controlled input errors.
- */
-function getDefaultValues(record?: AttendanceWithEmployee | null): AttendanceFormInput {
+function getDefaultValues(
+  record?: AttendanceWithEmployee | null
+): AttendanceFormInput {
   return {
     employeeId: record?.attendance.employeeId ?? "",
-    attendanceDate: record?.attendance.attendanceDate ?? new Date().toISOString().split("T")[0],
+    attendanceDate:
+      record?.attendance.attendanceDate ??
+      new Date().toISOString().split("T")[0],
     checkIn: record?.attendance.checkIn ?? "",
     checkOut: record?.attendance.checkOut ?? "",
     totalHours: record?.attendance.totalHours ?? null,
@@ -132,11 +102,9 @@ function getDefaultValues(record?: AttendanceWithEmployee | null): AttendanceFor
   };
 }
 
-/**
- * Normalizes input form payloads for secure, relational database insertion.
- * Converts empty input strings back to standard database Null representations.
- */
-function normalizeAttendanceFormValues(values: AttendanceFormValues): AttendanceFormValues {
+function normalizeAttendanceFormValues(
+  values: AttendanceFormValues
+): AttendanceFormValues {
   return {
     ...values,
     checkIn: values.checkIn || null,
@@ -147,20 +115,36 @@ function normalizeAttendanceFormValues(values: AttendanceFormValues): Attendance
   };
 }
 
-// ============================================================================
-// Component
-// ============================================================================
+export function AttendanceForm({
+  record,
+  onSubmit,
+  onCancel,
+}: AttendanceFormProps) {
+  const [employees, setEmployees] = React.useState<Employee[]>([]);
+  const [employeesLoading, setEmployeesLoading] = React.useState(true);
 
-export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormProps) {
-  // Explicitly binding useForm to the Zod input type prevents generic resolver type mismatches.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setEmployeesLoading(true);
+      try {
+        const list = await fetchEmployees();
+        if (!cancelled) setEmployees(list);
+      } catch {
+        if (!cancelled) setEmployees([]);
+      } finally {
+        if (!cancelled) setEmployeesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const form = useForm<AttendanceFormInput>({
     resolver: zodResolver(attendanceSchema),
     defaultValues: getDefaultValues(record),
   });
-
-  // --------------------------------------------------------------------------
-  // Handlers
-  // --------------------------------------------------------------------------
 
   const handleSubmitInternal = React.useCallback(
     (values: AttendanceFormInput) => {
@@ -170,15 +154,12 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
     [onSubmit]
   );
 
-  // --------------------------------------------------------------------------
-  // Render
-  // --------------------------------------------------------------------------
-
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmitInternal)} className="space-y-4">
-        
-        {/* Section 1: Employee and Date Context */}
+      <form
+        onSubmit={form.handleSubmit(handleSubmitInternal)}
+        className="space-y-4"
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField
             control={form.control}
@@ -189,15 +170,21 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
                 <Select
                   onValueChange={field.onChange}
                   defaultValue={field.value}
-                  disabled={!!record}
+                  disabled={!!record || employeesLoading}
                 >
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select Employee" />
+                      <SelectValue
+                        placeholder={
+                          employeesLoading
+                            ? "Loading employees…"
+                            : "Select Employee"
+                        }
+                      />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {mockEmployees.map((emp) => (
+                    {employees.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id}>
                         {emp.firstName} {emp.lastName} ({emp.designation})
                       </SelectItem>
@@ -224,7 +211,6 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
           />
         </div>
 
-        {/* Section 2: Attendance Status and Work Mode */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField
             control={form.control}
@@ -277,7 +263,6 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
           />
         </div>
 
-        {/* Section 3: Check-in & Check-out Timestamps */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField
             control={form.control}
@@ -322,7 +307,6 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
           />
         </div>
 
-        {/* Section 4: Operational Metrics & Break Durations */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField
             control={form.control}
@@ -335,7 +319,11 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
                     type="number"
                     step="0.01"
                     placeholder="e.g. 8.5"
-                    value={field.value !== null && field.value !== undefined ? `${field.value}` : ""}
+                    value={
+                      field.value !== null && field.value !== undefined
+                        ? `${field.value}`
+                        : ""
+                    }
                     onChange={field.onChange}
                   />
                 </FormControl>
@@ -355,7 +343,11 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
                     type="number"
                     step="0.01"
                     placeholder="e.g. 1.5"
-                    value={field.value !== null && field.value !== undefined ? `${field.value}` : ""}
+                    value={
+                      field.value !== null && field.value !== undefined
+                        ? `${field.value}`
+                        : ""
+                    }
                     onChange={field.onChange}
                   />
                 </FormControl>
@@ -374,7 +366,11 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
                   <Input
                     type="number"
                     placeholder="e.g. 45"
-                    value={field.value !== null && field.value !== undefined ? `${field.value}` : ""}
+                    value={
+                      field.value !== null && field.value !== undefined
+                        ? `${field.value}`
+                        : ""
+                    }
                     onChange={field.onChange}
                   />
                 </FormControl>
@@ -384,7 +380,6 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
           />
         </div>
 
-        {/* Section 5: Structural Context Parameters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField
             control={form.control}
@@ -423,7 +418,6 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
           />
         </div>
 
-        {/* Section 6: Regularization Compliance Flags */}
         <FormField
           control={form.control}
           name="isRegularized"
@@ -445,7 +439,6 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
           )}
         />
 
-        {/* Section 7: Audit Remarks & Historical Context */}
         <FormField
           control={form.control}
           name="remarks"
@@ -464,14 +457,11 @@ export function AttendanceForm({ record, onSubmit, onCancel }: AttendanceFormPro
           )}
         />
 
-        {/* Section 8: Dialog Actions */}
         <div className="flex justify-end gap-3 pt-4 border-t">
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit">
-            {record ? "Save Changes" : "Create Record"}
-          </Button>
+          <Button type="submit">{record ? "Save Changes" : "Create Record"}</Button>
         </div>
       </form>
     </Form>
