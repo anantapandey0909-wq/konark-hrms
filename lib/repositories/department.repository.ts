@@ -2,7 +2,7 @@
  * Department repository — database access only.
  */
 
-import type { Prisma } from "@prisma/client";
+import type { DepartmentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
@@ -74,13 +74,22 @@ export async function countEmployeesInDepartment(
 }
 
 export async function getDepartmentSummary(companyId: string) {
+  const activeStatus: DepartmentStatus = "ACTIVE";
+  const inactiveStatus: DepartmentStatus = "INACTIVE";
+
   const [total, active, inactive, totalEmployees] = await Promise.all([
-    prisma.department.count({ where: tenantScope(companyId, {}) }),
     prisma.department.count({
-      where: tenantScope(companyId, { status: "ACTIVE" }),
+      where: tenantScope<Prisma.DepartmentWhereInput>(companyId, {}),
     }),
     prisma.department.count({
-      where: tenantScope(companyId, { status: "INACTIVE" }),
+      where: tenantScope<Prisma.DepartmentWhereInput>(companyId, {
+        status: activeStatus,
+      }),
+    }),
+    prisma.department.count({
+      where: tenantScope<Prisma.DepartmentWhereInput>(companyId, {
+        status: inactiveStatus,
+      }),
     }),
     prisma.employee.count({ where: tenantScope(companyId, {}) }),
   ]);
