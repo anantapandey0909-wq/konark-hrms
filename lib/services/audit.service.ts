@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export async function writeAuditLog(input: {
@@ -6,7 +7,8 @@ export async function writeAuditLog(input: {
   action: string;
   entity: string;
   entityId?: string | null;
-  metadata?: Record<string, unknown>;
+  /** Nested JSON allowed — typed as Prisma JSON input, not Record<string, unknown>. */
+  metadata?: Prisma.InputJsonValue;
 }) {
   try {
     await prisma.auditLog.create({
