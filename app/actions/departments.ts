@@ -1,6 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isRealDataEnabled } from "@/lib/config/flags";
+import {
+  mockDepartments,
+  mockDepartmentSummary,
+  getDepartmentById,
+} from "@/mock/department";
 import {
   listDepartments,
   getDepartment,
@@ -24,6 +30,9 @@ export type ActionResult<T> =
 export async function listDepartmentsAction(): Promise<
   ActionResult<ResolvedDepartment[]>
 > {
+  if (!isRealDataEnabled()) {
+    return { success: true, data: mockDepartments };
+  }
   try {
     const data = await listDepartments();
     return { success: true, data };
@@ -35,6 +44,13 @@ export async function listDepartmentsAction(): Promise<
 export async function getDepartmentAction(
   id: string
 ): Promise<ActionResult<ResolvedDepartment>> {
+  if (!isRealDataEnabled()) {
+    const row = getDepartmentById(id);
+    if (!row) {
+      return { success: false, error: "Department not found.", code: "NOT_FOUND" };
+    }
+    return { success: true, data: row };
+  }
   try {
     const data = await getDepartment(id);
     return { success: true, data };
@@ -46,6 +62,9 @@ export async function getDepartmentAction(
 export async function getDepartmentSummaryAction(): Promise<
   ActionResult<DepartmentSummary>
 > {
+  if (!isRealDataEnabled()) {
+    return { success: true, data: mockDepartmentSummary };
+  }
   try {
     const data = await getDepartmentSummary();
     return { success: true, data };
@@ -57,6 +76,25 @@ export async function getDepartmentSummaryAction(): Promise<
 export async function createDepartmentAction(
   input: DepartmentInput
 ): Promise<ActionResult<Department>> {
+  if (!isRealDataEnabled()) {
+    return {
+      success: true,
+      data: {
+        id: `dept-mock-${Date.now()}`,
+        tenantId: "tenant-mock",
+        name: input.name,
+        code: input.code,
+        description: input.description ?? null,
+        managerId: input.managerId ?? null,
+        parentDepartmentId: null,
+        status: input.status,
+        sortOrder: 0,
+        budget: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
   try {
     const data = await createDepartment(input);
     revalidatePath("/dashboard/departments");
@@ -70,6 +108,20 @@ export async function updateDepartmentAction(
   id: string,
   input: Partial<DepartmentInput>
 ): Promise<ActionResult<Department>> {
+  if (!isRealDataEnabled()) {
+    const existing = getDepartmentById(id);
+    if (!existing) {
+      return { success: false, error: "Department not found.", code: "NOT_FOUND" };
+    }
+    return {
+      success: true,
+      data: {
+        ...existing,
+        ...input,
+        updatedAt: new Date().toISOString(),
+      } as Department,
+    };
+  }
   try {
     const data = await updateDepartment(id, input);
     revalidatePath("/dashboard/departments");
@@ -83,6 +135,13 @@ export async function updateDepartmentAction(
 export async function deactivateDepartmentAction(
   id: string
 ): Promise<ActionResult<Department>> {
+  if (!isRealDataEnabled()) {
+    const existing = getDepartmentById(id);
+    if (!existing) {
+      return { success: false, error: "Department not found.", code: "NOT_FOUND" };
+    }
+    return { success: true, data: { ...existing, status: "INACTIVE" } };
+  }
   try {
     const data = await deactivateDepartment(id);
     revalidatePath("/dashboard/departments");
