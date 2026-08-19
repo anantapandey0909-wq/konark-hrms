@@ -120,7 +120,16 @@ export default function LeaveDashboard({
         </Button>
       </div>
 
-      <LeaveStats stats={stats} />
+      {/* Map LeaveStatsSummary.totalRequests → LeaveStats.total */}
+      <LeaveStats
+        total={stats.totalRequests}
+        totalRequests={stats.totalRequests}
+        pending={stats.pending}
+        approved={stats.approved}
+        rejected={stats.rejected}
+        cancelled={stats.cancelled}
+        onLeaveToday={stats.onLeaveToday}
+      />
 
       <LeaveFilters
         searchQuery={searchQuery}
