@@ -95,8 +95,15 @@ export async function listLeaveRequestsAction(filters?: {
   employeeId?: string;
   departmentId?: string;
 }): Promise<ActionResult<LeaveRequest[]>> {
-  // Flag is evaluated on the SERVER only (this module is "use server").
-  if (!isRealDataEnabled()) {
+  const real = isRealDataEnabled();
+  // Visible in the `next dev` terminal — proves which branch runs.
+  console.info(
+    `[leave] listLeaveRequestsAction dataSource=${real ? "postgres" : "mock"} NEXT_PUBLIC_USE_REAL_DATA=${String(
+      process.env.NEXT_PUBLIC_USE_REAL_DATA ?? "(unset)"
+    )}`
+  );
+
+  if (!real) {
     return { success: true, data: filterMockLeaves(mockLeaveRequests, filters) };
   }
   try {
@@ -160,7 +167,12 @@ export async function getLeaveBalanceAction(
 export async function createLeaveRequestAction(
   input: CreateLeaveInput
 ): Promise<ActionResult<LeaveRequest>> {
-  if (!isRealDataEnabled()) {
+  const real = isRealDataEnabled();
+  console.info(
+    `[leave] createLeaveRequestAction dataSource=${real ? "postgres" : "mock"}`
+  );
+
+  if (!real) {
     const id = `LV-mock-${Date.now()}`;
     return {
       success: true,
