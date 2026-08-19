@@ -20,8 +20,12 @@ export function isRealAuthEnabled(): boolean {
 /**
  * Prefer mock data sources in the UI until later phases wire repositories.
  * Independent of auth flag so UI can stay mock-driven while auth is real later.
+ *
+ * Note: when isRealDataEnabled() is true, data adapters use PostgreSQL
+ * regardless of this flag.
  */
 export function useMockData(): boolean {
+  if (isRealDataEnabled()) return false;
   const value = process.env.NEXT_PUBLIC_USE_MOCK_DATA;
   // Default true until data phases flip the flag
   if (value === undefined || value === "") return true;
@@ -29,10 +33,17 @@ export function useMockData(): boolean {
 }
 
 /**
- * Phase 4+: when true, Employee/Department (and later modules) use real DB
- * via server actions. Default false — mock data remains the default.
+ * Phase 4+: when true, Employee/Department/Attendance/Leave (and later modules)
+ * use real DB via server actions. Default false — mock data remains the default.
+ *
+ * Accepts either:
+ * - NEXT_PUBLIC_USE_REAL_DATA (client + server, required for client adapters)
+ * - USE_REAL_DATA (server-only alias)
+ *
+ * Restart `next dev` after changing these values so the process picks them up.
  */
 export function isRealDataEnabled(): boolean {
-  const value = process.env.NEXT_PUBLIC_USE_REAL_DATA;
+  const value =
+    process.env.NEXT_PUBLIC_USE_REAL_DATA ?? process.env.USE_REAL_DATA;
   return value === "true" || value === "1";
 }
