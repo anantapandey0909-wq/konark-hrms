@@ -1,16 +1,19 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { 
-  FileText, 
-  Clock, 
-  CheckCircle2, 
-  XCircle, 
-  Ban, 
+import {
+  FileText,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Ban,
   Users,
-  type LucideIcon 
+  type LucideIcon,
 } from "lucide-react";
 
 export interface LeaveStatsData {
+  /** Preferred display total */
   total?: number;
+  /** LeaveStatsSummary uses totalRequests — accepted as alias */
+  totalRequests?: number;
   pending?: number;
   approved?: number;
   rejected?: number;
@@ -34,6 +37,7 @@ interface StatItem {
 
 export default function LeaveStats({
   total: propTotal,
+  totalRequests: propTotalRequests,
   pending: propPending,
   approved: propApproved,
   rejected: propRejected,
@@ -41,8 +45,24 @@ export default function LeaveStats({
   onLeaveToday: propOnLeaveToday,
   stats,
 }: LeaveStatsProps) {
-  const data: Required<LeaveStatsData> = {
-    total: propTotal ?? stats?.total ?? 0,
+  // LeaveStatsSummary.totalRequests was previously ignored → Total always showed 0.
+  const data: Required<
+    Pick<
+      LeaveStatsData,
+      | "total"
+      | "pending"
+      | "approved"
+      | "rejected"
+      | "cancelled"
+      | "onLeaveToday"
+    >
+  > = {
+    total:
+      propTotal ??
+      propTotalRequests ??
+      stats?.total ??
+      stats?.totalRequests ??
+      0,
     pending: propPending ?? stats?.pending ?? 0,
     approved: propApproved ?? stats?.approved ?? 0,
     rejected: propRejected ?? stats?.rejected ?? 0,
@@ -112,7 +132,7 @@ export default function LeaveStats({
       {statItems.map((item) => {
         const Icon = item.icon;
         return (
-          <Card 
+          <Card
             key={item.title}
             className={`group relative overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 ${item.borderClass}`}
           >
@@ -121,7 +141,9 @@ export default function LeaveStats({
                 <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">
                   {item.title}
                 </h3>
-                <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-300 ${item.bgClass}`}>
+                <div
+                  className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-300 ${item.bgClass}`}
+                >
                   <Icon className={`h-5 w-5 ${item.colorClass}`} aria-hidden="true" />
                 </div>
               </div>
