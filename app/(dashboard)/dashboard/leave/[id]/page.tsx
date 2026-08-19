@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { fetchLeaveRequest } from "@/lib/data/leave";
 import { LeaveDetailsClient } from "./leave-details-client";
 
+export const dynamic = "force-dynamic";
+
 interface LeaveDetailsPageProps {
   params: Promise<{
     id: string;
