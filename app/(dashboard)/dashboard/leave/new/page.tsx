@@ -15,9 +15,12 @@ export default function NewLeavePage() {
       await saveLeaveRequest(data);
       toast.success("Leave request submitted.");
       router.push("/dashboard/leave");
+      router.refresh();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to submit leave request."
+        error instanceof Error
+          ? error.message
+          : "Failed to submit leave request."
       );
     }
   };
