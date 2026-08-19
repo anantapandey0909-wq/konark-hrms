@@ -1,49 +1,57 @@
 /**
  * Feature flags for gradual backend cut-over.
- * Server-side flags use process.env (never expose secrets).
- * Client-safe flags must be NEXT_PUBLIC_*.
+ *
+ * IMPORTANT for Next.js:
+ * - Client bundles can only see NEXT_PUBLIC_* (inlined at compile time).
+ * - Data adapters that run in Client Components must NOT decide mock vs real
+ *   locally. Put the branch inside "use server" actions so the flag is read
+ *   on the server where both NEXT_PUBLIC_* and server-only env vars exist.
  */
 
-/**
- * When false (default), authentication uses the existing mock service
- * (localStorage session + mockUsers). Real DB auth is Phase 3.
- *
- * Named without a "use" prefix so ESLint rules-of-hooks does not treat
- * this pure flag helper as a React Hook.
- */
-export function isRealAuthEnabled(): boolean {
-  const value =
-    process.env.USE_REAL_AUTH ?? process.env.NEXT_PUBLIC_USE_REAL_AUTH;
-  return value === "true" || value === "1";
+function envFlagTrue(value: string | undefined): boolean {
+  if (value == null) return false;
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
 }
 
 /**
- * Prefer mock data sources in the UI until later phases wire repositories.
- * Independent of auth flag so UI can stay mock-driven while auth is real later.
- *
- * Note: when isRealDataEnabled() is true, data adapters use PostgreSQL
- * regardless of this flag.
+ * When false (default), authentication uses the existing mock service.
+ */
+export function isRealAuthEnabled(): boolean {
+  // Keep member access static so Next can inline NEXT_PUBLIC_* correctly.
+  if (envFlagTrue(process.env.NEXT_PUBLIC_USE_REAL_AUTH)) return true;
+  if (envFlagTrue(process.env.USE_REAL_AUTH)) return true;
+  return false;
+}
+
+/**
+ * Legacy mock preference. When isRealDataEnabled() is true, adapters/actions
+ * use PostgreSQL and ignore this flag.
  */
 export function useMockData(): boolean {
   if (isRealDataEnabled()) return false;
   const value = process.env.NEXT_PUBLIC_USE_MOCK_DATA;
-  // Default true until data phases flip the flag
   if (value === undefined || value === "") return true;
-  return value !== "false" && value !== "0";
+  return !envFlagTrue(value) && value.trim().toLowerCase() !== "false";
 }
 
 /**
- * Phase 4+: when true, Employee/Department/Attendance/Leave (and later modules)
- * use real DB via server actions. Default false — mock data remains the default.
+ * Phase 4+: Employee / Department / Attendance / Leave use real DB when true.
  *
- * Accepts either:
- * - NEXT_PUBLIC_USE_REAL_DATA (client + server, required for client adapters)
- * - USE_REAL_DATA (server-only alias)
+ * Evaluation order (first match wins):
+ * 1. NEXT_PUBLIC_USE_REAL_DATA
+ * 2. USE_REAL_DATA (server-only)
  *
- * Restart `next dev` after changing these values so the process picks them up.
+ * Prefer setting NEXT_PUBLIC_USE_REAL_DATA so client-invoked server actions
+ * and server components agree after a dev-server restart.
  */
 export function isRealDataEnabled(): boolean {
-  const value =
-    process.env.NEXT_PUBLIC_USE_REAL_DATA ?? process.env.USE_REAL_DATA;
-  return value === "true" || value === "1";
+  if (envFlagTrue(process.env.NEXT_PUBLIC_USE_REAL_DATA)) return true;
+  if (envFlagTrue(process.env.USE_REAL_DATA)) return true;
+  return false;
 }
