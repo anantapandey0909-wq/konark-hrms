@@ -2,6 +2,9 @@ import LeaveDashboard from "@/components/leave/leave-dashboard";
 import { fetchLeaveRequests, fetchLeaveStats } from "@/lib/data/leave";
 import type { LeaveRequest, LeaveStatsSummary } from "@/types/leave";
 
+/** Always re-fetch leave list (mock or DB) on navigation — no stale static cache. */
+export const dynamic = "force-dynamic";
+
 export default async function LeavePage() {
   let initialRequests: LeaveRequest[] = [];
   let initialStats: LeaveStatsSummary = {
@@ -21,7 +24,7 @@ export default async function LeavePage() {
     initialRequests = requests;
     initialStats = stats;
   } catch {
-    // Unauthenticated / no session: empty dashboard
+    // Unauthenticated / no session: empty dashboard (not mock fallback in real mode)
   }
 
   return (
