@@ -99,6 +99,8 @@ export default function PayrollDetailsPage({ params }: PageProps) {
     window.print();
   };
 
+  const { salaryBreakdown } = record;
+
   return (
     <div className="space-y-6 p-6 max-w-4xl mx-auto print:p-0">
       <div className="flex justify-between items-center print:hidden">
@@ -199,9 +201,9 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between font-medium text-foreground">
                     <span>Basic Salary</span>
-                    <span>{formatCurrency(record.salaryBreakdown.basicSalary)}</span>
+                    <span>{formatCurrency(salaryBreakdown.basicSalary)}</span>
                   </div>
-                  {record.salaryBreakdown.allowances.map((allowance) => (
+                  {salaryBreakdown.allowances.map((allowance) => (
                     <div
                       key={allowance.id}
                       className="flex justify-between text-muted-foreground"
@@ -210,14 +212,13 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                       <span>{formatCurrency(allowance.amount)}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between font-bold border-t pt-2 text-emerald-500">
+                  <div className="flex justify-between border-t pt-2 text-muted-foreground">
                     <span>Total Allowances</span>
-                    <span>
-                      {formatCurrency(
-                        record.salaryBreakdown.totalAllowances +
-                          record.salaryBreakdown.basicSalary
-                      )}
-                    </span>
+                    <span>{formatCurrency(salaryBreakdown.totalAllowances)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-emerald-500">
+                    <span>Gross Salary</span>
+                    <span>{formatCurrency(salaryBreakdown.grossSalary)}</span>
                   </div>
                 </div>
               </div>
@@ -228,7 +229,7 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                   <span>Amount</span>
                 </h3>
                 <div className="space-y-2 text-xs">
-                  {record.salaryBreakdown.deductions.map((deduction) => (
+                  {salaryBreakdown.deductions.map((deduction) => (
                     <div
                       key={deduction.id}
                       className="flex justify-between text-muted-foreground"
@@ -239,9 +240,7 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                   ))}
                   <div className="flex justify-between font-bold border-t pt-2 text-rose-500">
                     <span>Total Deductions</span>
-                    <span>
-                      {formatCurrency(record.salaryBreakdown.totalDeductions)}
-                    </span>
+                    <span>{formatCurrency(salaryBreakdown.totalDeductions)}</span>
                   </div>
                 </div>
               </div>
@@ -259,7 +258,7 @@ export default function PayrollDetailsPage({ params }: PageProps) {
               </div>
               <div className="text-center md:text-right">
                 <p className="text-3xl font-extrabold text-primary">
-                  {formatCurrency(record.salaryBreakdown.netSalary)}
+                  {formatCurrency(salaryBreakdown.netSalary)}
                 </p>
               </div>
             </div>
