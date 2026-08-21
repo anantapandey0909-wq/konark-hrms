@@ -98,6 +98,7 @@ async function realLogin(
 
   // Mirror session into localStorage so existing AuthProvider / login page
   // contracts that read konark_hrms_session continue to work without redesign.
+  // Source of truth for the server remains the HTTP-only cookie from Set-Cookie.
   if (data.session) {
     saveSession(data.session);
   }
