@@ -11,9 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { mockDepartments } from "@/mock/department";
-import { Department } from "@/types/department";
 import { PayrollMonth, PayrollStatus } from "@/types/payroll";
+import type { Employee } from "@/types/employee";
+import type { Department } from "@/types/department";
+import { fetchEmployees } from "@/lib/data/employees";
+import { fetchDepartments } from "@/lib/data/departments";
 
 export interface PayrollFormData {
   employeeId: string;
@@ -84,8 +86,12 @@ export function PayrollForm({
     month: defaultValues?.month || "JANUARY",
     year: defaultValues?.year || new Date().getFullYear(),
     status: defaultValues?.status || "DRAFT",
-    payPeriodStart: defaultValues?.payPeriodStart ? defaultValues.payPeriodStart.substring(0, 10) : "",
-    payPeriodEnd: defaultValues?.payPeriodEnd ? defaultValues.payPeriodEnd.substring(0, 10) : "",
+    payPeriodStart: defaultValues?.payPeriodStart
+      ? defaultValues.payPeriodStart.substring(0, 10)
+      : "",
+    payPeriodEnd: defaultValues?.payPeriodEnd
+      ? defaultValues.payPeriodEnd.substring(0, 10)
+      : "",
     basicSalary: defaultValues?.basicSalary || 0,
     grossSalary: defaultValues?.grossSalary || 0,
     taxableIncome: defaultValues?.taxableIncome || 0,
@@ -95,38 +101,114 @@ export function PayrollForm({
     notes: defaultValues?.notes || "",
   });
 
-  const [errors, setErrors] = React.useState<Partial<Record<keyof PayrollFormData, string>>>({});
+  const [errors, setErrors] = React.useState<
+    Partial<Record<keyof PayrollFormData, string>>
+  >({});
   const [pending, setPending] = React.useState(false);
+  const [employees, setEmployees] = React.useState<Employee[]>([]);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [listsLoading, setListsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setListsLoading(true);
+      try {
+        const [emps, depts] = await Promise.all([
+          fetchEmployees({ status: "ACTIVE" }),
+          fetchDepartments(),
+        ]);
+        if (!cancelled) {
+          setEmployees(emps);
+          setDepartments(depts);
+        }
+      } catch {
+        if (!cancelled) {
+          setEmployees([]);
+          setDepartments([]);
+        }
+      } finally {
+        if (!cancelled) setListsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedEmployee = employees.find((e) => e.id === formData.employeeId);
+  const selectedDepartmentName =
+    departments.find((d) => d.id === formData.departmentId)?.name ??
+    (selectedEmployee
+      ? departments.find((d) => d.id === selectedEmployee.departmentId)?.name
+      : undefined) ??
+    "";
+
+  const handleEmployeeSelect = (employeeId: string) => {
+    const emp = employees.find((e) => e.id === employeeId);
+    if (!emp) return;
+    setFormData((prev) => ({
+      ...prev,
+      employeeId: emp.id,
+      employeeCode: emp.employeeId,
+      employeeName: `${emp.firstName} ${emp.lastName}`.trim(),
+      designation: emp.designation,
+      departmentId: emp.departmentId ?? "",
+    }));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.employeeId;
+      delete next.employeeName;
+      delete next.employeeCode;
+      delete next.designation;
+      delete next.departmentId;
+      return next;
+    });
+  };
 
   const validate = (): boolean => {
     const nextErrors: Partial<Record<keyof PayrollFormData, string>> = {};
 
-    if (!formData.employeeName.trim()) nextErrors.employeeName = "Employee name is required";
-    if (!formData.employeeCode.trim()) nextErrors.employeeCode = "Employee code is required";
-    if (!formData.departmentId) nextErrors.departmentId = "Department is required";
-    if (!formData.designation.trim()) nextErrors.designation = "Designation is required";
-    if (!formData.payPeriodStart) nextErrors.payPeriodStart = "Start date is required";
+    if (!formData.employeeId.trim()) {
+      nextErrors.employeeId = "Please select an employee";
+    }
+    if (!formData.payPeriodStart)
+      nextErrors.payPeriodStart = "Start date is required";
     if (!formData.payPeriodEnd) nextErrors.payPeriodEnd = "End date is required";
-    if (formData.basicSalary <= 0) nextErrors.basicSalary = "Basic salary must be greater than 0";
+    if (formData.basicSalary <= 0)
+      nextErrors.basicSalary = "Basic salary must be greater than 0";
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleChange = (field: keyof PayrollFormData, value: string | number) => {
+  const handleChange = (
+    field: keyof PayrollFormData,
+    value: string | number
+  ) => {
     setFormData((prev) => {
       const updated = { ...prev, [field]: value };
-      
-      if (field === "basicSalary" || field === "totalAllowances" || field === "totalDeductions") {
-        const basic = field === "basicSalary" ? Number(value) : prev.basicSalary;
-        const allowances = field === "totalAllowances" ? Number(value) : prev.totalAllowances;
-        const deductions = field === "totalDeductions" ? Number(value) : prev.totalDeductions;
-        
+
+      if (
+        field === "basicSalary" ||
+        field === "totalAllowances" ||
+        field === "totalDeductions"
+      ) {
+        const basic =
+          field === "basicSalary" ? Number(value) : prev.basicSalary;
+        const allowances =
+          field === "totalAllowances" ? Number(value) : prev.totalAllowances;
+        const deductions =
+          field === "totalDeductions" ? Number(value) : prev.totalDeductions;
+
         updated.grossSalary = basic + allowances;
-        updated.taxableIncome = Math.max(0, updated.grossSalary - deductions * 0.5);
+        updated.taxableIncome = Math.max(
+          0,
+          updated.grossSalary - deductions * 0.5
+        );
         updated.netSalary = Math.max(0, updated.grossSalary - deductions);
       }
-      
+
       return updated;
     });
   };
@@ -137,10 +219,10 @@ export function PayrollForm({
 
     setPending(true);
     try {
-      const randomId = `emp-${Math.random().toString(36).substring(2, 11)}`;
       await onSubmit({
         ...formData,
-        employeeId: formData.employeeId || randomId,
+        // Authoritative identity is employeeId; snapshot fields are display-only.
+        employeeId: formData.employeeId,
       });
     } finally {
       setPending(false);
@@ -148,21 +230,55 @@ export function PayrollForm({
   };
 
   const loading = isSubmitting || pending;
+  const identityLocked = mode === "create" || Boolean(formData.employeeId);
 
   return (
     <form onSubmit={handleSubmit} className={`space-y-6 ${className || ""}`}>
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div className="space-y-2 sm:col-span-2">
+          <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Select Employee
+          </label>
+          <Select
+            value={formData.employeeId || undefined}
+            onValueChange={handleEmployeeSelect}
+            disabled={loading || listsLoading || mode === "edit"}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={
+                  listsLoading
+                    ? "Loading employees…"
+                    : employees.length === 0
+                      ? "No employees found"
+                      : "Select an employee"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {employees.map((emp) => (
+                <SelectItem key={emp.id} value={emp.id}>
+                  {emp.firstName} {emp.lastName} ({emp.employeeId})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errors.employeeId && (
+            <p className="text-xs text-rose-600">{errors.employeeId}</p>
+          )}
+        </div>
+
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Employee Name
           </label>
           <Input
             value={formData.employeeName}
-            onChange={(e) => handleChange("employeeName", e.target.value)}
-            placeholder="John Doe"
+            readOnly={identityLocked}
+            placeholder="Select an employee"
             disabled={loading}
+            className={identityLocked ? "bg-slate-50 dark:bg-slate-900/40" : ""}
           />
-          {errors.employeeName && <p className="text-xs text-rose-600">{errors.employeeName}</p>}
         </div>
 
         <div className="space-y-2">
@@ -171,34 +287,24 @@ export function PayrollForm({
           </label>
           <Input
             value={formData.employeeCode}
-            onChange={(e) => handleChange("employeeCode", e.target.value)}
-            placeholder="EMP-001"
+            readOnly={identityLocked}
+            placeholder="—"
             disabled={loading}
+            className={identityLocked ? "bg-slate-50 dark:bg-slate-900/40" : ""}
           />
-          {errors.employeeCode && <p className="text-xs text-rose-600">{errors.employeeCode}</p>}
         </div>
 
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Department
           </label>
-          <Select
-            value={formData.departmentId}
-            onValueChange={(val) => handleChange("departmentId", val)}
+          <Input
+            value={selectedDepartmentName}
+            readOnly
+            placeholder="—"
             disabled={loading}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select Department" />
-            </SelectTrigger>
-            <SelectContent>
-              {mockDepartments.map((dept: Department) => (
-                <SelectItem key={dept.id} value={dept.id}>
-                  {dept.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.departmentId && <p className="text-xs text-rose-600">{errors.departmentId}</p>}
+            className="bg-slate-50 dark:bg-slate-900/40"
+          />
         </div>
 
         <div className="space-y-2">
@@ -207,11 +313,11 @@ export function PayrollForm({
           </label>
           <Input
             value={formData.designation}
-            onChange={(e) => handleChange("designation", e.target.value)}
-            placeholder="Software Engineer"
+            readOnly={identityLocked}
+            placeholder="—"
             disabled={loading}
+            className={identityLocked ? "bg-slate-50 dark:bg-slate-900/40" : ""}
           />
-          {errors.designation && <p className="text-xs text-rose-600">{errors.designation}</p>}
         </div>
 
         <div className="space-y-2">
@@ -243,7 +349,12 @@ export function PayrollForm({
           <Input
             type="number"
             value={formData.year}
-            onChange={(e) => handleChange("year", parseInt(e.target.value, 10) || new Date().getFullYear())}
+            onChange={(e) =>
+              handleChange(
+                "year",
+                parseInt(e.target.value, 10) || new Date().getFullYear()
+              )
+            }
             disabled={loading}
           />
         </div>
@@ -258,7 +369,9 @@ export function PayrollForm({
             onChange={(e) => handleChange("payPeriodStart", e.target.value)}
             disabled={loading}
           />
-          {errors.payPeriodStart && <p className="text-xs text-rose-600">{errors.payPeriodStart}</p>}
+          {errors.payPeriodStart && (
+            <p className="text-xs text-rose-600">{errors.payPeriodStart}</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -271,7 +384,9 @@ export function PayrollForm({
             onChange={(e) => handleChange("payPeriodEnd", e.target.value)}
             disabled={loading}
           />
-          {errors.payPeriodEnd && <p className="text-xs text-rose-600">{errors.payPeriodEnd}</p>}
+          {errors.payPeriodEnd && (
+            <p className="text-xs text-rose-600">{errors.payPeriodEnd}</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -281,11 +396,15 @@ export function PayrollForm({
           <Input
             type="number"
             value={formData.basicSalary || ""}
-            onChange={(e) => handleChange("basicSalary", parseFloat(e.target.value) || 0)}
+            onChange={(e) =>
+              handleChange("basicSalary", parseFloat(e.target.value) || 0)
+            }
             placeholder="0"
             disabled={loading}
           />
-          {errors.basicSalary && <p className="text-xs text-rose-600">{errors.basicSalary}</p>}
+          {errors.basicSalary && (
+            <p className="text-xs text-rose-600">{errors.basicSalary}</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -295,10 +414,15 @@ export function PayrollForm({
           <Input
             type="number"
             value={formData.totalAllowances || ""}
-            onChange={(e) => handleChange("totalAllowances", parseFloat(e.target.value) || 0)}
+            onChange={(e) =>
+              handleChange("totalAllowances", parseFloat(e.target.value) || 0)
+            }
             placeholder="0"
             disabled={loading}
           />
+          <p className="text-[10px] text-slate-400">
+            Preview only — server recalculates from allowance line items.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -308,10 +432,15 @@ export function PayrollForm({
           <Input
             type="number"
             value={formData.totalDeductions || ""}
-            onChange={(e) => handleChange("totalDeductions", parseFloat(e.target.value) || 0)}
+            onChange={(e) =>
+              handleChange("totalDeductions", parseFloat(e.target.value) || 0)
+            }
             placeholder="0"
             disabled={loading}
           />
+          <p className="text-[10px] text-slate-400">
+            Preview only — server recalculates from deduction line items.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -338,7 +467,9 @@ export function PayrollForm({
       </div>
 
       <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">Calculated Salary Breakdown</h3>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">
+          Calculated Salary Breakdown
+        </h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <span className="text-xs text-slate-500">Gross Salary</span>
@@ -384,7 +515,7 @@ export function PayrollForm({
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading || listsLoading}>
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {mode === "create" ? "Generate Payroll" : "Save Changes"}
         </Button>
