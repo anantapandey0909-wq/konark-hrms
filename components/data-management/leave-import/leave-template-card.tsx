@@ -5,6 +5,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { FileSpreadsheet, Download, Columns, Layers } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
+import { LEAVE_IMPORT_TEMPLATE_CSV } from '@/lib/data-management/parse-leave-import';
+import { LEAVE_IMPORT_MAX_ROWS } from '@/lib/validation/leave-import';
 
 const cardVariants: Variants = {
   hidden: { opacity: 0, scale: 0.98 },
@@ -14,15 +16,25 @@ const cardVariants: Variants = {
 export default function LeaveTemplateCard() {
   const templateConfig = {
     title: 'Leave Import Template',
-    formats: 'XLSX / CSV supported',
+    formats: 'CSV supported',
     requiredColumns: 7,
-    maxRecommendedRows: '3,000 max rows per batch',
+    maxRecommendedRows: `${LEAVE_IMPORT_MAX_ROWS} max rows per batch`,
+  };
+
+  const downloadTemplate = () => {
+    const blob = new Blob([LEAVE_IMPORT_TEMPLATE_CSV], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'konark-leave-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <motion.div
-      variants={cardVariants}
-    >
+    <motion.div variants={cardVariants}>
       <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 shadow-sm overflow-hidden select-none">
         <CardHeader className="p-5 border-b border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/20">
           <div className="flex items-center space-x-2.5">
@@ -42,7 +54,8 @@ export default function LeaveTemplateCard() {
               {templateConfig.title}
             </h3>
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-normal">
-              Validate dynamic leave allocations columns prior to execution.
+              {templateConfig.formats}. Dates must be YYYY-MM-DD. leaveType uses
+              enum values (e.g. CASUAL_LEAVE, SICK_LEAVE, EARNED_LEAVE).
             </p>
           </div>
 
@@ -70,8 +83,8 @@ export default function LeaveTemplateCard() {
 
           <button
             type="button"
-            disabled
-            className="w-full h-9 rounded-lg border border-zinc-250 dark:border-zinc-750 text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900 cursor-not-allowed inline-flex items-center justify-center gap-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-850"
+            onClick={downloadTemplate}
+            className="w-full h-9 rounded-lg border border-zinc-250 dark:border-zinc-750 text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900 inline-flex items-center justify-center gap-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-850"
           >
             <Download className="h-4 w-4 shrink-0" />
             Download Leave Template
