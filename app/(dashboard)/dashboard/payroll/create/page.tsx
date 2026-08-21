@@ -7,54 +7,26 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PayrollForm, PayrollFormData } from "@/components/payroll/payroll-form";
 import { savePayroll } from "@/lib/data/payroll";
-import { fetchEmployees } from "@/lib/data/employees";
 
 export default function CreatePayrollPage() {
   const router = useRouter();
 
   const handleSubmit = async (data: PayrollFormData) => {
     try {
-      // Resolve employee by code/name when form does not carry a real DB id
-      let employeeId = data.employeeId;
-      const employees = await fetchEmployees({
-        search: data.employeeCode || data.employeeName,
-      });
-      const match =
-        employees.find(
-          (e) =>
-            e.id === data.employeeId ||
-            e.employeeId === data.employeeCode ||
-            `${e.firstName} ${e.lastName}`.toLowerCase() ===
-              data.employeeName.trim().toLowerCase()
-        ) ?? employees[0];
-
-      if (match) {
-        employeeId = match.id;
+      if (!data.employeeId) {
+        throw new Error("Please select an employee.");
       }
 
-      if (!employeeId || employeeId.startsWith("emp-")) {
-        // Random form placeholder — require a resolvable employee
-        if (!match) {
-          throw new Error(
-            "Could not resolve employee. Enter a valid employee code from your organization."
-          );
-        }
-        employeeId = match.id;
-      }
-
+      // Snapshot fields (name/code/designation/department) are display-only.
+      // Server derives them from employeeId under the authenticated tenant.
       await savePayroll({
-        employeeId,
+        employeeId: data.employeeId,
         month: data.month,
         year: data.year,
         status: data.status,
         payPeriodStart: data.payPeriodStart,
         payPeriodEnd: data.payPeriodEnd,
         basicSalary: data.basicSalary,
-        totalAllowances: data.totalAllowances,
-        totalDeductions: data.totalDeductions,
-        grossSalary: data.grossSalary,
-        netSalary: data.netSalary,
-        taxableIncome: data.taxableIncome,
         notes: data.notes,
       });
 
