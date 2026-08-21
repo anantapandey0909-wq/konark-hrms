@@ -1,17 +1,16 @@
 /**
  * Feature flags for gradual backend cut-over.
  *
- * Data adapters must not branch on these flags in Client Components.
- * Branch inside "use server" actions so env is read on the server.
+ * CRITICAL (Next.js):
+ * Client bundles only receive NEXT_PUBLIC_* values that appear as *static*
+ * member access: process.env.NEXT_PUBLIC_FOO
  *
- * Env values are read via dynamic property access so Next/Turbopack cannot
- * replace them with a stale compile-time literal.
+ * Dynamic access such as process.env[name] or (process.env as Record)[name]
+ * is NOT inlined into the browser bundle, so those reads are always undefined
+ * on the client. That previously forced authService.login() into mockLogin()
+ * even when NEXT_PUBLIC_USE_REAL_AUTH=true — localStorage showed Harshita,
+ * but no konark_hrms_session cookie was ever set.
  */
-
-function readEnv(name: string): string | undefined {
-  // Dynamic access — do not use process.env.NEXT_PUBLIC_* member syntax here.
-  return (process.env as Record<string, string | undefined>)[name];
-}
 
 function envFlagTrue(value: string | undefined): boolean {
   if (value == null) return false;
@@ -24,29 +23,36 @@ function envFlagTrue(value: string | undefined): boolean {
   );
 }
 
+/**
+ * Real authentication (cookie session) vs mock localStorage auth.
+ * Client: only NEXT_PUBLIC_USE_REAL_AUTH (static access).
+ * Server: also USE_REAL_AUTH.
+ */
 export function isRealAuthEnabled(): boolean {
-  if (envFlagTrue(readEnv("NEXT_PUBLIC_USE_REAL_AUTH"))) return true;
-  if (envFlagTrue(readEnv("USE_REAL_AUTH"))) return true;
+  // Static access — required for client-bundle inlining.
+  if (envFlagTrue(process.env.NEXT_PUBLIC_USE_REAL_AUTH)) return true;
+  // Server-only alias (undefined in the browser after bundling).
+  if (envFlagTrue(process.env.USE_REAL_AUTH)) return true;
   return false;
 }
 
+/**
+ * Legacy mock preference. When isRealDataEnabled() is true, adapters use DB.
+ */
 export function useMockData(): boolean {
   if (isRealDataEnabled()) return false;
-  const value = readEnv("NEXT_PUBLIC_USE_MOCK_DATA");
+  const value = process.env.NEXT_PUBLIC_USE_MOCK_DATA;
   if (value === undefined || value === "") return true;
   return !envFlagTrue(value) && value.trim().toLowerCase() !== "false";
 }
 
 /**
- * When true: Employee / Department / Attendance / Leave use PostgreSQL.
- * When false (default): mock data.
- *
- * Reads (in order):
- * - NEXT_PUBLIC_USE_REAL_DATA
- * - USE_REAL_DATA
+ * Employee / Department / Attendance / Leave use PostgreSQL when true.
+ * Client + server: NEXT_PUBLIC_USE_REAL_DATA (static).
+ * Server-only alias: USE_REAL_DATA.
  */
 export function isRealDataEnabled(): boolean {
-  if (envFlagTrue(readEnv("NEXT_PUBLIC_USE_REAL_DATA"))) return true;
-  if (envFlagTrue(readEnv("USE_REAL_DATA"))) return true;
+  if (envFlagTrue(process.env.NEXT_PUBLIC_USE_REAL_DATA)) return true;
+  if (envFlagTrue(process.env.USE_REAL_DATA)) return true;
   return false;
 }
