@@ -1,5 +1,15 @@
 /**
  * Payroll service — business rules, tenant isolation, audit.
+ *
+ * Salary arithmetic is always derived from the line items that are stored:
+ *   totalAllowances = sum(allowances.amount)
+ *   totalDeductions = sum(deductions.amount)
+ *   grossSalary     = basicSalary + totalAllowances
+ *   netSalary       = max(0, grossSalary - totalDeductions)
+ *   taxableIncome   = max(0, grossSalary - totalDeductions)
+ *
+ * Client-provided aggregate totals are never trusted when they disagree with
+ * the allowance/deduction arrays (that caused payslip inconsistency).
  */
 
 import type { Prisma, PayrollMonth, PayrollStatus } from "@prisma/client";
@@ -59,6 +69,55 @@ function defaultDeductions(basic: number): PayrollDeduction[] {
     { id: "ded-tax", name: "Professional Tax", amount: 200 },
     { id: "ded-ins", name: "Health Insurance", amount: 150 },
   ];
+}
+
+function sumLineItems(items: readonly { amount: number }[]): number {
+  return items.reduce((s, i) => s + i.amount, 0);
+}
+
+/**
+ * Single source of truth for salary components stored on Payroll.
+ * Line items drive totals; aggregates are never taken from the client alone.
+ */
+function resolveSalaryComponents(
+  basicSalary: number,
+  options?: {
+    allowances?: PayrollAllowance[];
+    deductions?: PayrollDeduction[];
+  }
+): {
+  allowances: PayrollAllowance[];
+  deductions: PayrollDeduction[];
+  totalAllowances: number;
+  totalDeductions: number;
+  grossSalary: number;
+  netSalary: number;
+  taxableIncome: number;
+} {
+  const allowances =
+    options?.allowances && options.allowances.length > 0
+      ? options.allowances
+      : defaultAllowances(basicSalary);
+  const deductions =
+    options?.deductions && options.deductions.length > 0
+      ? options.deductions
+      : defaultDeductions(basicSalary);
+
+  const totalAllowances = sumLineItems(allowances);
+  const totalDeductions = sumLineItems(deductions);
+  const grossSalary = calculateGrossSalary(basicSalary, totalAllowances);
+  const netSalary = calculateNetSalary(grossSalary, totalDeductions);
+  const taxableIncome = Math.max(0, Math.round((grossSalary - totalDeductions) * 100) / 100);
+
+  return {
+    allowances,
+    deductions,
+    totalAllowances,
+    totalDeductions,
+    grossSalary,
+    netSalary,
+    taxableIncome,
+  };
 }
 
 function defaultAttendance(): PayrollAttendanceSummary {
@@ -210,27 +269,10 @@ export async function createPayrollRecord(
   }
 
   const basic = parsed.basicSalary;
-  const allowances =
-    parsed.allowances && parsed.allowances.length > 0
-      ? parsed.allowances
-      : defaultAllowances(basic);
-  const deductions =
-    parsed.deductions && parsed.deductions.length > 0
-      ? parsed.deductions
-      : defaultDeductions(basic);
-
-  const totalAllowances =
-    parsed.totalAllowances ??
-    allowances.reduce((s, a) => s + a.amount, 0);
-  const totalDeductions =
-    parsed.totalDeductions ??
-    deductions.reduce((s, d) => s + d.amount, 0);
-  const grossSalary =
-    parsed.grossSalary ?? calculateGrossSalary(basic, totalAllowances);
-  const netSalary =
-    parsed.netSalary ?? calculateNetSalary(grossSalary, totalDeductions);
-  const taxableIncome =
-    parsed.taxableIncome ?? Math.max(0, grossSalary - totalDeductions);
+  const salary = resolveSalaryComponents(basic, {
+    allowances: parsed.allowances,
+    deductions: parsed.deductions,
+  });
 
   const attendanceSummary = parsed.attendanceSummary ?? defaultAttendance();
   const leaveSummary = parsed.leaveSummary ?? defaultLeave();
@@ -257,13 +299,13 @@ export async function createPayrollRecord(
     designation: employee.designation,
     departmentName,
     basicSalary: basic,
-    grossSalary,
-    netSalary,
-    totalAllowances,
-    totalDeductions,
-    taxableIncome,
-    allowances: allowances as unknown as Prisma.InputJsonValue,
-    deductions: deductions as unknown as Prisma.InputJsonValue,
+    grossSalary: salary.grossSalary,
+    netSalary: salary.netSalary,
+    totalAllowances: salary.totalAllowances,
+    totalDeductions: salary.totalDeductions,
+    taxableIncome: salary.taxableIncome,
+    allowances: salary.allowances as unknown as Prisma.InputJsonValue,
+    deductions: salary.deductions as unknown as Prisma.InputJsonValue,
     attendanceSummary: attendanceSummary as unknown as Prisma.InputJsonValue,
     leaveSummary: leaveSummary as unknown as Prisma.InputJsonValue,
     generatedAt: new Date(),
@@ -284,7 +326,10 @@ export async function createPayrollRecord(
       month: parsed.month,
       year: parsed.year,
       payrollNumber,
-      netSalary,
+      basicSalary: basic,
+      totalAllowances: salary.totalAllowances,
+      totalDeductions: salary.totalDeductions,
+      netSalary: salary.netSalary,
     },
   });
 
@@ -304,13 +349,14 @@ export async function updatePayrollRecord(
   }
 
   if (PAID_IMMUTABLE.has(existing.status) && parsed.status !== "CANCELLED") {
-    // Allow only cancel-like notes or status CANCELLED from PAID via explicit rule
     if (
       parsed.basicSalary !== undefined ||
       parsed.totalAllowances !== undefined ||
       parsed.totalDeductions !== undefined ||
       parsed.grossSalary !== undefined ||
-      parsed.netSalary !== undefined
+      parsed.netSalary !== undefined ||
+      parsed.allowances !== undefined ||
+      parsed.deductions !== undefined
     ) {
       throw new AppError(
         "CONFLICT",
@@ -321,7 +367,6 @@ export async function updatePayrollRecord(
 
   const nextStatus = (parsed.status ?? existing.status) as PayrollStatus;
 
-  // Block illegal transitions: CANCELLED → anything except staying cancelled
   if (existing.status === "CANCELLED" && nextStatus !== "CANCELLED") {
     throw new AppError(
       "CONFLICT",
@@ -330,37 +375,48 @@ export async function updatePayrollRecord(
   }
 
   const basic = parsed.basicSalary ?? existing.basicSalary;
-  let totalAllowances = parsed.totalAllowances ?? existing.totalAllowances;
-  let totalDeductions = parsed.totalDeductions ?? existing.totalDeductions;
-  let allowancesJson = existing.allowances;
-  let deductionsJson = existing.deductions;
 
-  if (parsed.allowances) {
-    allowancesJson = parsed.allowances as unknown as Prisma.JsonValue;
-    totalAllowances = parsed.allowances.reduce((s, a) => s + a.amount, 0);
+  // Prefer explicit line items from the client; otherwise recompute defaults
+  // when basic salary changed; otherwise keep existing JSON arrays.
+  let allowancesOpt: PayrollAllowance[] | undefined = parsed.allowances;
+  let deductionsOpt: PayrollDeduction[] | undefined = parsed.deductions;
+
+  if (!allowancesOpt && parsed.basicSalary !== undefined) {
+    allowancesOpt = defaultAllowances(basic);
   }
-  if (parsed.deductions) {
-    deductionsJson = parsed.deductions as unknown as Prisma.JsonValue;
-    totalDeductions = parsed.deductions.reduce((s, d) => s + d.amount, 0);
+  if (!deductionsOpt && parsed.basicSalary !== undefined) {
+    deductionsOpt = defaultDeductions(basic);
   }
 
-  const grossSalary =
-    parsed.grossSalary ?? calculateGrossSalary(basic, totalAllowances);
-  const netSalary =
-    parsed.netSalary ?? calculateNetSalary(grossSalary, totalDeductions);
-  const taxableIncome =
-    parsed.taxableIncome ?? Math.max(0, grossSalary - totalDeductions);
+  if (!allowancesOpt) {
+    // Keep existing line items from DB JSON
+    const existingAll = existing.allowances;
+    if (Array.isArray(existingAll) && existingAll.length > 0) {
+      allowancesOpt = existingAll as unknown as PayrollAllowance[];
+    }
+  }
+  if (!deductionsOpt) {
+    const existingDed = existing.deductions;
+    if (Array.isArray(existingDed) && existingDed.length > 0) {
+      deductionsOpt = existingDed as unknown as PayrollDeduction[];
+    }
+  }
+
+  const salary = resolveSalaryComponents(basic, {
+    allowances: allowancesOpt,
+    deductions: deductionsOpt,
+  });
 
   const data: Prisma.PayrollUpdateInput = {
     status: nextStatus,
     basicSalary: basic,
-    totalAllowances,
-    totalDeductions,
-    grossSalary,
-    netSalary,
-    taxableIncome,
-    allowances: allowancesJson as Prisma.InputJsonValue,
-    deductions: deductionsJson as Prisma.InputJsonValue,
+    totalAllowances: salary.totalAllowances,
+    totalDeductions: salary.totalDeductions,
+    grossSalary: salary.grossSalary,
+    netSalary: salary.netSalary,
+    taxableIncome: salary.taxableIncome,
+    allowances: salary.allowances as unknown as Prisma.InputJsonValue,
+    deductions: salary.deductions as unknown as Prisma.InputJsonValue,
   };
 
   if (parsed.payPeriodStart) {
@@ -408,7 +464,10 @@ export async function updatePayrollRecord(
     metadata: {
       fromStatus: existing.status,
       toStatus: nextStatus,
-      netSalary,
+      basicSalary: basic,
+      totalAllowances: salary.totalAllowances,
+      totalDeductions: salary.totalDeductions,
+      netSalary: salary.netSalary,
     },
   });
 
