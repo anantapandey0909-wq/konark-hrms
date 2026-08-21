@@ -48,7 +48,6 @@ export async function findRecentHires(companyId: string, limit = 5) {
       lastName: true,
       designation: true,
       joiningDate: true,
-      workLocation: true,
     },
   });
 }
