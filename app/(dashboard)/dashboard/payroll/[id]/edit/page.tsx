@@ -39,6 +39,7 @@ import {
 
 import { calculateSalaryBreakdown } from "@/mock/payroll";
 import { fetchPayrollRecord, patchPayroll } from "@/lib/data/payroll";
+import { formatINR, formatMonthName } from "@/lib/payroll/formatters";
 import type { PayrollRecord, PayrollStatus } from "@/types/payroll";
 
 const payrollEditSchema = z.object({
@@ -170,14 +171,6 @@ export default function EditPayrollPage({ params }: PageProps) {
   const watchBasicSalary = Number(form.watch("basicSalary")) || 0;
   const liveBreakdown = calculateSalaryBreakdown(watchBasicSalary);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
-
   return (
     <div className="space-y-6 p-6 max-w-4xl mx-auto">
       <div className="flex justify-between items-center">
@@ -244,7 +237,7 @@ export default function EditPayrollPage({ params }: PageProps) {
                       name="basicSalary"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Basic Salary</FormLabel>
+                          <FormLabel>Basic Salary (INR)</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
@@ -315,14 +308,14 @@ export default function EditPayrollPage({ params }: PageProps) {
                 <Sparkles className="h-4 w-4" /> Live Breakdown Preview
               </CardTitle>
               <CardDescription className="text-xs">
-                Based on current basic salary changes
+                Based on current basic salary changes (INR)
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-4 space-y-3 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Basic Salary:</span>
                 <span className="font-semibold text-foreground">
-                  {formatCurrency(liveBreakdown.basicSalary)}
+                  {formatINR(liveBreakdown.basicSalary)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -330,7 +323,7 @@ export default function EditPayrollPage({ params }: PageProps) {
                   Allowances (HRA + LTA + Special):
                 </span>
                 <span className="font-semibold text-emerald-600">
-                  +{formatCurrency(liveBreakdown.totalAllowances)}
+                  +{formatINR(liveBreakdown.totalAllowances)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -338,13 +331,13 @@ export default function EditPayrollPage({ params }: PageProps) {
                   Deductions (PF + Tax + Ins):
                 </span>
                 <span className="font-semibold text-rose-500">
-                  -{formatCurrency(liveBreakdown.totalDeductions)}
+                  -{formatINR(liveBreakdown.totalDeductions)}
                 </span>
               </div>
               <div className="border-t border-border my-2" />
               <div className="flex justify-between font-bold text-sm text-primary pt-1">
                 <span>Estimated Net Pay:</span>
-                <span>{formatCurrency(liveBreakdown.netSalary)}</span>
+                <span>{formatINR(liveBreakdown.netSalary)}</span>
               </div>
             </CardContent>
           </Card>
@@ -383,7 +376,7 @@ export default function EditPayrollPage({ params }: PageProps) {
                   Pay Period
                 </span>
                 <span className="font-medium text-foreground">
-                  {record.month} {record.year}
+                  {formatMonthName(record.month)} {record.year}
                 </span>
               </div>
             </CardContent>
