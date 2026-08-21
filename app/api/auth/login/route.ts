@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { isRealAuthEnabled } from "@/lib/config/flags";
 import { realLogin } from "@/lib/auth/real-auth";
@@ -6,7 +7,6 @@ import {
   SESSION_COOKIE_NAME,
   serializeSession,
   getSessionCookieOptions,
-  shouldUseSecureCookies,
   SESSION_DURATION_MS,
 } from "@/lib/auth/session";
 
@@ -52,20 +52,18 @@ export async function POST(request: Request) {
       Math.floor(SESSION_DURATION_MS / 1000)
     );
 
-    // Dev/ops visibility: prove cookie policy without leaking secrets.
-    if (process.env.NODE_ENV !== "production") {
-      console.info(
-        `[auth] login ok user=${session.user.email} cookie=${SESSION_COOKIE_NAME} secure=${cookieOptions.secure} sameSite=${cookieOptions.sameSite} path=${cookieOptions.path} sealedBytes=${sealed.length}`
-      );
-    } else if (shouldUseSecureCookies() === false) {
-      // Production binary serving plain HTTP (e.g. local next start) — still log once.
-      console.info(
-        `[auth] login ok; session cookie Secure=false (APP_URL is http or COOKIE_SECURE=false)`
-      );
-    }
+    // Prefer the App Router cookies() API (Next.js 15+/16).
+    const cookieStore = await cookies();
+    cookieStore.set(SESSION_COOKIE_NAME, sealed, cookieOptions);
 
     const res = NextResponse.json(response);
+    // Also attach on the Response so Set-Cookie is present on the wire.
     res.cookies.set(SESSION_COOKIE_NAME, sealed, cookieOptions);
+
+    console.info(
+      `[auth] login ok user=${session.user.email} cookie=${SESSION_COOKIE_NAME} secure=${cookieOptions.secure} path=${cookieOptions.path}`
+    );
+
     return res;
   } catch (error) {
     const message =
