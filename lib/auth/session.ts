@@ -60,8 +60,32 @@ export function parseSession(
 }
 
 /**
- * Cookie options for secure session cookie.
- * httpOnly + secure (prod) + sameSite=lax; path=/
+ * Whether the session cookie should use the Secure attribute.
+ *
+ * Browsers refuse to store/send Secure cookies over plain HTTP.
+ * Running `next start` (NODE_ENV=production) on http://localhost therefore
+ * must NOT set Secure, or login appears to succeed (localStorage mirror)
+ * while the server never receives a session cookie.
+ *
+ * Override with COOKIE_SECURE=true|false when needed.
+ */
+export function shouldUseSecureCookies(): boolean {
+  const override = process.env.COOKIE_SECURE?.trim().toLowerCase();
+  if (override === "true" || override === "1") return true;
+  if (override === "false" || override === "0") return false;
+
+  const appUrl =
+    process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "";
+  if (appUrl.startsWith("http://")) return false;
+  if (appUrl.startsWith("https://")) return true;
+
+  // Default: Secure only in production when no explicit APP_URL says otherwise.
+  return process.env.NODE_ENV === "production";
+}
+
+/**
+ * Cookie options for the HTTP-only session cookie.
+ * httpOnly + sameSite=lax + path=/ ; Secure only when appropriate for the origin.
  */
 export function getSessionCookieOptions(maxAgeSeconds?: number): {
   httpOnly: boolean;
@@ -72,7 +96,7 @@ export function getSessionCookieOptions(maxAgeSeconds?: number): {
 } {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookies(),
     sameSite: "lax",
     path: "/",
     maxAge: maxAgeSeconds ?? Math.floor(SESSION_DURATION_MS / 1000),
