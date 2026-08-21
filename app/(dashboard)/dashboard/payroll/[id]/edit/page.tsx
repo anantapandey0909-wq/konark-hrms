@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, use } from "react";
+import React, { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,10 +11,22 @@ import { ArrowLeft, Loader2, Save, Sparkles, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -25,8 +37,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-import { mockPayrollRecords, calculateSalaryBreakdown } from "@/mock/payroll";
-import type { PayrollStatus } from "@/types/payroll";
+import { calculateSalaryBreakdown } from "@/mock/payroll";
+import { fetchPayrollRecord, patchPayroll } from "@/lib/data/payroll";
+import type { PayrollRecord, PayrollStatus } from "@/types/payroll";
 
 const payrollEditSchema = z.object({
   status: z.enum(["DRAFT", "PENDING", "APPROVED", "PAID", "CANCELLED"]),
@@ -45,17 +58,43 @@ export default function EditPayrollPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const record = mockPayrollRecords.find((r) => r.id === id);
+  const [record, setRecord] = useState<PayrollRecord | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const form = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(payrollEditSchema),
     defaultValues: {
-      status: record ? record.status : "DRAFT",
-      basicSalary: record ? record.salaryBreakdown.basicSalary : 0,
-      notes: record?.notes ?? "",
+      status: "DRAFT",
+      basicSalary: 0,
+      notes: "",
     },
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const row = await fetchPayrollRecord(id);
+        if (cancelled) return;
+        setRecord(row);
+        if (row) {
+          form.reset({
+            status: row.status,
+            basicSalary: row.salaryBreakdown.basicSalary,
+            notes: row.notes ?? "",
+          });
+        }
+      } catch {
+        if (!cancelled) setRecord(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, form]);
 
   const containerVariants: Variants = {
     hidden: { opacity: 0, y: 15 },
@@ -65,10 +104,18 @@ export default function EditPayrollPage({ params }: PageProps) {
       transition: {
         type: "spring",
         stiffness: 100,
-        staggerChildren: 0.1
-      }
-    }
+        staggerChildren: 0.1,
+      },
+    },
   };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading payroll…
+      </div>
+    );
+  }
 
   if (!record) {
     return (
@@ -88,23 +135,32 @@ export default function EditPayrollPage({ params }: PageProps) {
   const onSubmit = async (values: FormOutput) => {
     setIsSubmitting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
       const updatedBreakdown = calculateSalaryBreakdown(values.basicSalary);
-      
-      record.status = values.status as PayrollStatus;
-      record.salaryBreakdown = updatedBreakdown;
-      record.notes = values.notes;
-      record.updatedAt = new Date().toISOString();
+      await patchPayroll(id, {
+        status: values.status as PayrollStatus,
+        basicSalary: values.basicSalary,
+        totalAllowances: updatedBreakdown.totalAllowances,
+        totalDeductions: updatedBreakdown.totalDeductions,
+        grossSalary: updatedBreakdown.grossSalary,
+        netSalary: updatedBreakdown.netSalary,
+        taxableIncome: updatedBreakdown.taxableIncome,
+        allowances: updatedBreakdown.allowances,
+        deductions: updatedBreakdown.deductions,
+        notes: values.notes,
+      });
 
       toast.success("Payroll Record Updated", {
         description: `Successfully modified statement ${record.payrollNumber} for ${record.employeeName}.`,
       });
 
-      router.push(`/dashboard/payroll/${record.id}`);
+      router.push(`/dashboard/payroll/${id}`);
+      router.refresh();
     } catch (error) {
       toast.error("Modification Failed", {
-        description: "An unexpected error occurred while modifying the payroll record.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred while modifying the payroll record.",
       });
     } finally {
       setIsSubmitting(false);
@@ -118,14 +174,17 @@ export default function EditPayrollPage({ params }: PageProps) {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(value);
   };
 
   return (
     <div className="space-y-6 p-6 max-w-4xl mx-auto">
       <div className="flex justify-between items-center">
-        <Button onClick={() => router.push(`/dashboard/payroll/${record.id}`)} variant="ghost">
+        <Button
+          onClick={() => router.push(`/dashboard/payroll/${record.id}`)}
+          variant="ghost"
+        >
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to Details
         </Button>
       </div>
@@ -141,7 +200,8 @@ export default function EditPayrollPage({ params }: PageProps) {
             <CardHeader>
               <CardTitle>Adjust Payroll Statement</CardTitle>
               <CardDescription>
-                Modify compensation metrics and workflow state for {record.employeeName}.
+                Modify compensation metrics and workflow state for{" "}
+                {record.employeeName}.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -154,7 +214,10 @@ export default function EditPayrollPage({ params }: PageProps) {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Workflow Status</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={String(field.value)}>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={String(field.value)}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select workflow status" />
@@ -168,7 +231,9 @@ export default function EditPayrollPage({ params }: PageProps) {
                               <SelectItem value="CANCELLED">Cancelled</SelectItem>
                             </SelectContent>
                           </Select>
-                          <FormDescription>Current approval or settlement status.</FormDescription>
+                          <FormDescription>
+                            Current approval or settlement status.
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -181,13 +246,15 @@ export default function EditPayrollPage({ params }: PageProps) {
                         <FormItem>
                           <FormLabel>Basic Salary</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="number" 
-                              {...field} 
-                              value={String(field.value ?? "")} 
+                            <Input
+                              type="number"
+                              {...field}
+                              value={String(field.value ?? "")}
                             />
                           </FormControl>
-                          <FormDescription>Calculates total gross/net salary automatically.</FormDescription>
+                          <FormDescription>
+                            Calculates total gross/net salary automatically.
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -247,20 +314,32 @@ export default function EditPayrollPage({ params }: PageProps) {
               <CardTitle className="text-xs font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1.5">
                 <Sparkles className="h-4 w-4" /> Live Breakdown Preview
               </CardTitle>
-              <CardDescription className="text-xs">Based on current basic salary changes</CardDescription>
+              <CardDescription className="text-xs">
+                Based on current basic salary changes
+              </CardDescription>
             </CardHeader>
             <CardContent className="pt-4 space-y-3 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Basic Salary:</span>
-                <span className="font-semibold text-foreground">{formatCurrency(liveBreakdown.basicSalary)}</span>
+                <span className="font-semibold text-foreground">
+                  {formatCurrency(liveBreakdown.basicSalary)}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Allowances (HRA + LTA + Special):</span>
-                <span className="font-semibold text-emerald-600">+{formatCurrency(liveBreakdown.totalAllowances)}</span>
+                <span className="text-muted-foreground">
+                  Allowances (HRA + LTA + Special):
+                </span>
+                <span className="font-semibold text-emerald-600">
+                  +{formatCurrency(liveBreakdown.totalAllowances)}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Deductions (PF + Tax + Ins):</span>
-                <span className="font-semibold text-rose-500">-{formatCurrency(liveBreakdown.totalDeductions)}</span>
+                <span className="text-muted-foreground">
+                  Deductions (PF + Tax + Ins):
+                </span>
+                <span className="font-semibold text-rose-500">
+                  -{formatCurrency(liveBreakdown.totalDeductions)}
+                </span>
               </div>
               <div className="border-t border-border my-2" />
               <div className="flex justify-between font-bold text-sm text-primary pt-1">
@@ -278,20 +357,34 @@ export default function EditPayrollPage({ params }: PageProps) {
             </CardHeader>
             <CardContent className="pt-4 space-y-2.5 text-xs text-muted-foreground">
               <div>
-                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">FTE Name</span>
-                <span className="font-medium text-foreground text-sm">{record.employeeName}</span>
+                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">
+                  FTE Name
+                </span>
+                <span className="font-medium text-foreground text-sm">
+                  {record.employeeName}
+                </span>
               </div>
               <div>
-                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">Operational Group</span>
-                <span className="font-medium text-foreground">{record.department.name}</span>
+                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">
+                  Operational Group
+                </span>
+                <span className="font-medium text-foreground">
+                  {record.department.name}
+                </span>
               </div>
               <div>
-                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">Designation</span>
+                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">
+                  Designation
+                </span>
                 <span className="font-medium text-foreground">{record.designation}</span>
               </div>
               <div>
-                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">Pay Period</span>
-                <span className="font-medium text-foreground">{record.month} {record.year}</span>
+                <span className="block text-[10px] uppercase font-semibold text-muted-foreground">
+                  Pay Period
+                </span>
+                <span className="font-medium text-foreground">
+                  {record.month} {record.year}
+                </span>
               </div>
             </CardContent>
           </Card>
