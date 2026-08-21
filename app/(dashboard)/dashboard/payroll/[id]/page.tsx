@@ -21,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
 import { fetchPayrollRecord } from "@/lib/data/payroll";
+import { formatINR, formatMonthName } from "@/lib/payroll/formatters";
 import type { PayrollRecord } from "@/types/payroll";
 
 interface PageProps {
@@ -87,14 +88,6 @@ export default function PayrollDetailsPage({ params }: PageProps) {
     );
   }
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
-
   const handlePrint = () => {
     window.print();
   };
@@ -126,8 +119,8 @@ export default function PayrollDetailsPage({ params }: PageProps) {
               </span>
               <h2 className="text-2xl font-bold text-foreground">Payslip of Account</h2>
               <p className="text-muted-foreground text-xs flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5" /> For period of {record.month}{" "}
-                {record.year}
+                <Calendar className="h-3.5 w-3.5" /> For period of{" "}
+                {formatMonthName(record.month)} {record.year}
               </p>
             </div>
             <div className="text-left md:text-right">
@@ -196,12 +189,12 @@ export default function PayrollDetailsPage({ params }: PageProps) {
               <div className="space-y-3">
                 <h3 className="font-bold text-emerald-500 text-[10px] uppercase tracking-wider border-b pb-1.5 flex justify-between">
                   <span>Earnings & Allowances</span>
-                  <span>Amount</span>
+                  <span>Amount (INR)</span>
                 </h3>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between font-medium text-foreground">
                     <span>Basic Salary</span>
-                    <span>{formatCurrency(salaryBreakdown.basicSalary)}</span>
+                    <span>{formatINR(salaryBreakdown.basicSalary)}</span>
                   </div>
                   {salaryBreakdown.allowances.map((allowance) => (
                     <div
@@ -209,16 +202,16 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                       className="flex justify-between text-muted-foreground"
                     >
                       <span>{allowance.name}</span>
-                      <span>{formatCurrency(allowance.amount)}</span>
+                      <span>{formatINR(allowance.amount)}</span>
                     </div>
                   ))}
                   <div className="flex justify-between border-t pt-2 text-muted-foreground">
                     <span>Total Allowances</span>
-                    <span>{formatCurrency(salaryBreakdown.totalAllowances)}</span>
+                    <span>{formatINR(salaryBreakdown.totalAllowances)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-emerald-500">
                     <span>Gross Salary</span>
-                    <span>{formatCurrency(salaryBreakdown.grossSalary)}</span>
+                    <span>{formatINR(salaryBreakdown.grossSalary)}</span>
                   </div>
                 </div>
               </div>
@@ -226,7 +219,7 @@ export default function PayrollDetailsPage({ params }: PageProps) {
               <div className="space-y-3">
                 <h3 className="font-bold text-rose-500 text-[10px] uppercase tracking-wider border-b pb-1.5 flex justify-between">
                   <span>Deductions & Taxes</span>
-                  <span>Amount</span>
+                  <span>Amount (INR)</span>
                 </h3>
                 <div className="space-y-2 text-xs">
                   {salaryBreakdown.deductions.map((deduction) => (
@@ -235,12 +228,12 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                       className="flex justify-between text-muted-foreground"
                     >
                       <span>{deduction.name}</span>
-                      <span>{formatCurrency(deduction.amount)}</span>
+                      <span>{formatINR(deduction.amount)}</span>
                     </div>
                   ))}
                   <div className="flex justify-between font-bold border-t pt-2 text-rose-500">
                     <span>Total Deductions</span>
-                    <span>{formatCurrency(salaryBreakdown.totalDeductions)}</span>
+                    <span>{formatINR(salaryBreakdown.totalDeductions)}</span>
                   </div>
                 </div>
               </div>
@@ -258,7 +251,7 @@ export default function PayrollDetailsPage({ params }: PageProps) {
               </div>
               <div className="text-center md:text-right">
                 <p className="text-3xl font-extrabold text-primary">
-                  {formatCurrency(salaryBreakdown.netSalary)}
+                  {formatINR(salaryBreakdown.netSalary)}
                 </p>
               </div>
             </div>
