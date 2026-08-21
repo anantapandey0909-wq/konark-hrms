@@ -1,18 +1,34 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { Plus, Upload, Download, DollarSign, Calendar, Users, CheckCircle2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  Plus,
+  Upload,
+  Download,
+  DollarSign,
+  Calendar,
+  Users,
+  CheckCircle2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PayrollFiltersComponent } from "./payroll-filters";
 import { PayrollTable } from "./payroll-table";
-import { PayrollFilters, PayrollRecord } from "@/types/payroll";
-import { mockPayrollRecords } from "@/mock/payroll";
-import { mockDepartments } from "@/mock/department";
+import {
+  PayrollFilters,
+  PayrollRecord,
+  PayrollStats,
+} from "@/types/payroll";
+import { fetchPayrollRecords, fetchPayrollStats, patchPayroll } from "@/lib/data/payroll";
+import { fetchDepartments } from "@/lib/data/departments";
+import type { ResolvedDepartment } from "@/types/department";
+import { formatCurrency } from "@/lib/payroll";
 
 export function PayrollDashboard() {
+  const router = useRouter();
   const [filters, setFilters] = useState<PayrollFilters>({
     search: "",
     department: "ALL",
@@ -20,9 +36,46 @@ export function PayrollDashboard() {
     month: "ALL",
     year: "ALL",
   });
-const [isLoading] = useState(false);
+  const [records, setRecords] = useState<PayrollRecord[]>([]);
+  const [stats, setStats] = useState<PayrollStats | null>(null);
+  const [departments, setDepartments] = useState<ResolvedDepartment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Memoized Event Handlers for Header Quick Actions
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const departmentId =
+        filters.department === "ALL" ? undefined : filters.department.id;
+      const [rows, dash, depts] = await Promise.all([
+        fetchPayrollRecords({
+          search: filters.search || undefined,
+          status: filters.status === "ALL" ? undefined : filters.status,
+          month: filters.month === "ALL" ? undefined : filters.month,
+          year: filters.year === "ALL" ? undefined : filters.year,
+          departmentId,
+        }),
+        fetchPayrollStats(),
+        fetchDepartments(),
+      ]);
+      setRecords(rows);
+      setStats(dash.stats);
+      setDepartments(depts);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Failed to load payroll."
+      );
+      setRecords([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   const handleUploadSalary = useCallback(() => {
     toast.info("Coming Soon", {
       description: "Salary upload will be available in a future update.",
@@ -35,43 +88,75 @@ const [isLoading] = useState(false);
     });
   }, []);
 
-  // Memoized Event Handlers for Payroll Actions
-  const handleViewDetails = useCallback((record: PayrollRecord) => {
-    toast.info("Payroll Details", {
-      description: `Viewing details for ${record.employeeName} (${record.payrollNumber}).`,
-    });
-  }, []);
+  const handleViewDetails = useCallback(
+    (record: PayrollRecord) => {
+      router.push(`/dashboard/payroll/${record.id}`);
+    },
+    [router]
+  );
 
-  const handleEdit = useCallback((record: PayrollRecord) => {
-    toast.info("Coming Soon", {
-      description: `Editing functionality for draft ${record.employeeName} is coming soon.`,
-    });
-  }, []);
+  const handleEdit = useCallback(
+    (record: PayrollRecord) => {
+      router.push(`/dashboard/payroll/${record.id}/edit`);
+    },
+    [router]
+  );
 
-  const handleApprove = useCallback((record: PayrollRecord) => {
-    toast.success("Success", {
-      description: `Approved payroll for ${record.employeeName}.`,
-    });
-  }, []);
+  const handleApprove = useCallback(
+    async (record: PayrollRecord) => {
+      try {
+        await patchPayroll(record.id, { status: "APPROVED" });
+        toast.success("Success", {
+          description: `Approved payroll for ${record.employeeName}.`,
+        });
+        void load();
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to approve payroll."
+        );
+      }
+    },
+    [load]
+  );
 
-  const handlePay = useCallback((record: PayrollRecord) => {
-    toast.success("Success", {
-      description: `Disbursed salary payment to ${record.employeeName}.`,
-    });
-  }, []);
+  const handlePay = useCallback(
+    async (record: PayrollRecord) => {
+      try {
+        await patchPayroll(record.id, { status: "PAID" });
+        toast.success("Success", {
+          description: `Disbursed salary payment to ${record.employeeName}.`,
+        });
+        void load();
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to mark as paid."
+        );
+      }
+    },
+    [load]
+  );
 
-  const handleCancel = useCallback((record: PayrollRecord) => {
-    toast.warning("Cancelled", {
-      description: `Cancelled payroll record for ${record.employeeName}.`,
-    });
-  }, []);
+  const handleCancel = useCallback(
+    async (record: PayrollRecord) => {
+      try {
+        await patchPayroll(record.id, { status: "CANCELLED" });
+        toast.warning("Cancelled", {
+          description: `Cancelled payroll record for ${record.employeeName}.`,
+        });
+        void load();
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to cancel payroll."
+        );
+      }
+    },
+    [load]
+  );
 
-  // Handler for state mutations passed to the filter component
   const handleFilterChange = useCallback((updatedFilters: PayrollFilters) => {
     setFilters(updatedFilters);
   }, []);
 
-  // Reset to specified base parameters
   const handleReset = useCallback(() => {
     setFilters({
       search: "",
@@ -82,56 +167,27 @@ const [isLoading] = useState(false);
     });
   }, []);
 
-  // Memoized enterprise-grade filtering
-  const filteredRecords = useMemo(() => {
-    return mockPayrollRecords.filter((record: PayrollRecord) => {
-      // Search matches employeeName, employeeCode, or payrollNumber
-      const query = filters.search.trim().toLowerCase();
-      const matchesSearch = !query ||
-        record.employeeName.toLowerCase().includes(query) ||
-        record.employeeCode.toLowerCase().includes(query) ||
-        record.payrollNumber.toLowerCase().includes(query);
+  // Client-side refine still runs on the already server-filtered set
+  const filteredRecords = useMemo(() => records, [records]);
 
-      // Department filter
-      const matchesDepartment = filters.department === "ALL" ||
-        record.department.id === filters.department.id;
-
-      // Status filter
-      const matchesStatus = filters.status === "ALL" ||
-        record.status === filters.status;
-
-      // Month filter
-      const matchesMonth = filters.month === "ALL" ||
-        record.month === filters.month;
-
-      // Year filter
-      const matchesYear = filters.year === "ALL" ||
-        record.year === filters.year;
-
-      return matchesSearch && matchesDepartment && matchesStatus && matchesMonth && matchesYear;
-    });
-  }, [filters]);
+  const totalExpense = stats?.totalNetSalary ?? 0;
+  const processed = stats?.employeeCount ?? filteredRecords.length;
 
   return (
     <div className="space-y-8">
-      {/* Dashboard Header */}
       <div className="mb-2 flex flex-col gap-4 border-b pb-6 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1.5">
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
             Payroll Hub
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Manage payroll generation, approvals, salary processing, and employee compensation across your organization.
+            Manage payroll generation, approvals, salary processing, and employee
+            compensation across your organization.
           </p>
         </div>
 
-        {/* Quick Actions */}
         <div className="flex flex-wrap items-center justify-end gap-3">
-          <Button
-            asChild
-            variant="default"
-            aria-label="Generate new payroll run"
-          >
+          <Button asChild variant="default" aria-label="Generate new payroll run">
             <Link href="/dashboard/payroll/create">
               <Plus className="mr-2 h-4 w-4" />
               Generate Payroll
@@ -158,16 +214,25 @@ const [isLoading] = useState(false);
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {loadError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {loadError}
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Payroll Expense</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Payroll Expense
+            </CardTitle>
             <DollarSign className="h-4 w-4 text-slate-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹8,45,200.00</div>
-            <p className="text-xs text-slate-500">+4.5% from last month</p>
+            <div className="text-2xl font-bold">
+              {formatCurrency(totalExpense, "en-IN", "INR")}
+            </div>
+            <p className="text-xs text-slate-500">Net salaries in scope</p>
           </CardContent>
         </Card>
         <Card>
@@ -176,18 +241,25 @@ const [isLoading] = useState(false);
             <Calendar className="h-4 w-4 text-slate-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">October 2025</div>
-            <p className="text-xs text-slate-500">Processing current period</p>
+            <div className="text-2xl font-bold">
+              {new Date().toLocaleString("en-US", {
+                month: "long",
+                year: "numeric",
+              })}
+            </div>
+            <p className="text-xs text-slate-500">Current calendar period</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Processed Employees</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Processed Employees
+            </CardTitle>
             <Users className="h-4 w-4 text-slate-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">142 / 142</div>
-            <p className="text-xs text-slate-500">100% completion rate</p>
+            <div className="text-2xl font-bold">{processed}</div>
+            <p className="text-xs text-slate-500">Payroll records loaded</p>
           </CardContent>
         </Card>
         <Card>
@@ -196,21 +268,23 @@ const [isLoading] = useState(false);
             <CheckCircle2 className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">Ready</div>
-            <p className="text-xs text-slate-500">All batches calculated</p>
+            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+              {isLoading ? "Loading" : "Ready"}
+            </div>
+            <p className="text-xs text-slate-500">
+              {isLoading ? "Fetching payroll data…" : "All batches calculated"}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
       <PayrollFiltersComponent
         filters={filters}
-        departments={mockDepartments}
+        departments={departments}
         onFilterChange={handleFilterChange}
         onReset={handleReset}
       />
 
-      {/* Payroll Table */}
       <PayrollTable
         records={filteredRecords}
         isLoading={isLoading}
