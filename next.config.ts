@@ -1,12 +1,13 @@
 import type { NextConfig } from "next";
 
-/**
- * Normalize public data flag at process start so Server Actions and the
- * client bundle agree after `next dev` / `next build` restart.
- */
-function resolvePublicRealDataFlag(): string {
+function resolvePublicFlag(
+  publicName: string,
+  serverAlias?: string
+): string {
   const raw =
-    process.env.NEXT_PUBLIC_USE_REAL_DATA ?? process.env.USE_REAL_DATA ?? "false";
+    process.env[publicName] ??
+    (serverAlias ? process.env[serverAlias] : undefined) ??
+    "false";
   const normalized = raw.trim().toLowerCase();
   if (
     normalized === "true" ||
@@ -19,15 +20,24 @@ function resolvePublicRealDataFlag(): string {
   return "false";
 }
 
-const resolvedRealData = resolvePublicRealDataFlag();
-// Keep process.env consistent for any server code that reads it later.
+const resolvedRealData = resolvePublicFlag(
+  "NEXT_PUBLIC_USE_REAL_DATA",
+  "USE_REAL_DATA"
+);
+const resolvedRealAuth = resolvePublicFlag(
+  "NEXT_PUBLIC_USE_REAL_AUTH",
+  "USE_REAL_AUTH"
+);
+
 process.env.NEXT_PUBLIC_USE_REAL_DATA = resolvedRealData;
+process.env.NEXT_PUBLIC_USE_REAL_AUTH = resolvedRealAuth;
 
 const nextConfig: NextConfig = {
   // Native addon — must not be bundled by Turbopack/webpack or verify() fails silently.
   serverExternalPackages: ["argon2"],
   env: {
     NEXT_PUBLIC_USE_REAL_DATA: resolvedRealData,
+    NEXT_PUBLIC_USE_REAL_AUTH: resolvedRealAuth,
   },
 };
 
