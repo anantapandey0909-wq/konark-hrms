@@ -16,6 +16,7 @@ import type { Employee } from "@/types/employee";
 import type { Department } from "@/types/department";
 import { fetchEmployees } from "@/lib/data/employees";
 import { fetchDepartments } from "@/lib/data/departments";
+import { payPeriodBounds } from "@/lib/payroll/formatters";
 
 export interface PayrollFormData {
   employeeId: string;
@@ -69,6 +70,21 @@ const STATUS_OPTIONS: readonly { label: string; value: PayrollStatus }[] = [
   { label: "Cancelled", value: "CANCELLED" },
 ];
 
+function initialPeriod(
+  month: PayrollMonth,
+  year: number,
+  defaultValues?: Partial<PayrollFormData>
+) {
+  if (defaultValues?.payPeriodStart && defaultValues?.payPeriodEnd) {
+    return {
+      start: defaultValues.payPeriodStart.substring(0, 10),
+      end: defaultValues.payPeriodEnd.substring(0, 10),
+    };
+  }
+  const bounds = payPeriodBounds(month, year);
+  return { start: bounds.startIso, end: bounds.endIso };
+}
+
 export function PayrollForm({
   mode,
   onSubmit,
@@ -77,21 +93,21 @@ export function PayrollForm({
   onCancel,
   className,
 }: PayrollFormProps) {
+  const initialMonth = defaultValues?.month || "JANUARY";
+  const initialYear = defaultValues?.year || new Date().getFullYear();
+  const period = initialPeriod(initialMonth, initialYear, defaultValues);
+
   const [formData, setFormData] = React.useState<PayrollFormData>({
     employeeId: defaultValues?.employeeId || "",
     employeeCode: defaultValues?.employeeCode || "",
     employeeName: defaultValues?.employeeName || "",
     departmentId: defaultValues?.departmentId || "",
     designation: defaultValues?.designation || "",
-    month: defaultValues?.month || "JANUARY",
-    year: defaultValues?.year || new Date().getFullYear(),
+    month: initialMonth,
+    year: initialYear,
     status: defaultValues?.status || "DRAFT",
-    payPeriodStart: defaultValues?.payPeriodStart
-      ? defaultValues.payPeriodStart.substring(0, 10)
-      : "",
-    payPeriodEnd: defaultValues?.payPeriodEnd
-      ? defaultValues.payPeriodEnd.substring(0, 10)
-      : "",
+    payPeriodStart: period.start,
+    payPeriodEnd: period.end,
     basicSalary: defaultValues?.basicSalary || 0,
     grossSalary: defaultValues?.grossSalary || 0,
     taxableIncome: defaultValues?.taxableIncome || 0,
@@ -158,12 +174,19 @@ export function PayrollForm({
     setErrors((prev) => {
       const next = { ...prev };
       delete next.employeeId;
-      delete next.employeeName;
-      delete next.employeeCode;
-      delete next.designation;
-      delete next.departmentId;
       return next;
     });
+  };
+
+  const applyMonthYear = (month: PayrollMonth, year: number) => {
+    const bounds = payPeriodBounds(month, year);
+    setFormData((prev) => ({
+      ...prev,
+      month,
+      year,
+      payPeriodStart: bounds.startIso,
+      payPeriodEnd: bounds.endIso,
+    }));
   };
 
   const validate = (): boolean => {
@@ -172,9 +195,6 @@ export function PayrollForm({
     if (!formData.employeeId.trim()) {
       nextErrors.employeeId = "Please select an employee";
     }
-    if (!formData.payPeriodStart)
-      nextErrors.payPeriodStart = "Start date is required";
-    if (!formData.payPeriodEnd) nextErrors.payPeriodEnd = "End date is required";
     if (formData.basicSalary <= 0)
       nextErrors.basicSalary = "Basic salary must be greater than 0";
 
@@ -217,12 +237,16 @@ export function PayrollForm({
     e.preventDefault();
     if (!validate()) return;
 
+    // Ensure period matches month/year one more time before submit.
+    const bounds = payPeriodBounds(formData.month, formData.year);
+
     setPending(true);
     try {
       await onSubmit({
         ...formData,
-        // Authoritative identity is employeeId; snapshot fields are display-only.
         employeeId: formData.employeeId,
+        payPeriodStart: bounds.startIso,
+        payPeriodEnd: bounds.endIso,
       });
     } finally {
       setPending(false);
@@ -326,7 +350,9 @@ export function PayrollForm({
           </label>
           <Select
             value={formData.month}
-            onValueChange={(val) => handleChange("month", val as PayrollMonth)}
+            onValueChange={(val) =>
+              applyMonthYear(val as PayrollMonth, formData.year)
+            }
             disabled={loading}
           >
             <SelectTrigger>
@@ -350,8 +376,8 @@ export function PayrollForm({
             type="number"
             value={formData.year}
             onChange={(e) =>
-              handleChange(
-                "year",
+              applyMonthYear(
+                formData.month,
                 parseInt(e.target.value, 10) || new Date().getFullYear()
               )
             }
@@ -366,12 +392,13 @@ export function PayrollForm({
           <Input
             type="date"
             value={formData.payPeriodStart}
-            onChange={(e) => handleChange("payPeriodStart", e.target.value)}
+            readOnly
             disabled={loading}
+            className="bg-slate-50 dark:bg-slate-900/40"
           />
-          {errors.payPeriodStart && (
-            <p className="text-xs text-rose-600">{errors.payPeriodStart}</p>
-          )}
+          <p className="text-[10px] text-slate-400">
+            Derived from payroll month and year.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -381,12 +408,13 @@ export function PayrollForm({
           <Input
             type="date"
             value={formData.payPeriodEnd}
-            onChange={(e) => handleChange("payPeriodEnd", e.target.value)}
+            readOnly
             disabled={loading}
+            className="bg-slate-50 dark:bg-slate-900/40"
           />
-          {errors.payPeriodEnd && (
-            <p className="text-xs text-rose-600">{errors.payPeriodEnd}</p>
-          )}
+          <p className="text-[10px] text-slate-400">
+            Derived from payroll month and year.
+          </p>
         </div>
 
         <div className="space-y-2">
