@@ -1,15 +1,9 @@
 /**
  * Payroll service — business rules, tenant isolation, audit.
  *
- * Salary arithmetic is always derived from the line items that are stored:
- *   totalAllowances = sum(allowances.amount)
- *   totalDeductions = sum(deductions.amount)
- *   grossSalary     = basicSalary + totalAllowances
- *   netSalary       = max(0, grossSalary - totalDeductions)
- *   taxableIncome   = max(0, grossSalary - totalDeductions)
- *
- * Client-provided aggregate totals are never trusted when they disagree with
- * the allowance/deduction arrays (that caused payslip inconsistency).
+ * Salary arithmetic is always derived from the line items that are stored.
+ * Pay period dates are always derived from month + year on create
+ * (client-supplied period dates are not authoritative).
  */
 
 import type { Prisma, PayrollMonth, PayrollStatus } from "@prisma/client";
@@ -29,6 +23,7 @@ import {
   calculateGrossSalary,
   calculateNetSalary,
 } from "@/lib/payroll";
+import { monthCode, payPeriodBounds } from "@/lib/payroll/formatters";
 import type {
   PayrollRecord,
   PayrollSummary,
@@ -75,10 +70,6 @@ function sumLineItems(items: readonly { amount: number }[]): number {
   return items.reduce((s, i) => s + i.amount, 0);
 }
 
-/**
- * Single source of truth for salary components stored on Payroll.
- * Line items drive totals; aggregates are never taken from the client alone.
- */
 function resolveSalaryComponents(
   basicSalary: number,
   options?: {
@@ -107,7 +98,10 @@ function resolveSalaryComponents(
   const totalDeductions = sumLineItems(deductions);
   const grossSalary = calculateGrossSalary(basicSalary, totalAllowances);
   const netSalary = calculateNetSalary(grossSalary, totalDeductions);
-  const taxableIncome = Math.max(0, Math.round((grossSalary - totalDeductions) * 100) / 100);
+  const taxableIncome = Math.max(
+    0,
+    Math.round((grossSalary - totalDeductions) * 100) / 100
+  );
 
   return {
     allowances,
@@ -141,30 +135,13 @@ function defaultLeave(): PayrollLeaveSummary {
   };
 }
 
-function monthCode(month: string): string {
-  const map: Record<string, string> = {
-    JANUARY: "01",
-    FEBRUARY: "02",
-    MARCH: "03",
-    APRIL: "04",
-    MAY: "05",
-    JUNE: "06",
-    JULY: "07",
-    AUGUST: "08",
-    SEPTEMBER: "09",
-    OCTOBER: "10",
-    NOVEMBER: "11",
-    DECEMBER: "12",
-  };
-  return map[month] ?? "01";
-}
-
 function generatePayrollNumber(
   year: number,
   month: string,
   employeeCode: string
 ): string {
-  const suffix = employeeCode.replace(/[^A-Za-z0-9]/g, "").slice(-6) || "000000";
+  const suffix =
+    employeeCode.replace(/[^A-Za-z0-9]/g, "").slice(-6) || "000000";
   return `PAY-${year}-${monthCode(month)}-${suffix}-${Date.now().toString(36).toUpperCase()}`;
 }
 
@@ -259,14 +236,10 @@ export async function createPayrollRecord(
     );
   }
 
-  const start = parseDateOnly(parsed.payPeriodStart);
-  const end = parseDateOnly(parsed.payPeriodEnd);
-  if (end < start) {
-    throw new AppError(
-      "VALIDATION",
-      "Pay period end cannot be before start."
-    );
-  }
+  // Authoritative period: always from month + year (ignore mismatched client dates).
+  const bounds = payPeriodBounds(parsed.month, parsed.year);
+  const start = parseDateOnly(bounds.startIso);
+  const end = parseDateOnly(bounds.endIso);
 
   const basic = parsed.basicSalary;
   const salary = resolveSalaryComponents(basic, {
@@ -325,6 +298,8 @@ export async function createPayrollRecord(
       employeeId: employee.id,
       month: parsed.month,
       year: parsed.year,
+      payPeriodStart: bounds.startIso,
+      payPeriodEnd: bounds.endIso,
       payrollNumber,
       basicSalary: basic,
       totalAllowances: salary.totalAllowances,
@@ -376,8 +351,6 @@ export async function updatePayrollRecord(
 
   const basic = parsed.basicSalary ?? existing.basicSalary;
 
-  // Prefer explicit line items from the client; otherwise recompute defaults
-  // when basic salary changed; otherwise keep existing JSON arrays.
   let allowancesOpt: PayrollAllowance[] | undefined = parsed.allowances;
   let deductionsOpt: PayrollDeduction[] | undefined = parsed.deductions;
 
@@ -389,7 +362,6 @@ export async function updatePayrollRecord(
   }
 
   if (!allowancesOpt) {
-    // Keep existing line items from DB JSON
     const existingAll = existing.allowances;
     if (Array.isArray(existingAll) && existingAll.length > 0) {
       allowancesOpt = existingAll as unknown as PayrollAllowance[];
@@ -419,12 +391,13 @@ export async function updatePayrollRecord(
     deductions: salary.deductions as unknown as Prisma.InputJsonValue,
   };
 
-  if (parsed.payPeriodStart) {
-    data.payPeriodStart = parseDateOnly(parsed.payPeriodStart);
+  // Keep period aligned with stored month/year (month/year are not mutable on update).
+  if (parsed.payPeriodStart !== undefined || parsed.payPeriodEnd !== undefined) {
+    const bounds = payPeriodBounds(existing.month, existing.year);
+    data.payPeriodStart = parseDateOnly(bounds.startIso);
+    data.payPeriodEnd = parseDateOnly(bounds.endIso);
   }
-  if (parsed.payPeriodEnd) {
-    data.payPeriodEnd = parseDateOnly(parsed.payPeriodEnd);
-  }
+
   if (parsed.attendanceSummary) {
     data.attendanceSummary =
       parsed.attendanceSummary as unknown as Prisma.InputJsonValue;
