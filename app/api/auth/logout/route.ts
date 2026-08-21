@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import {
+  SESSION_COOKIE_NAME,
+  getSessionCookieOptions,
+} from "@/lib/auth/session";
 
 export async function POST() {
   const res = NextResponse.json({
@@ -7,11 +10,10 @@ export async function POST() {
     message: "Logged out.",
   });
 
+  // Match login cookie attributes so the browser clears the same cookie.
+  const base = getSessionCookieOptions(0);
   res.cookies.set(SESSION_COOKIE_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
+    ...base,
     maxAge: 0,
   });
 
