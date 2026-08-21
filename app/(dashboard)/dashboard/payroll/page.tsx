@@ -1,58 +1,46 @@
-/*"use client";
+import { PayrollDashboard } from "@/components/payroll/payroll-dashboard";
+import {
+  fetchPayrollRecords,
+  fetchPayrollStats,
+} from "@/lib/data/payroll";
+import { fetchDepartments } from "@/lib/data/departments";
+import type { PayrollRecord, PayrollStats } from "@/types/payroll";
+import type { ResolvedDepartment } from "@/types/department";
 
-import * as React from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { PayrollForm, PayrollFormData } from "@/components/payroll/payroll-form";
+export const dynamic = "force-dynamic";
 
-export default function CreatePayrollPage() {
-  const router = useRouter();
+export default async function PayrollPage() {
+  let initialRecords: PayrollRecord[] = [];
+  let initialStats: PayrollStats | null = null;
+  let initialDepartments: ResolvedDepartment[] = [];
+  let loadError: string | null = null;
 
-  const handleSubmit = async (data: PayrollFormData) => {
-    if (data) {
-      router.push("/dashboard/payroll");
-    }
-  };
-const handleCancel = () => {
-  router.push("/dashboard/payroll");
-};
+  try {
+    const [records, dash, depts] = await Promise.all([
+      fetchPayrollRecords(),
+      fetchPayrollStats(),
+      fetchDepartments(),
+    ]);
+    initialRecords = records;
+    initialStats = dash.stats;
+    initialDepartments = depts;
+  } catch (error) {
+    loadError =
+      error instanceof Error ? error.message : "Failed to load payroll data.";
+  }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCancel}
-            className="-ml-3 h-8 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Payroll List
-          </Button>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
-            Generate Payroll Record
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Create a new payroll cycle computation for an employee.
-          </p>
+    <div className="space-y-2">
+      {loadError && (
+        <div className="mx-6 mt-4 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {loadError}
         </div>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <PayrollForm 
-          mode="create" 
-          onSubmit={handleSubmit} 
-          onCancel={handleCancel} 
-        />
-      </div>
+      )}
+      <PayrollDashboard
+        initialRecords={initialRecords}
+        initialStats={initialStats}
+        initialDepartments={initialDepartments}
+      />
     </div>
   );
-}*/
-import * as React from "react";
-import { PayrollDashboard } from "@/components/payroll/payroll-dashboard";
-
-export default function PayrollPage() {
-  return <PayrollDashboard />;
 }
