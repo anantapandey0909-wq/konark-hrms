@@ -1,27 +1,27 @@
 "use client";
 
-import React, { use } from "react";
+import React, { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
-import { 
-  ArrowLeft, 
-  Printer, 
-  Building2, 
-  Calendar, 
-  User, 
-  Briefcase, 
+import {
+  ArrowLeft,
+  Printer,
+  Building2,
+  Calendar,
+  User,
+  Briefcase,
   CreditCard,
-  DollarSign,
-  TrendingUp,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
-import { mockPayrollRecords } from "@/mock/payroll";
+import { fetchPayrollRecord } from "@/lib/data/payroll";
+import type { PayrollRecord } from "@/types/payroll";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -30,8 +30,26 @@ interface PageProps {
 export default function PayrollDetailsPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
+  const [record, setRecord] = useState<PayrollRecord | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const record = mockPayrollRecords.find((r) => r.id === id);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const row = await fetchPayrollRecord(id);
+        if (!cancelled) setRecord(row);
+      } catch {
+        if (!cancelled) setRecord(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const containerVariants: Variants = {
     hidden: { opacity: 0, y: 15 },
@@ -41,15 +59,18 @@ export default function PayrollDetailsPage({ params }: PageProps) {
       transition: {
         type: "spring",
         stiffness: 100,
-        staggerChildren: 0.1
-      }
-    }
+        staggerChildren: 0.1,
+      },
+    },
   };
 
-  const itemVariants: Variants = {
-    hidden: { opacity: 0, y: 10 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 120 } }
-  };
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading payroll…
+      </div>
+    );
+  }
 
   if (!record) {
     return (
@@ -70,7 +91,7 @@ export default function PayrollDetailsPage({ params }: PageProps) {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(value);
   };
 
@@ -103,13 +124,18 @@ export default function PayrollDetailsPage({ params }: PageProps) {
               </span>
               <h2 className="text-2xl font-bold text-foreground">Payslip of Account</h2>
               <p className="text-muted-foreground text-xs flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5" /> For period of {record.month} {record.year}
+                <Calendar className="h-3.5 w-3.5" /> For period of {record.month}{" "}
+                {record.year}
               </p>
             </div>
             <div className="text-left md:text-right">
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Payslip Number</p>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">
+                Payslip Number
+              </p>
               <p className="text-lg font-bold text-primary">{record.payrollNumber}</p>
-              <p className="text-[10px] text-muted-foreground">Generated at: {record.generatedAt.split("T")[0]}</p>
+              <p className="text-[10px] text-muted-foreground">
+                Generated at: {record.generatedAt.split("T")[0]}
+              </p>
             </div>
           </div>
 
@@ -134,7 +160,9 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Building2 className="h-4 w-4" />
-                    <span>{record.department.name} ({record.department.code})</span>
+                    <span>
+                      {record.department.name} ({record.department.code})
+                    </span>
                   </div>
                 </div>
               </div>
@@ -165,7 +193,7 @@ export default function PayrollDetailsPage({ params }: PageProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-3">
                 <h3 className="font-bold text-emerald-500 text-[10px] uppercase tracking-wider border-b pb-1.5 flex justify-between">
-                  <span>Earnings &amp; Allowances</span>
+                  <span>Earnings & Allowances</span>
                   <span>Amount</span>
                 </h3>
                 <div className="space-y-2 text-xs">
@@ -174,33 +202,46 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                     <span>{formatCurrency(record.salaryBreakdown.basicSalary)}</span>
                   </div>
                   {record.salaryBreakdown.allowances.map((allowance) => (
-                    <div key={allowance.id} className="flex justify-between text-muted-foreground">
+                    <div
+                      key={allowance.id}
+                      className="flex justify-between text-muted-foreground"
+                    >
                       <span>{allowance.name}</span>
                       <span>{formatCurrency(allowance.amount)}</span>
                     </div>
                   ))}
                   <div className="flex justify-between font-bold border-t pt-2 text-emerald-500">
                     <span>Total Allowances</span>
-                    <span>{formatCurrency(record.salaryBreakdown.totalAllowances + record.salaryBreakdown.basicSalary)}</span>
+                    <span>
+                      {formatCurrency(
+                        record.salaryBreakdown.totalAllowances +
+                          record.salaryBreakdown.basicSalary
+                      )}
+                    </span>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3">
                 <h3 className="font-bold text-rose-500 text-[10px] uppercase tracking-wider border-b pb-1.5 flex justify-between">
-                  <span>Deductions &amp; Taxes</span>
+                  <span>Deductions & Taxes</span>
                   <span>Amount</span>
                 </h3>
                 <div className="space-y-2 text-xs">
                   {record.salaryBreakdown.deductions.map((deduction) => (
-                    <div key={deduction.id} className="flex justify-between text-muted-foreground">
+                    <div
+                      key={deduction.id}
+                      className="flex justify-between text-muted-foreground"
+                    >
                       <span>{deduction.name}</span>
                       <span>{formatCurrency(deduction.amount)}</span>
                     </div>
                   ))}
                   <div className="flex justify-between font-bold border-t pt-2 text-rose-500">
                     <span>Total Deductions</span>
-                    <span>{formatCurrency(record.salaryBreakdown.totalDeductions)}</span>
+                    <span>
+                      {formatCurrency(record.salaryBreakdown.totalDeductions)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -212,7 +253,8 @@ export default function PayrollDetailsPage({ params }: PageProps) {
                   Net Compensation
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  The net transactional amount transferred directly to the designated bank account.
+                  The net transactional amount transferred directly to the designated bank
+                  account.
                 </p>
               </div>
               <div className="text-center md:text-right">
@@ -224,26 +266,44 @@ export default function PayrollDetailsPage({ params }: PageProps) {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-center border-t pt-6">
               <div>
-                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Working Days</span>
-                <span className="font-bold text-foreground text-sm">{record.attendanceSummary.workingDays}</span>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                  Working Days
+                </span>
+                <span className="font-bold text-foreground text-sm">
+                  {record.attendanceSummary.workingDays}
+                </span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Present</span>
-                <span className="font-bold text-emerald-500 text-sm">{record.attendanceSummary.presentDays}</span>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                  Present
+                </span>
+                <span className="font-bold text-emerald-500 text-sm">
+                  {record.attendanceSummary.presentDays}
+                </span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Absent</span>
-                <span className="font-bold text-rose-500 text-sm">{record.attendanceSummary.absentDays}</span>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                  Absent
+                </span>
+                <span className="font-bold text-rose-500 text-sm">
+                  {record.attendanceSummary.absentDays}
+                </span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">Overtime Hours</span>
-                <span className="font-bold text-foreground text-sm">{record.attendanceSummary.overtimeHours} hrs</span>
+                <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                  Overtime Hours
+                </span>
+                <span className="font-bold text-foreground text-sm">
+                  {record.attendanceSummary.overtimeHours} hrs
+                </span>
               </div>
             </div>
 
             {record.notes && (
               <div className="text-[10px] text-muted-foreground bg-muted/20 p-3 rounded-lg border">
-                <span className="font-bold block text-foreground mb-0.5 uppercase tracking-wider">Authorized Notes</span>
+                <span className="font-bold block text-foreground mb-0.5 uppercase tracking-wider">
+                  Authorized Notes
+                </span>
                 {record.notes}
               </div>
             )}
