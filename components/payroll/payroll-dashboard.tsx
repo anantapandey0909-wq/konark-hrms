@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -22,12 +22,25 @@ import {
   PayrollRecord,
   PayrollStats,
 } from "@/types/payroll";
-import { fetchPayrollRecords, fetchPayrollStats, patchPayroll } from "@/lib/data/payroll";
-import { fetchDepartments } from "@/lib/data/departments";
+import {
+  fetchPayrollRecords,
+  fetchPayrollStats,
+  patchPayroll,
+} from "@/lib/data/payroll";
 import type { ResolvedDepartment } from "@/types/department";
 import { formatCurrency } from "@/lib/payroll";
 
-export function PayrollDashboard() {
+interface PayrollDashboardProps {
+  readonly initialRecords: PayrollRecord[];
+  readonly initialStats: PayrollStats | null;
+  readonly initialDepartments: ResolvedDepartment[];
+}
+
+export function PayrollDashboard({
+  initialRecords,
+  initialStats,
+  initialDepartments,
+}: PayrollDashboardProps) {
   const router = useRouter();
   const [filters, setFilters] = useState<PayrollFilters>({
     search: "",
@@ -36,45 +49,38 @@ export function PayrollDashboard() {
     month: "ALL",
     year: "ALL",
   });
-  const [records, setRecords] = useState<PayrollRecord[]>([]);
-  const [stats, setStats] = useState<PayrollStats | null>(null);
-  const [departments, setDepartments] = useState<ResolvedDepartment[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [records, setRecords] = useState<PayrollRecord[]>(initialRecords);
+  const [stats, setStats] = useState<PayrollStats | null>(initialStats);
+  const [departments] = useState<ResolvedDepartment[]>(initialDepartments);
+  const [isPending, startTransition] = useTransition();
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const departmentId =
-        filters.department === "ALL" ? undefined : filters.department.id;
-      const [rows, dash, depts] = await Promise.all([
-        fetchPayrollRecords({
-          search: filters.search || undefined,
-          status: filters.status === "ALL" ? undefined : filters.status,
-          month: filters.month === "ALL" ? undefined : filters.month,
-          year: filters.year === "ALL" ? undefined : filters.year,
-          departmentId,
-        }),
-        fetchPayrollStats(),
-        fetchDepartments(),
-      ]);
-      setRecords(rows);
-      setStats(dash.stats);
-      setDepartments(depts);
-    } catch (error) {
-      setLoadError(
-        error instanceof Error ? error.message : "Failed to load payroll."
-      );
-      setRecords([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filters]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const reload = useCallback((nextFilters: PayrollFilters) => {
+    startTransition(async () => {
+      try {
+        const departmentId =
+          nextFilters.department === "ALL"
+            ? undefined
+            : nextFilters.department.id;
+        const [rows, dash] = await Promise.all([
+          fetchPayrollRecords({
+            search: nextFilters.search || undefined,
+            status:
+              nextFilters.status === "ALL" ? undefined : nextFilters.status,
+            month: nextFilters.month === "ALL" ? undefined : nextFilters.month,
+            year: nextFilters.year === "ALL" ? undefined : nextFilters.year,
+            departmentId,
+          }),
+          fetchPayrollStats(),
+        ]);
+        setRecords(rows);
+        setStats(dash.stats);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to reload payroll."
+        );
+      }
+    });
+  }, []);
 
   const handleUploadSalary = useCallback(() => {
     toast.info("Coming Soon", {
@@ -109,14 +115,14 @@ export function PayrollDashboard() {
         toast.success("Success", {
           description: `Approved payroll for ${record.employeeName}.`,
         });
-        void load();
+        reload(filters);
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to approve payroll."
         );
       }
     },
-    [load]
+    [filters, reload]
   );
 
   const handlePay = useCallback(
@@ -126,14 +132,14 @@ export function PayrollDashboard() {
         toast.success("Success", {
           description: `Disbursed salary payment to ${record.employeeName}.`,
         });
-        void load();
+        reload(filters);
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to mark as paid."
         );
       }
     },
-    [load]
+    [filters, reload]
   );
 
   const handleCancel = useCallback(
@@ -143,38 +149,41 @@ export function PayrollDashboard() {
         toast.warning("Cancelled", {
           description: `Cancelled payroll record for ${record.employeeName}.`,
         });
-        void load();
+        reload(filters);
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to cancel payroll."
         );
       }
     },
-    [load]
+    [filters, reload]
   );
 
-  const handleFilterChange = useCallback((updatedFilters: PayrollFilters) => {
-    setFilters(updatedFilters);
-  }, []);
+  const handleFilterChange = useCallback(
+    (updatedFilters: PayrollFilters) => {
+      setFilters(updatedFilters);
+      reload(updatedFilters);
+    },
+    [reload]
+  );
 
   const handleReset = useCallback(() => {
-    setFilters({
+    const base: PayrollFilters = {
       search: "",
       department: "ALL",
       status: "ALL",
       month: "ALL",
       year: "ALL",
-    });
-  }, []);
-
-  // Client-side refine still runs on the already server-filtered set
-  const filteredRecords = useMemo(() => records, [records]);
+    };
+    setFilters(base);
+    reload(base);
+  }, [reload]);
 
   const totalExpense = stats?.totalNetSalary ?? 0;
-  const processed = stats?.employeeCount ?? filteredRecords.length;
+  const processed = stats?.employeeCount ?? records.length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 p-6 md:p-8">
       <div className="mb-2 flex flex-col gap-4 border-b pb-6 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1.5">
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
@@ -213,12 +222,6 @@ export function PayrollDashboard() {
           </Button>
         </div>
       </div>
-
-      {loadError && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {loadError}
-        </div>
-      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -269,10 +272,10 @@ export function PayrollDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-              {isLoading ? "Loading" : "Ready"}
+              {isPending ? "Loading" : "Ready"}
             </div>
             <p className="text-xs text-slate-500">
-              {isLoading ? "Fetching payroll data…" : "All batches calculated"}
+              {isPending ? "Refreshing payroll data…" : "All batches calculated"}
             </p>
           </CardContent>
         </Card>
@@ -286,8 +289,8 @@ export function PayrollDashboard() {
       />
 
       <PayrollTable
-        records={filteredRecords}
-        isLoading={isLoading}
+        records={records}
+        isLoading={isPending}
         onViewDetails={handleViewDetails}
         onEdit={handleEdit}
         onApprove={handleApprove}
