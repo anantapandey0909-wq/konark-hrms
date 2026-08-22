@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import { Plus, Users, Layers } from "lucide-react";
 
@@ -13,25 +19,17 @@ import {
 
 import type { Employee } from "@/types/employee";
 import type { Department } from "@/types/department";
-import { BULK_SELECTED_EMPLOYEE_IDS_KEY } from "@/types/bulk-operation";
 
 import { fetchEmployees } from "@/lib/data/employees";
 import { fetchDepartments } from "@/lib/data/departments";
-
-/** SSR-safe read of bulk selection from sessionStorage (lazy useState only). */
-function readBulkSelectedEmployeeIds(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = sessionStorage.getItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((id): id is string => typeof id === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
+import {
+  clearBulkSelectionIds,
+  getBulkSelectionServerSnapshot,
+  getBulkSelectionSnapshot,
+  parseBulkSelectionSnapshot,
+  subscribeBulkSelection,
+  writeBulkSelectionIds,
+} from "@/lib/client/bulk-selection-store";
 
 export default function EmployeesPage() {
   const [filters, setFilters] = useState<EmployeeFilters>({
@@ -43,18 +41,19 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  // Restore selection during initial state construction — not in an effect.
-  const [selectedIds, setSelectedIds] = useState<string[]>(
-    readBulkSelectedEmployeeIds
+
+  const selectionSnapshot = useSyncExternalStore(
+    subscribeBulkSelection,
+    getBulkSelectionSnapshot,
+    getBulkSelectionServerSnapshot
+  );
+  const selectedIds = useMemo(
+    () => parseBulkSelectionSnapshot(selectionSnapshot),
+    [selectionSnapshot]
   );
 
   const handleSelectionChange = useCallback((ids: string[]) => {
-    setSelectedIds(ids);
-    try {
-      sessionStorage.setItem(BULK_SELECTED_EMPLOYEE_IDS_KEY, JSON.stringify(ids));
-    } catch {
-      /* ignore quota / private mode */
-    }
+    writeBulkSelectionIds(ids);
   }, []);
 
   useEffect(() => {
@@ -111,21 +110,28 @@ export default function EmployeesPage() {
 
         <div className="flex flex-wrap gap-2 self-start sm:self-auto">
           {selectedIds.length > 0 && (
-            <Button
-              asChild
-              variant="outline"
-              className="h-9 rounded-xl gap-2 font-medium"
-            >
-              <Link href="/dashboard/data-management/bulk-operations">
-                <Layers className="h-4 w-4" />
-                <span>Bulk ops ({selectedIds.length})</span>
-              </Link>
-            </Button>
+            <>
+              <Button
+                asChild
+                variant="outline"
+                className="h-9 rounded-xl gap-2 font-medium"
+              >
+                <Link href="/dashboard/data-management/bulk-operations">
+                  <Layers className="h-4 w-4" />
+                  <span>Bulk ops ({selectedIds.length})</span>
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 rounded-xl text-xs"
+                onClick={() => clearBulkSelectionIds()}
+              >
+                Clear selection
+              </Button>
+            </>
           )}
-          <Button
-            asChild
-            className="h-9 rounded-xl gap-2 font-medium"
-          >
+          <Button asChild className="h-9 rounded-xl gap-2 font-medium">
             <Link href="/dashboard/employees/new">
               <Plus className="h-4 w-4" />
               <span>Add Employee</span>
