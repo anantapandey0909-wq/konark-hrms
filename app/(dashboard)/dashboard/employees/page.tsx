@@ -18,6 +18,21 @@ import { BULK_SELECTED_EMPLOYEE_IDS_KEY } from "@/types/bulk-operation";
 import { fetchEmployees } from "@/lib/data/employees";
 import { fetchDepartments } from "@/lib/data/departments";
 
+/** SSR-safe read of bulk selection from sessionStorage (lazy useState only). */
+function readBulkSelectedEmployeeIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function EmployeesPage() {
   const [filters, setFilters] = useState<EmployeeFilters>({
     search: "",
@@ -28,26 +43,17 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as string[];
-        if (Array.isArray(parsed)) setSelectedIds(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  // Restore selection during initial state construction — not in an effect.
+  const [selectedIds, setSelectedIds] = useState<string[]>(
+    readBulkSelectedEmployeeIds
+  );
 
   const handleSelectionChange = useCallback((ids: string[]) => {
     setSelectedIds(ids);
     try {
       sessionStorage.setItem(BULK_SELECTED_EMPLOYEE_IDS_KEY, JSON.stringify(ids));
     } catch {
-      /* ignore */
+      /* ignore quota / private mode */
     }
   }, []);
 
