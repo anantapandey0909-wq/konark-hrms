@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
@@ -22,6 +22,7 @@ import type { Employee } from '@/types/employee';
 import {
   BULK_SELECTED_EMPLOYEE_IDS_KEY,
   type BulkEmployeeAction,
+  type BulkEmployeeOperationInput,
   type BulkEmployeePreviewResult,
 } from '@/types/bulk-operation';
 
@@ -42,10 +43,28 @@ const blockVariants: Variants = {
   },
 };
 
+/** SSR-safe sessionStorage read for lazy useState initialization. */
+function readBulkSelectedEmployeeIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = sessionStorage.getItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function BulkOperationsDashboard() {
   const [selectedAction, setSelectedAction] =
     useState<BulkEmployeeAction>('activate');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Restore selection during initial state construction — not in an effect.
+  const [selectedIds, setSelectedIds] = useState<string[]>(
+    readBulkSelectedEmployeeIds
+  );
   const [preview, setPreview] = useState<BulkEmployeePreviewResult | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
@@ -54,17 +73,9 @@ export default function BulkOperationsDashboard() {
   const [targetDepartmentId, setTargetDepartmentId] = useState('');
   const [targetManagerId, setTargetManagerId] = useState('');
 
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as string[];
-        if (Array.isArray(parsed)) setSelectedIds(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  // Tracks which preview request key has been started (render-time adjust pattern).
+  const [trackedPreviewKey, setTrackedPreviewKey] = useState('');
+  const previewFetchGen = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,28 +117,16 @@ export default function BulkOperationsDashboard() {
     targetManagerId,
   ]);
 
-  const runPreview = useCallback(async () => {
-    if (!canRequestPreview) {
-      setPreview(null);
-      return;
-    }
-    setIsPreviewLoading(true);
-    try {
-      const result = await previewBulkEmployees({
-        action: selectedAction,
-        employeeIds: selectedIds,
-        targetDepartmentId: needsDepartment ? targetDepartmentId : null,
-        targetManagerId: needsManager ? targetManagerId : null,
-      });
-      setPreview(result);
-    } catch (error) {
-      setPreview(null);
-      toast.error(
-        error instanceof Error ? error.message : 'Failed to build preview.'
-      );
-    } finally {
-      setIsPreviewLoading(false);
-    }
+  /** Stable key for the current preview inputs (empty when preview cannot run). */
+  const previewRequestKey = useMemo(() => {
+    if (!canRequestPreview) return '';
+    const payload: BulkEmployeeOperationInput = {
+      action: selectedAction,
+      employeeIds: selectedIds,
+      targetDepartmentId: needsDepartment ? targetDepartmentId : null,
+      targetManagerId: needsManager ? targetManagerId : null,
+    };
+    return JSON.stringify(payload);
   }, [
     canRequestPreview,
     selectedAction,
@@ -138,9 +137,72 @@ export default function BulkOperationsDashboard() {
     targetManagerId,
   ]);
 
-  useEffect(() => {
-    void runPreview();
-  }, [runPreview]);
+  // Adjust state when preview inputs change (React-supported render-time pattern).
+  // Starts the async preview without a useEffect that calls setState.
+  if (previewRequestKey !== trackedPreviewKey) {
+    setTrackedPreviewKey(previewRequestKey);
+    if (!previewRequestKey) {
+      setPreview(null);
+      setIsPreviewLoading(false);
+      previewFetchGen.current += 1;
+    } else {
+      setIsPreviewLoading(true);
+      setPreview(null);
+      const gen = ++previewFetchGen.current;
+      const input = JSON.parse(previewRequestKey) as BulkEmployeeOperationInput;
+      void previewBulkEmployees(input)
+        .then((result) => {
+          if (previewFetchGen.current !== gen) return;
+          setPreview(result);
+          setIsPreviewLoading(false);
+        })
+        .catch((error: unknown) => {
+          if (previewFetchGen.current !== gen) return;
+          setPreview(null);
+          setIsPreviewLoading(false);
+          toast.error(
+            error instanceof Error ? error.message : 'Failed to build preview.'
+          );
+        });
+    }
+  }
+
+  const refreshPreview = useCallback(async () => {
+    if (!canRequestPreview) {
+      setPreview(null);
+      return;
+    }
+    const gen = ++previewFetchGen.current;
+    setIsPreviewLoading(true);
+    try {
+      const result = await previewBulkEmployees({
+        action: selectedAction,
+        employeeIds: selectedIds,
+        targetDepartmentId: needsDepartment ? targetDepartmentId : null,
+        targetManagerId: needsManager ? targetManagerId : null,
+      });
+      if (previewFetchGen.current !== gen) return;
+      setPreview(result);
+    } catch (error) {
+      if (previewFetchGen.current !== gen) return;
+      setPreview(null);
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to build preview.'
+      );
+    } finally {
+      if (previewFetchGen.current === gen) {
+        setIsPreviewLoading(false);
+      }
+    }
+  }, [
+    canRequestPreview,
+    selectedAction,
+    selectedIds,
+    needsDepartment,
+    needsManager,
+    targetDepartmentId,
+    targetManagerId,
+  ]);
 
   const canCommit =
     !!preview &&
@@ -167,7 +229,7 @@ export default function BulkOperationsDashboard() {
       toast.success(
         `Bulk operation completed: ${result.processedCount} updated.`
       );
-      await runPreview();
+      await refreshPreview();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Bulk commit failed.'
@@ -185,6 +247,10 @@ export default function BulkOperationsDashboard() {
     } catch {
       /* ignore */
     }
+  };
+
+  const handleSelectAction = (action: BulkEmployeeAction) => {
+    setSelectedAction(action);
   };
 
   return (
@@ -254,7 +320,7 @@ export default function BulkOperationsDashboard() {
           <motion.div variants={blockVariants}>
             <BulkActionSelector
               selectedActionId={selectedAction}
-              onSelectAction={setSelectedAction}
+              onSelectAction={handleSelectAction}
             />
           </motion.div>
 
