@@ -7,6 +7,7 @@ import {
   calculateGrossSalary,
   calculateNetSalary,
 } from "@/lib/payroll";
+import { monthCode } from "@/lib/payroll/formatters";
 import type {
   PayrollAllowance,
   PayrollDeduction,
@@ -93,9 +94,6 @@ export function generatePayrollNumber(
   month: string,
   employeeCode: string
 ): string {
-  const { monthCode } = require("@/lib/payroll/formatters") as {
-    monthCode: (m: string) => string;
-  };
   const suffix =
     employeeCode.replace(/[^A-Za-z0-9]/g, "").slice(-6) || "000000";
   return `PAY-${year}-${monthCode(month)}-${suffix}-${Date.now().toString(36).toUpperCase()}`;
