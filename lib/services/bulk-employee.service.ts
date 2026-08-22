@@ -2,6 +2,7 @@
  * Bulk employee service — validation, preview (read-only), transactional execute.
  */
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTenantPrisma } from "@/lib/db/prisma-with-tenant";
 import { AppError } from "@/lib/errors/app-error";
@@ -52,23 +53,24 @@ function normalizeInput(input: BulkEmployeeOperationInput) {
   };
 }
 
-function deptLabel(
-  emp: {
-    department?: { departmentName?: string | null; departmentCode?: string | null } | null;
-  }
-): string {
+function deptLabel(emp: {
+  department?: {
+    departmentName?: string | null;
+    departmentCode?: string | null;
+  } | null;
+}): string {
   return (
-    emp.department?.departmentName ||
-    emp.department?.departmentCode ||
-    "—"
+    emp.department?.departmentName || emp.department?.departmentCode || "—"
   );
 }
 
-function managerLabel(
-  emp: {
-    manager?: { firstName?: string; lastName?: string; employeeCode?: string } | null;
-  }
-): string {
+function managerLabel(emp: {
+  manager?: {
+    firstName?: string;
+    lastName?: string;
+    employeeCode?: string;
+  } | null;
+}): string {
   if (!emp.manager) return "—";
   return `${emp.manager.firstName} ${emp.manager.lastName} (${emp.manager.employeeCode})`;
 }
@@ -193,7 +195,6 @@ export async function previewBulkEmployeeOperation(
       continue;
     }
 
-    // assign-manager
     if (normalized.targetManagerId === emp.id) {
       rows.push({
         employeeId: emp.id,
@@ -226,7 +227,6 @@ export async function previewBulkEmployeeOperation(
   const validCount = rows.filter((r) => r.status === "valid").length;
   const invalidCount = rows.filter((r) => r.status === "invalid").length;
   const warningCount = rows.filter((r) => r.status === "warning").length;
-  const skippedCount = warningCount;
 
   return {
     action: normalized.action,
@@ -235,7 +235,7 @@ export async function previewBulkEmployeeOperation(
     validCount,
     invalidCount,
     warningCount,
-    skippedCount,
+    skippedCount: warningCount,
     canCommit: validCount > 0 && invalidCount === 0,
   };
 }
@@ -304,7 +304,6 @@ export async function executeBulkEmployeeOperation(
     );
   }
 
-  // Audit after successful transaction (existing audit pattern is non-transactional)
   for (const row of toProcess) {
     const auditAction =
       normalized.action === "activate"
@@ -339,6 +338,3 @@ export async function executeBulkEmployeeOperation(
     errors,
   };
 }
-
-// Local Prisma type import for update input
-import type { Prisma } from "@prisma/client";
