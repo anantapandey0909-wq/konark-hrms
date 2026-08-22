@@ -1,6 +1,14 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  Suspense,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
@@ -20,11 +28,17 @@ import { fetchEmployees } from '@/lib/data/employees';
 import type { Department } from '@/types/department';
 import type { Employee } from '@/types/employee';
 import {
-  BULK_SELECTED_EMPLOYEE_IDS_KEY,
   type BulkEmployeeAction,
   type BulkEmployeeOperationInput,
   type BulkEmployeePreviewResult,
 } from '@/types/bulk-operation';
+import {
+  clearBulkSelectionIds,
+  getBulkSelectionServerSnapshot,
+  getBulkSelectionSnapshot,
+  parseBulkSelectionSnapshot,
+  subscribeBulkSelection,
+} from '@/lib/client/bulk-selection-store';
 
 const pageVariants: Variants = {
   hidden: { opacity: 0 },
@@ -43,39 +57,175 @@ const blockVariants: Variants = {
   },
 };
 
-/** SSR-safe sessionStorage read for lazy useState initialization. */
-function readBulkSelectedEmployeeIds(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = sessionStorage.getItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((id): id is string => typeof id === 'string')
-      : [];
-  } catch {
-    return [];
+/** Cache promises so React `use()` can suspend without useEffect setState. */
+const previewPromiseCache = new Map<
+  string,
+  Promise<BulkEmployeePreviewResult | null>
+>();
+
+function getPreviewPromise(
+  requestKey: string
+): Promise<BulkEmployeePreviewResult | null> {
+  if (!requestKey) {
+    return Promise.resolve(null);
   }
+  const cached = previewPromiseCache.get(requestKey);
+  if (cached) return cached;
+
+  const input = JSON.parse(requestKey) as BulkEmployeeOperationInput;
+  const promise = previewBulkEmployees(input)
+    .then((result) => result)
+    .catch((error: unknown) => {
+      previewPromiseCache.delete(requestKey);
+      const message =
+        error instanceof Error ? error.message : 'Failed to build preview.';
+      toast.error(message);
+      return null;
+    });
+
+  previewPromiseCache.set(requestKey, promise);
+  return promise;
+}
+
+function invalidatePreviewCache() {
+  previewPromiseCache.clear();
+}
+
+function BulkPreviewSuspended({
+  requestKey,
+  selectedAction,
+  selectedCount,
+  isCommitting,
+  onCommit,
+}: {
+  requestKey: string;
+  selectedAction: BulkEmployeeAction;
+  selectedCount: number;
+  isCommitting: boolean;
+  onCommit: (preview: BulkEmployeePreviewResult) => void;
+}) {
+  const preview = use(getPreviewPromise(requestKey));
+
+  const canCommit =
+    !!preview &&
+    preview.canCommit &&
+    !isCommitting &&
+    selectedCount > 0;
+
+  return (
+    <>
+      <motion.div variants={blockVariants}>
+        <BulkPreviewTable
+          selectedActionId={selectedAction}
+          rows={preview?.rows ?? []}
+          isLoading={false}
+        />
+      </motion.div>
+
+      <div className="space-y-6">
+        <motion.div variants={blockVariants}>
+          <BulkOperationSummary
+            selectedCount={preview?.selectedCount ?? selectedCount}
+            validCount={preview?.validCount ?? 0}
+            warningCount={preview?.warningCount ?? 0}
+            invalidCount={preview?.invalidCount ?? 0}
+            skippedCount={preview?.skippedCount ?? 0}
+          />
+        </motion.div>
+
+        <motion.div
+          variants={blockVariants}
+          className="p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/20 dark:bg-indigo-950/10 flex gap-3 text-xs text-indigo-800 dark:text-indigo-400"
+        >
+          <Info className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-bold">Execution Boundary Guards</span>
+            <p className="leading-relaxed text-[11px] text-indigo-700/90 dark:text-indigo-400/90">
+              All mutations are tenant-scoped and transactional. Invalid rows
+              block commit. No-op rows are skipped with warnings.
+            </p>
+          </div>
+        </motion.div>
+
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-4 flex flex-col gap-4">
+          <div className="flex gap-2 text-xs text-zinc-500 dark:text-zinc-455 items-start">
+            <ShieldAlert className="h-4.5 w-4.5 text-zinc-400 shrink-0 mt-0.5" />
+            <p className="leading-normal text-[11px]">
+              {selectedCount === 0
+                ? 'Select employees in the Employee Directory before committing.'
+                : 'Review the preview, then confirm the batch commit.'}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            disabled={!canCommit || !preview}
+            onClick={() => {
+              if (preview) onCommit(preview);
+            }}
+            className={
+              canCommit
+                ? 'px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm text-center inline-flex items-center justify-center gap-2'
+                : 'px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none text-center inline-flex items-center justify-center gap-2'
+            }
+          >
+            {isCommitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {isCommitting ? 'Committing…' : 'Trigger Batch Commit'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function BulkPreviewFallback({ selectedAction }: { selectedAction: string }) {
+  return (
+    <>
+      <motion.div variants={blockVariants}>
+        <BulkPreviewTable
+          selectedActionId={selectedAction}
+          rows={[]}
+          isLoading
+        />
+      </motion.div>
+      <div className="space-y-6">
+        <motion.div variants={blockVariants}>
+          <BulkOperationSummary
+            selectedCount={0}
+            validCount={0}
+            warningCount={0}
+            invalidCount={0}
+            skippedCount={0}
+          />
+        </motion.div>
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-4 text-xs text-zinc-500">
+          Building live preview…
+        </div>
+      </div>
+    </>
+  );
 }
 
 export default function BulkOperationsDashboard() {
   const [selectedAction, setSelectedAction] =
     useState<BulkEmployeeAction>('activate');
-  // Restore selection during initial state construction — not in an effect.
-  const [selectedIds, setSelectedIds] = useState<string[]>(
-    readBulkSelectedEmployeeIds
-  );
-  const [preview, setPreview] = useState<BulkEmployeePreviewResult | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [managers, setManagers] = useState<Employee[]>([]);
   const [targetDepartmentId, setTargetDepartmentId] = useState('');
   const [targetManagerId, setTargetManagerId] = useState('');
+  /** Bumps Suspense remount after successful commit so preview refreshes. */
+  const [previewEpoch, setPreviewEpoch] = useState(0);
 
-  // Tracks which preview request key has been started (render-time adjust pattern).
-  const [trackedPreviewKey, setTrackedPreviewKey] = useState('');
-  const previewFetchGen = useRef(0);
+  const selectionSnapshot = useSyncExternalStore(
+    subscribeBulkSelection,
+    getBulkSelectionSnapshot,
+    getBulkSelectionServerSnapshot
+  );
+  const selectedIds = useMemo(
+    () => parseBulkSelectionSnapshot(selectionSnapshot),
+    [selectionSnapshot]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -117,7 +267,6 @@ export default function BulkOperationsDashboard() {
     targetManagerId,
   ]);
 
-  /** Stable key for the current preview inputs (empty when preview cannot run). */
   const previewRequestKey = useMemo(() => {
     if (!canRequestPreview) return '';
     const payload: BulkEmployeeOperationInput = {
@@ -126,7 +275,8 @@ export default function BulkOperationsDashboard() {
       targetDepartmentId: needsDepartment ? targetDepartmentId : null,
       targetManagerId: needsManager ? targetManagerId : null,
     };
-    return JSON.stringify(payload);
+    // epoch invalidates cached promise after commit
+    return `${previewEpoch}::${JSON.stringify(payload)}`;
   }, [
     canRequestPreview,
     selectedAction,
@@ -135,123 +285,62 @@ export default function BulkOperationsDashboard() {
     needsManager,
     targetDepartmentId,
     targetManagerId,
+    previewEpoch,
   ]);
 
-  // Adjust state when preview inputs change (React-supported render-time pattern).
-  // Starts the async preview without a useEffect that calls setState.
-  if (previewRequestKey !== trackedPreviewKey) {
-    setTrackedPreviewKey(previewRequestKey);
-    if (!previewRequestKey) {
-      setPreview(null);
-      setIsPreviewLoading(false);
-      previewFetchGen.current += 1;
-    } else {
-      setIsPreviewLoading(true);
-      setPreview(null);
-      const gen = ++previewFetchGen.current;
-      const input = JSON.parse(previewRequestKey) as BulkEmployeeOperationInput;
-      void previewBulkEmployees(input)
-        .then((result) => {
-          if (previewFetchGen.current !== gen) return;
-          setPreview(result);
-          setIsPreviewLoading(false);
-        })
-        .catch((error: unknown) => {
-          if (previewFetchGen.current !== gen) return;
-          setPreview(null);
-          setIsPreviewLoading(false);
-          toast.error(
-            error instanceof Error ? error.message : 'Failed to build preview.'
-          );
-        });
-    }
-  }
-
-  const refreshPreview = useCallback(async () => {
-    if (!canRequestPreview) {
-      setPreview(null);
-      return;
-    }
-    const gen = ++previewFetchGen.current;
-    setIsPreviewLoading(true);
-    try {
-      const result = await previewBulkEmployees({
-        action: selectedAction,
-        employeeIds: selectedIds,
-        targetDepartmentId: needsDepartment ? targetDepartmentId : null,
-        targetManagerId: needsManager ? targetManagerId : null,
-      });
-      if (previewFetchGen.current !== gen) return;
-      setPreview(result);
-    } catch (error) {
-      if (previewFetchGen.current !== gen) return;
-      setPreview(null);
-      toast.error(
-        error instanceof Error ? error.message : 'Failed to build preview.'
-      );
-    } finally {
-      if (previewFetchGen.current === gen) {
-        setIsPreviewLoading(false);
-      }
-    }
-  }, [
-    canRequestPreview,
-    selectedAction,
-    selectedIds,
-    needsDepartment,
-    needsManager,
-    targetDepartmentId,
-    targetManagerId,
-  ]);
-
-  const canCommit =
-    !!preview &&
-    preview.canCommit &&
-    !isCommitting &&
-    !isPreviewLoading &&
-    selectedIds.length > 0;
-
-  const handleCommit = async () => {
-    if (!canCommit || !preview) return;
-    const confirmed = window.confirm(
-      `Commit ${preview.validCount} employee change(s) for action "${selectedAction}"? This cannot be undone from this screen.`
-    );
-    if (!confirmed) return;
-
-    setIsCommitting(true);
-    try {
-      const result = await executeBulkEmployees({
-        action: selectedAction,
-        employeeIds: selectedIds,
-        targetDepartmentId: needsDepartment ? targetDepartmentId : null,
-        targetManagerId: needsManager ? targetManagerId : null,
-      });
-      toast.success(
-        `Bulk operation completed: ${result.processedCount} updated.`
-      );
-      await refreshPreview();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : 'Bulk commit failed.'
-      );
-    } finally {
-      setIsCommitting(false);
-    }
-  };
-
-  const clearSelection = () => {
-    setSelectedIds([]);
-    setPreview(null);
-    try {
-      sessionStorage.removeItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
-    } catch {
-      /* ignore */
-    }
-  };
+  /** Strip epoch prefix for the actual server payload key used by the cache. */
+  const previewCacheKey = useMemo(() => {
+    if (!previewRequestKey) return '';
+    const idx = previewRequestKey.indexOf('::');
+    return idx >= 0 ? previewRequestKey.slice(idx + 2) : previewRequestKey;
+  }, [previewRequestKey]);
 
   const handleSelectAction = (action: BulkEmployeeAction) => {
     setSelectedAction(action);
   };
+
+  const clearSelection = () => {
+    clearBulkSelectionIds();
+  };
+
+  const handleCommit = useCallback(
+    async (preview: BulkEmployeePreviewResult) => {
+      if (!preview.canCommit) return;
+      const confirmed = window.confirm(
+        `Commit ${preview.validCount} employee change(s) for action "${selectedAction}"? This cannot be undone from this screen.`
+      );
+      if (!confirmed) return;
+
+      setIsCommitting(true);
+      try {
+        const result = await executeBulkEmployees({
+          action: selectedAction,
+          employeeIds: selectedIds,
+          targetDepartmentId: needsDepartment ? targetDepartmentId : null,
+          targetManagerId: needsManager ? targetManagerId : null,
+        });
+        toast.success(
+          `Bulk operation completed: ${result.processedCount} updated.`
+        );
+        invalidatePreviewCache();
+        setPreviewEpoch((e) => e + 1);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : 'Bulk commit failed.'
+        );
+      } finally {
+        setIsCommitting(false);
+      }
+    },
+    [
+      selectedAction,
+      selectedIds,
+      needsDepartment,
+      needsManager,
+      targetDepartmentId,
+      targetManagerId,
+    ]
+  );
 
   return (
     <motion.div
@@ -375,70 +464,77 @@ export default function BulkOperationsDashboard() {
             </motion.div>
           )}
 
-          <motion.div variants={blockVariants}>
+          <Suspense
+            key={previewRequestKey || 'empty'}
+            fallback={<BulkPreviewFallback selectedAction={selectedAction} />}
+          >
+            <div className="space-y-6 lg:hidden">
+              <BulkPreviewSuspended
+                requestKey={previewCacheKey}
+                selectedAction={selectedAction}
+                selectedCount={selectedIds.length}
+                isCommitting={isCommitting}
+                onCommit={(p) => void handleCommit(p)}
+              />
+            </div>
+          </Suspense>
+        </div>
+
+        <div className="space-y-6 hidden lg:block">
+          <Suspense
+            key={`side-${previewRequestKey || 'empty'}`}
+            fallback={<BulkPreviewFallback selectedAction={selectedAction} />}
+          >
+            <BulkPreviewSuspended
+              requestKey={previewCacheKey}
+              selectedAction={selectedAction}
+              selectedCount={selectedIds.length}
+              isCommitting={isCommitting}
+              onCommit={(p) => void handleCommit(p)}
+            />
+          </Suspense>
+        </div>
+      </div>
+
+      {/* Desktop: preview in left column too for table visibility */}
+      <div className="hidden lg:block space-y-6">
+        <Suspense
+          key={`table-${previewRequestKey || 'empty'}`}
+          fallback={
             <BulkPreviewTable
               selectedActionId={selectedAction}
-              rows={preview?.rows ?? []}
-              isLoading={isPreviewLoading}
+              rows={[]}
+              isLoading
             />
-          </motion.div>
-        </div>
-
-        <div className="space-y-6">
-          <motion.div variants={blockVariants}>
-            <BulkOperationSummary
-              selectedCount={preview?.selectedCount ?? selectedIds.length}
-              validCount={preview?.validCount ?? 0}
-              warningCount={preview?.warningCount ?? 0}
-              invalidCount={preview?.invalidCount ?? 0}
-              skippedCount={preview?.skippedCount ?? 0}
-            />
-          </motion.div>
-
-          <motion.div
-            variants={blockVariants}
-            className="p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/20 dark:bg-indigo-950/10 flex gap-3 text-xs text-indigo-800 dark:text-indigo-400"
-          >
-            <Info className="h-5 w-5 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <span className="font-bold">Execution Boundary Guards</span>
-              <p className="leading-relaxed text-[11px] text-indigo-700/90 dark:text-indigo-400/90">
-                All mutations are tenant-scoped and transactional. Invalid rows
-                block commit. No-op rows are skipped with warnings.
-              </p>
-            </div>
-          </motion.div>
-
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-4 flex flex-col gap-4">
-            <div className="flex gap-2 text-xs text-zinc-500 dark:text-zinc-455 items-start">
-              <ShieldAlert className="h-4.5 w-4.5 text-zinc-400 shrink-0 mt-0.5" />
-              <p className="leading-normal text-[11px]">
-                {selectedIds.length === 0
-                  ? 'Select employees in the Employee Directory before committing.'
-                  : 'Review the preview, then confirm the batch commit.'}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              disabled={!canCommit}
-              onClick={() => void handleCommit()}
-              className={
-                canCommit
-                  ? 'px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm text-center inline-flex items-center justify-center gap-2'
-                  : 'px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none text-center inline-flex items-center justify-center gap-2'
-              }
-            >
-              {isCommitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {isCommitting ? 'Committing…' : 'Trigger Batch Commit'}
-            </button>
-          </div>
-        </div>
+          }
+        >
+          <BulkPreviewTableOnly
+            requestKey={previewCacheKey}
+            selectedAction={selectedAction}
+          />
+        </Suspense>
       </div>
 
       <motion.div variants={blockVariants}>
         <BulkJobHistory />
       </motion.div>
     </motion.div>
+  );
+}
+
+function BulkPreviewTableOnly({
+  requestKey,
+  selectedAction,
+}: {
+  requestKey: string;
+  selectedAction: BulkEmployeeAction;
+}) {
+  const preview = use(getPreviewPromise(requestKey));
+  return (
+    <BulkPreviewTable
+      selectedActionId={selectedAction}
+      rows={preview?.rows ?? []}
+      isLoading={false}
+    />
   );
 }
