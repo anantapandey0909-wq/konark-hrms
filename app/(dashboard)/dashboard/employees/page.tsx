@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Users } from "lucide-react";
+import { Plus, Users, Layers } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmployeeTable } from "@/components/employee/table/employee-table";
@@ -13,6 +13,7 @@ import {
 
 import type { Employee } from "@/types/employee";
 import type { Department } from "@/types/department";
+import { BULK_SELECTED_EMPLOYEE_IDS_KEY } from "@/types/bulk-operation";
 
 import { fetchEmployees } from "@/lib/data/employees";
 import { fetchDepartments } from "@/lib/data/departments";
@@ -27,6 +28,28 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(BULK_SELECTED_EMPLOYEE_IDS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as string[];
+        if (Array.isArray(parsed)) setSelectedIds(parsed);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleSelectionChange = useCallback((ids: string[]) => {
+    setSelectedIds(ids);
+    try {
+      sessionStorage.setItem(BULK_SELECTED_EMPLOYEE_IDS_KEY, JSON.stringify(ids));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,18 +95,37 @@ export default function EmployeesPage() {
 
           <p className="text-sm text-muted-foreground">
             Monitor, organize, and administer company personnel records.
+            {selectedIds.length > 0 && (
+              <span className="ml-1 font-medium text-indigo-600 dark:text-indigo-400">
+                ({selectedIds.length} selected)
+              </span>
+            )}
           </p>
         </div>
 
-        <Button
-          asChild
-          className="h-9 self-start rounded-xl gap-2 font-medium sm:self-auto"
-        >
-          <Link href="/dashboard/employees/new">
-            <Plus className="h-4 w-4" />
-            <span>Add Employee</span>
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          {selectedIds.length > 0 && (
+            <Button
+              asChild
+              variant="outline"
+              className="h-9 rounded-xl gap-2 font-medium"
+            >
+              <Link href="/dashboard/data-management/bulk-operations">
+                <Layers className="h-4 w-4" />
+                <span>Bulk ops ({selectedIds.length})</span>
+              </Link>
+            </Button>
+          )}
+          <Button
+            asChild
+            className="h-9 rounded-xl gap-2 font-medium"
+          >
+            <Link href="/dashboard/employees/new">
+              <Plus className="h-4 w-4" />
+              <span>Add Employee</span>
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <EmployeeTableToolbar
@@ -92,7 +134,12 @@ export default function EmployeesPage() {
         departments={departments}
       />
 
-      <EmployeeTable employees={filteredEmployees} isLoading={isLoading} />
+      <EmployeeTable
+        employees={filteredEmployees}
+        isLoading={isLoading}
+        selectedIds={selectedIds}
+        onSelectionChange={handleSelectionChange}
+      />
     </div>
   );
 }
