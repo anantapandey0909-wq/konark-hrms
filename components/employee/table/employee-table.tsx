@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -73,16 +73,6 @@ export function EmployeeTable({
     },
     [isControlled, onSelectionChange]
   );
-
-  // Drop selections that are no longer in the loaded list
-  useEffect(() => {
-    const valid = new Set(employees.map((e) => e.id));
-    const pruned = Array.from(selectedSet).filter((id) => valid.has(id));
-    if (pruned.length !== selectedSet.size) {
-      emitSelection(new Set(pruned));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when employee list identity changes
-  }, [employees]);
 
   const totalItems = employees.length;
   const totalPages = useMemo(
