@@ -6,6 +6,8 @@ import { FileSpreadsheet, Download, Columns, Layers } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { MasterDataType } from './master-data-selector';
+import { DEPARTMENT_IMPORT_TEMPLATE_CSV } from '@/lib/data-management/parse-department-import';
+import { DEPARTMENT_IMPORT_MAX_ROWS } from '@/lib/validation/department-import';
 
 const cardVariants: Variants = {
   hidden: { opacity: 0, scale: 0.98 },
@@ -16,34 +18,40 @@ interface TemplateConfig {
   title: string;
   requiredColumns: number;
   maxRecommendedRows: string;
+  downloadEnabled: boolean;
 }
 
 const TEMPLATE_SPECS: Record<MasterDataType, TemplateConfig> = {
   departments: {
     title: 'Department Registry Template',
-    requiredColumns: 5,
-    maxRecommendedRows: '100 max departments'
+    requiredColumns: 4,
+    maxRecommendedRows: `${DEPARTMENT_IMPORT_MAX_ROWS} max departments`,
+    downloadEnabled: true,
   },
   designations: {
     title: 'Designations Band Template',
     requiredColumns: 6,
-    maxRecommendedRows: '500 max role titles'
+    maxRecommendedRows: '500 max role titles',
+    downloadEnabled: false,
   },
   organization: {
     title: 'Organization Config Template',
     requiredColumns: 8,
-    maxRecommendedRows: '10 max core branches'
+    maxRecommendedRows: '10 max core branches',
+    downloadEnabled: false,
   },
   shifts: {
     title: 'Shifts & Rosters Template',
     requiredColumns: 6,
-    maxRecommendedRows: '50 max operational shifts'
+    maxRecommendedRows: '50 max operational shifts',
+    downloadEnabled: false,
   },
   holidays: {
     title: 'Holiday Event Template',
     requiredColumns: 4,
-    maxRecommendedRows: '150 max annual breaks'
-  }
+    maxRecommendedRows: '150 max annual breaks',
+    downloadEnabled: false,
+  },
 };
 
 interface MasterDataTemplateCardProps {
@@ -53,10 +61,21 @@ interface MasterDataTemplateCardProps {
 export default function MasterDataTemplateCard({ selectedType }: MasterDataTemplateCardProps) {
   const spec = TEMPLATE_SPECS[selectedType] || TEMPLATE_SPECS.departments;
 
+  const downloadTemplate = () => {
+    if (selectedType !== 'departments') return;
+    const blob = new Blob([DEPARTMENT_IMPORT_TEMPLATE_CSV], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'konark-department-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <motion.div
-      variants={cardVariants}
-    >
+    <motion.div variants={cardVariants}>
       <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 shadow-sm overflow-hidden select-none">
         <CardHeader className="p-5 border-b border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/20">
           <div className="flex items-center space-x-2.5">
@@ -76,7 +95,9 @@ export default function MasterDataTemplateCard({ selectedType }: MasterDataTempl
               {spec.title}
             </h3>
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-normal">
-              Validate corporate coordinates columns prior to structural modification.
+              {selectedType === 'departments'
+                ? 'CSV supported. Columns: departmentCode, departmentName, description, status (ACTIVE|INACTIVE).'
+                : 'Validate corporate coordinates columns prior to structural modification.'}
             </p>
           </div>
 
@@ -104,8 +125,13 @@ export default function MasterDataTemplateCard({ selectedType }: MasterDataTempl
 
           <button
             type="button"
-            disabled
-            className="w-full h-9 rounded-lg border border-zinc-250 dark:border-zinc-750 text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900 cursor-not-allowed inline-flex items-center justify-center gap-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-850"
+            disabled={!spec.downloadEnabled}
+            onClick={downloadTemplate}
+            className={
+              spec.downloadEnabled
+                ? 'w-full h-9 rounded-lg border border-zinc-250 dark:border-zinc-750 text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900 inline-flex items-center justify-center gap-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-850'
+                : 'w-full h-9 rounded-lg border border-zinc-250 dark:border-zinc-750 text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900 cursor-not-allowed inline-flex items-center justify-center gap-1.5'
+            }
           >
             <Download className="h-4 w-4 shrink-0" />
             Download Specific Template
