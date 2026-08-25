@@ -275,9 +275,19 @@ export async function executeBulkEmployeeOperation(
         } else if (normalized.action === "deactivate") {
           data = { status: "TERMINATED" };
         } else if (normalized.action === "transfer-dept") {
-          data = { departmentId: normalized.targetDepartmentId! };
+          // EmployeeUpdateInput uses relation syntax, not scalar departmentId
+          data = {
+            department: {
+              connect: { id: normalized.targetDepartmentId! },
+            },
+          };
         } else if (normalized.action === "assign-manager") {
-          data = { managerId: normalized.targetManagerId! };
+          // Same for self-relation manager — use connect, not scalar managerId
+          data = {
+            manager: {
+              connect: { id: normalized.targetManagerId! },
+            },
+          };
         }
 
         const updated = await bulkRepo.updateEmployeeInTx(
