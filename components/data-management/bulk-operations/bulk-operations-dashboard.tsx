@@ -56,6 +56,19 @@ const blockVariants: Variants = {
   },
 };
 
+function parsePreviewInputFromKey(
+  key: string
+): BulkEmployeeOperationInput | null {
+  if (!key) return null;
+  const idx = key.indexOf('::');
+  const payload = idx >= 0 ? key.slice(idx + 2) : key;
+  try {
+    return JSON.parse(payload) as BulkEmployeeOperationInput;
+  } catch {
+    return null;
+  }
+}
+
 export default function BulkOperationsDashboard() {
   const [selectedAction, setSelectedAction] =
     useState<BulkEmployeeAction>('activate');
@@ -140,36 +153,29 @@ export default function BulkOperationsDashboard() {
     targetManagerId,
   ]);
 
-  /** Stable string key so the effect only re-runs when preview inputs change. */
+  /** Stable key: changes when action, selection, targets, or post-commit epoch change. */
   const previewRequestKey = useMemo(() => {
     if (!previewInput) return '';
     return `${previewEpoch}::${JSON.stringify(previewInput)}`;
   }, [previewInput, previewEpoch]);
 
-  // Load preview AFTER render. Never invoke server actions during render
-  // (use() + server actions update Next.js Router mid-render).
+  // Load preview AFTER render. Never call server actions during render —
+  // use() + server actions update Next.js Router mid-render of BulkPreviewPanel.
   useEffect(() => {
     const gen = ++previewRequestGen.current;
     let cancelled = false;
-
-    if (!previewRequestKey || !previewInput) {
-      // Defer state updates so the effect body is not a synchronous setState path.
-      queue Promise.resolve().then(() => {
-        if (cancelled || previewRequestGen.current !== gen) return;
-        setPreview(null);
-        setIsPreviewLoading(false);
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const input = previewInput;
+    const input = parsePreviewInputFromKey(previewRequestKey);
 
     void (async () => {
-      // Yield so any setState runs as a microtask, not sync in the effect body.
+      // Yield so setState is not synchronous inside the effect body.
       await Promise.resolve();
       if (cancelled || previewRequestGen.current !== gen) return;
+
+      if (!input) {
+        setPreview(null);
+        setIsPreviewLoading(false);
+        return;
+      }
 
       setIsPreviewLoading(true);
       try {
@@ -192,8 +198,6 @@ export default function BulkOperationsDashboard() {
     return () => {
       cancelled = true;
     };
-    // previewInput is captured when previewRequestKey changes; key is the dep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: key encodes input
   }, [previewRequestKey]);
 
   const handleSelectAction = (action: BulkEmployeeAction) => {
@@ -224,7 +228,7 @@ export default function BulkOperationsDashboard() {
       toast.success(
         `Bulk operation completed: ${result.processedCount} updated.`
       );
-      // Invalidate / refresh preview only from the commit event path.
+      // Refresh preview only from the commit event path — never during render.
       setPreviewEpoch((e) => e + 1);
     } catch (error) {
       toast.error(
