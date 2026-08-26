@@ -37,6 +37,7 @@ import {
   getBulkSelectionSnapshot,
   parseBulkSelectionSnapshot,
   subscribeBulkSelection,
+  writeBulkSelectionIds,
 } from '@/lib/client/bulk-selection-store';
 
 const pageVariants: Variants = {
@@ -66,6 +67,21 @@ function parsePreviewInputFromKey(
     return JSON.parse(payload) as BulkEmployeeOperationInput;
   } catch {
     return null;
+  }
+}
+
+function bulkActionPastTense(action: BulkEmployeeAction): string {
+  switch (action) {
+    case 'activate':
+      return 'activated';
+    case 'deactivate':
+      return 'deactivated';
+    case 'transfer-dept':
+      return 'transferred';
+    case 'assign-manager':
+      return 'updated';
+    default:
+      return 'updated';
   }
 }
 
@@ -225,19 +241,42 @@ export default function BulkOperationsDashboard() {
     setIsCommitting(true);
     try {
       const result = await executeBulkEmployees(previewInput);
-      toast.success(
-        `Bulk operation completed: ${result.processedCount} updated.`
+
+      // Remove only successfully processed (valid) IDs from the shared selection.
+      // Skipped / warning rows stay selected so the user can act on them later.
+      const processedIdSet = new Set(
+        preview.rows
+          .filter((r) => r.status === 'valid')
+          .map((r) => r.employeeId)
       );
+      const remainingIds = selectedIds.filter((id) => !processedIdSet.has(id));
+      if (remainingIds.length === 0) {
+        clearBulkSelectionIds();
+      } else {
+        writeBulkSelectionIds(remainingIds);
+      }
+
+      const verb = bulkActionPastTense(selectedAction);
+      const n = result.processedCount;
+      const empWord = n === 1 ? 'employee' : 'employees';
+      const skipped = preview.skippedCount ?? 0;
+      let successMsg = `${n} ${empWord} ${verb} successfully.`;
+      if (skipped > 0) {
+        successMsg += ` ${skipped} skipped.`;
+      }
+      toast.success(successMsg);
+
       // Refresh preview only from the commit event path — never during render.
       setPreviewEpoch((e) => e + 1);
     } catch (error) {
+      // Keep selection intact so the user can retry after a failed commit.
       toast.error(
         error instanceof Error ? error.message : 'Bulk commit failed.'
       );
     } finally {
       setIsCommitting(false);
     }
-  }, [preview, previewInput, selectedAction]);
+  }, [preview, previewInput, selectedAction, selectedIds]);
 
   return (
     <motion.div
