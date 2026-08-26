@@ -464,7 +464,7 @@ export default function BulkOperationsDashboard() {
       </div>
 
       <motion.div variants={blockVariants}>
-        <BulkJobHistory />
+        <BulkJobHistory refreshKey={previewEpoch} />
       </motion.div>
     </motion.div>
   );
