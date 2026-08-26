@@ -1,11 +1,10 @@
 'use client';
 
 import React, {
-  Suspense,
-  use,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -57,144 +56,6 @@ const blockVariants: Variants = {
   },
 };
 
-const previewPromiseCache = new Map<
-  string,
-  Promise<BulkEmployeePreviewResult | null>
->();
-
-function getPreviewPromise(
-  requestKey: string
-): Promise<BulkEmployeePreviewResult | null> {
-  if (!requestKey) {
-    return Promise.resolve(null);
-  }
-  const cached = previewPromiseCache.get(requestKey);
-  if (cached) return cached;
-
-  const input = JSON.parse(requestKey) as BulkEmployeeOperationInput;
-  const promise = previewBulkEmployees(input)
-    .then((result) => result)
-    .catch((error: unknown) => {
-      previewPromiseCache.delete(requestKey);
-      toast.error(
-        error instanceof Error ? error.message : 'Failed to build preview.'
-      );
-      return null;
-    });
-
-  previewPromiseCache.set(requestKey, promise);
-  return promise;
-}
-
-function invalidatePreviewCache() {
-  previewPromiseCache.clear();
-}
-
-function BulkPreviewPanel({
-  requestKey,
-  selectedAction,
-  selectedCount,
-  isCommitting,
-  onCommit,
-}: {
-  requestKey: string;
-  selectedAction: BulkEmployeeAction;
-  selectedCount: number;
-  isCommitting: boolean;
-  onCommit: (preview: BulkEmployeePreviewResult) => void;
-}) {
-  const preview = use(getPreviewPromise(requestKey));
-
-  const canCommit =
-    !!preview && preview.canCommit && !isCommitting && selectedCount > 0;
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-      <div className="lg:col-span-2">
-        <BulkPreviewTable
-          selectedActionId={selectedAction}
-          rows={preview?.rows ?? []}
-          isLoading={false}
-        />
-      </div>
-
-      <div className="space-y-6">
-        <BulkOperationSummary
-          selectedCount={preview?.selectedCount ?? selectedCount}
-          validCount={preview?.validCount ?? 0}
-          warningCount={preview?.warningCount ?? 0}
-          invalidCount={preview?.invalidCount ?? 0}
-          skippedCount={preview?.skippedCount ?? 0}
-        />
-
-        <div className="p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/20 dark:bg-indigo-950/10 flex gap-3 text-xs text-indigo-800 dark:text-indigo-400">
-          <Info className="h-5 w-5 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <span className="font-bold">Execution Boundary Guards</span>
-            <p className="leading-relaxed text-[11px] text-indigo-700/90 dark:text-indigo-400/90">
-              All mutations are tenant-scoped and transactional. Invalid rows
-              block commit. No-op rows are skipped with warnings.
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-4 flex flex-col gap-4">
-          <div className="flex gap-2 text-xs text-zinc-500 dark:text-zinc-455 items-start">
-            <ShieldAlert className="h-4.5 w-4.5 text-zinc-400 shrink-0 mt-0.5" />
-            <p className="leading-normal text-[11px]">
-              {selectedCount === 0
-                ? 'Select employees in the Employee Directory before committing.'
-                : 'Review the preview, then confirm the batch commit.'}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            disabled={!canCommit || !preview}
-            onClick={() => {
-              if (preview) onCommit(preview);
-            }}
-            className={
-              canCommit
-                ? 'px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm text-center inline-flex items-center justify-center gap-2'
-                : 'px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none text-center inline-flex items-center justify-center gap-2'
-            }
-          >
-            {isCommitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {isCommitting ? 'Committing…' : 'Trigger Batch Commit'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BulkPreviewPanelFallback({ selectedAction }: { selectedAction: string }) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-      <div className="lg:col-span-2">
-        <BulkPreviewTable
-          selectedActionId={selectedAction}
-          rows={[]}
-          isLoading
-        />
-      </div>
-      <div className="space-y-6">
-        <BulkOperationSummary
-          selectedCount={0}
-          validCount={0}
-          warningCount={0}
-          invalidCount={0}
-          skippedCount={0}
-        />
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-4 text-xs text-zinc-500">
-          Building live preview…
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function BulkOperationsDashboard() {
   const [selectedAction, setSelectedAction] =
     useState<BulkEmployeeAction>('activate');
@@ -203,6 +64,10 @@ export default function BulkOperationsDashboard() {
   const [managers, setManagers] = useState<Employee[]>([]);
   const [targetDepartmentId, setTargetDepartmentId] = useState('');
   const [targetManagerId, setTargetManagerId] = useState('');
+  const [preview, setPreview] = useState<BulkEmployeePreviewResult | null>(
+    null
+  );
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewEpoch, setPreviewEpoch] = useState(0);
 
   const selectionSnapshot = useSyncExternalStore(
@@ -214,6 +79,8 @@ export default function BulkOperationsDashboard() {
     () => parseBulkSelectionSnapshot(selectionSnapshot),
     [selectionSnapshot]
   );
+
+  const previewRequestGen = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,15 +122,14 @@ export default function BulkOperationsDashboard() {
     targetManagerId,
   ]);
 
-  const previewCacheKey = useMemo(() => {
-    if (!canRequestPreview) return '';
-    const payload: BulkEmployeeOperationInput = {
+  const previewInput = useMemo((): BulkEmployeeOperationInput | null => {
+    if (!canRequestPreview) return null;
+    return {
       action: selectedAction,
       employeeIds: selectedIds,
       targetDepartmentId: needsDepartment ? targetDepartmentId : null,
       targetManagerId: needsManager ? targetManagerId : null,
     };
-    return `${previewEpoch}::${JSON.stringify(payload)}`;
   }, [
     canRequestPreview,
     selectedAction,
@@ -272,15 +138,63 @@ export default function BulkOperationsDashboard() {
     needsManager,
     targetDepartmentId,
     targetManagerId,
-    previewEpoch,
   ]);
 
-  /** Payload-only key for the promise cache (epoch is only for remount). */
-  const previewPayloadKey = useMemo(() => {
-    if (!previewCacheKey) return '';
-    const idx = previewCacheKey.indexOf('::');
-    return idx >= 0 ? previewCacheKey.slice(idx + 2) : previewCacheKey;
-  }, [previewCacheKey]);
+  /** Stable string key so the effect only re-runs when preview inputs change. */
+  const previewRequestKey = useMemo(() => {
+    if (!previewInput) return '';
+    return `${previewEpoch}::${JSON.stringify(previewInput)}`;
+  }, [previewInput, previewEpoch]);
+
+  // Load preview AFTER render. Never invoke server actions during render
+  // (use() + server actions update Next.js Router mid-render).
+  useEffect(() => {
+    const gen = ++previewRequestGen.current;
+    let cancelled = false;
+
+    if (!previewRequestKey || !previewInput) {
+      // Defer state updates so the effect body is not a synchronous setState path.
+      queue Promise.resolve().then(() => {
+        if (cancelled || previewRequestGen.current !== gen) return;
+        setPreview(null);
+        setIsPreviewLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const input = previewInput;
+
+    void (async () => {
+      // Yield so any setState runs as a microtask, not sync in the effect body.
+      await Promise.resolve();
+      if (cancelled || previewRequestGen.current !== gen) return;
+
+      setIsPreviewLoading(true);
+      try {
+        const result = await previewBulkEmployees(input);
+        if (cancelled || previewRequestGen.current !== gen) return;
+        setPreview(result);
+      } catch (error: unknown) {
+        if (cancelled || previewRequestGen.current !== gen) return;
+        setPreview(null);
+        toast.error(
+          error instanceof Error ? error.message : 'Failed to build preview.'
+        );
+      } finally {
+        if (!cancelled && previewRequestGen.current === gen) {
+          setIsPreviewLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // previewInput is captured when previewRequestKey changes; key is the dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: key encodes input
+  }, [previewRequestKey]);
 
   const handleSelectAction = (action: BulkEmployeeAction) => {
     setSelectedAction(action);
@@ -290,44 +204,36 @@ export default function BulkOperationsDashboard() {
     clearBulkSelectionIds();
   };
 
-  const handleCommit = useCallback(
-    async (preview: BulkEmployeePreviewResult) => {
-      if (!preview.canCommit) return;
-      const confirmed = window.confirm(
-        `Commit ${preview.validCount} employee change(s) for action "${selectedAction}"? This cannot be undone from this screen.`
-      );
-      if (!confirmed) return;
+  const canCommit =
+    !!preview &&
+    preview.canCommit &&
+    !isCommitting &&
+    !isPreviewLoading &&
+    selectedIds.length > 0;
 
-      setIsCommitting(true);
-      try {
-        const result = await executeBulkEmployees({
-          action: selectedAction,
-          employeeIds: selectedIds,
-          targetDepartmentId: needsDepartment ? targetDepartmentId : null,
-          targetManagerId: needsManager ? targetManagerId : null,
-        });
-        toast.success(
-          `Bulk operation completed: ${result.processedCount} updated.`
-        );
-        invalidatePreviewCache();
-        setPreviewEpoch((e) => e + 1);
-      } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : 'Bulk commit failed.'
-        );
-      } finally {
-        setIsCommitting(false);
-      }
-    },
-    [
-      selectedAction,
-      selectedIds,
-      needsDepartment,
-      needsManager,
-      targetDepartmentId,
-      targetManagerId,
-    ]
-  );
+  const handleCommit = useCallback(async () => {
+    if (!preview?.canCommit || !previewInput) return;
+    const confirmed = window.confirm(
+      `Commit ${preview.validCount} employee change(s) for action "${selectedAction}"? This cannot be undone from this screen.`
+    );
+    if (!confirmed) return;
+
+    setIsCommitting(true);
+    try {
+      const result = await executeBulkEmployees(previewInput);
+      toast.success(
+        `Bulk operation completed: ${result.processedCount} updated.`
+      );
+      // Invalidate / refresh preview only from the commit event path.
+      setPreviewEpoch((e) => e + 1);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Bulk commit failed.'
+      );
+    } finally {
+      setIsCommitting(false);
+    }
+  }, [preview, previewInput, selectedAction]);
 
   return (
     <motion.div
@@ -450,18 +356,68 @@ export default function BulkOperationsDashboard() {
           </motion.div>
         )}
 
-        <Suspense
-          key={previewCacheKey || 'empty-preview'}
-          fallback={<BulkPreviewPanelFallback selectedAction={selectedAction} />}
-        >
-          <BulkPreviewPanel
-            requestKey={previewPayloadKey}
-            selectedAction={selectedAction}
-            selectedCount={selectedIds.length}
-            isCommitting={isCommitting}
-            onCommit={(p) => void handleCommit(p)}
-          />
-        </Suspense>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <motion.div variants={blockVariants} className="lg:col-span-2">
+            <BulkPreviewTable
+              selectedActionId={selectedAction}
+              rows={preview?.rows ?? []}
+              isLoading={isPreviewLoading}
+            />
+          </motion.div>
+
+          <div className="space-y-6">
+            <motion.div variants={blockVariants}>
+              <BulkOperationSummary
+                selectedCount={preview?.selectedCount ?? selectedIds.length}
+                validCount={preview?.validCount ?? 0}
+                warningCount={preview?.warningCount ?? 0}
+                invalidCount={preview?.invalidCount ?? 0}
+                skippedCount={preview?.skippedCount ?? 0}
+              />
+            </motion.div>
+
+            <motion.div
+              variants={blockVariants}
+              className="p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/20 dark:bg-indigo-950/10 flex gap-3 text-xs text-indigo-800 dark:text-indigo-400"
+            >
+              <Info className="h-5 w-5 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold">Execution Boundary Guards</span>
+                <p className="leading-relaxed text-[11px] text-indigo-700/90 dark:text-indigo-400/90">
+                  All mutations are tenant-scoped and transactional. Invalid rows
+                  block commit. No-op rows are skipped with warnings.
+                </p>
+              </div>
+            </motion.div>
+
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-4 flex flex-col gap-4">
+              <div className="flex gap-2 text-xs text-zinc-500 dark:text-zinc-455 items-start">
+                <ShieldAlert className="h-4.5 w-4.5 text-zinc-400 shrink-0 mt-0.5" />
+                <p className="leading-normal text-[11px]">
+                  {selectedIds.length === 0
+                    ? 'Select employees in the Employee Directory before committing.'
+                    : 'Review the preview, then confirm the batch commit.'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={!canCommit}
+                onClick={() => void handleCommit()}
+                className={
+                  canCommit
+                    ? 'px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm text-center inline-flex items-center justify-center gap-2'
+                    : 'px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none text-center inline-flex items-center justify-center gap-2'
+                }
+              >
+                {isCommitting && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                )}
+                {isCommitting ? 'Committing…' : 'Trigger Batch Commit'}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <motion.div variants={blockVariants}>
