@@ -1,10 +1,10 @@
 /**
- * Bulk job history service — maps AuditLog rows into UI-friendly history entries.
+ * Bulk job history service - maps AuditLog rows into UI-friendly history entries.
  *
  * Limitations (no schema change):
  * - AuditLog stores one row per affected employee, not a parent "job" entity.
  * - Rows from the same commit are grouped by actor + action within a short time window.
- * - Duration is not stored; UI shows "—".
+ * - Duration is not stored; UI shows "-".
  * - Only successful commits write audit logs, so status is always Completed.
  * - Job ID is derived from the earliest audit log id in the group (stable, not sequential BCH-YYYY-NNN).
  */
@@ -42,7 +42,7 @@ function actorDisplayName(actor: {
 } | null): string {
   if (!actor) return "System";
   if (actor.employee) {
-    return `${actor.employee.firstName} ${actor.employee.lastName}`;
+    return actor.employee.firstName + " " + actor.employee.lastName;
   }
   return actor.email;
 }
@@ -50,7 +50,7 @@ function actorDisplayName(actor: {
 function deriveJobId(primaryLogId: string): string {
   // Prefer a short stable token from the audit UUID (no sequential job counter).
   const compact = primaryLogId.replace(/-/g, "").slice(0, 8).toUpperCase();
-  return `BCH-${compact}`;
+  return "BCH-" + compact;
 }
 
 export async function listBulkJobHistory(options?: {
@@ -63,7 +63,7 @@ export async function listBulkJobHistory(options?: {
 
   if (logs.length === 0) return [];
 
-  // Logs are newest-first. Group into batches walking newest → oldest.
+  // Logs are newest-first. Group into batches walking newest to oldest.
   type Group = {
     action: BulkAuditAction;
     actorId: string | null;
@@ -113,9 +113,10 @@ export async function listBulkJobHistory(options?: {
       module: "Employees",
       requestedBy: g.actorName,
       requestedOn: formatRequestedOn(g.oldestAt),
-      duration: "—",
+      duration: "-",
       status: "Completed" as const,
-      affectedRecords: count === 1 ? "1 employee" : `${count} employees`,
+      affectedRecords:
+        count === 1 ? "1 employee" : String(count) + " employees",
     };
   });
 }
