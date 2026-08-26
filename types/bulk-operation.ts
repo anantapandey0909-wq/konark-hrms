@@ -66,6 +66,29 @@ export interface BulkEmployeeExecuteResult {
   errors: { employeeId: string; message: string }[];
 }
 
+/**
+ * UI row for Bulk Job History.
+ * Derived from AuditLog — not a separate Prisma job model.
+ */
+export type BulkJobHistoryStatus =
+  | "Completed"
+  | "Running"
+  | "Queued"
+  | "Failed"
+  | "Cancelled";
+
+export interface BulkJobHistoryRow {
+  jobId: string;
+  operation: string;
+  module: string;
+  requestedBy: string;
+  requestedOn: string;
+  /** Not stored on AuditLog; real mode uses "—". */
+  duration: string;
+  status: BulkJobHistoryStatus;
+  affectedRecords: string;
+}
+
 /** sessionStorage key for cross-page employee selection */
 export const BULK_SELECTED_EMPLOYEE_IDS_KEY =
   "konark_bulk_selected_employee_ids";

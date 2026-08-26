@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Card,
   CardHeader,
@@ -16,68 +16,52 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { CheckCircle, AlertCircle, RefreshCw, Clock, History } from 'lucide-react';
+import {
+  CheckCircle,
+  AlertCircle,
+  RefreshCw,
+  Clock,
+  History,
+  Loader2,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { fetchBulkJobHistory } from '@/lib/data/bulk-history';
+import type { BulkJobHistoryRow } from '@/types/bulk-operation';
 
-interface MockJobRow {
-  jobId: string;
-  operation: string;
-  module: string;
-  requestedBy: string;
-  requestedOn: string;
-  completedOn: string;
-  duration: string;
-  status: 'Completed' | 'Running' | 'Queued' | 'Failed' | 'Cancelled';
-  affectedRecords: string;
+export interface BulkJobHistoryProps {
+  /** Bump to reload history after a successful bulk commit. */
+  refreshKey?: number;
 }
 
-const mockJobsHistory: MockJobRow[] = [
-  {
-    jobId: 'BCH-2025-042',
-    operation: 'Activate Employees',
-    module: 'Employees',
-    requestedBy: 'Harshita Sharma',
-    requestedOn: 'Feb 15, 2025, 02:40 PM',
-    completedOn: 'Feb 15, 2025, 02:41 PM',
-    duration: '1m 12s',
-    status: 'Completed',
-    affectedRecords: '12 rows',
-  },
-  {
-    jobId: 'BCH-2025-041',
-    operation: 'Transfer Department',
-    module: 'Departments',
-    requestedBy: 'Rohan Verma',
-    requestedOn: 'Feb 14, 2025, 08:30 AM',
-    completedOn: 'Feb 14, 2025, 08:31 AM',
-    duration: '45s',
-    status: 'Completed',
-    affectedRecords: '84 rows',
-  },
-  {
-    jobId: 'BCH-2025-040',
-    operation: 'Generate Payroll',
-    module: 'Payroll',
-    requestedBy: 'Priya Iyer',
-    requestedOn: 'Feb 13, 2025, 11:45 AM',
-    completedOn: 'Feb 13, 2025, 11:46 AM',
-    duration: '55s',
-    status: 'Failed',
-    affectedRecords: '395 lines',
-  },
-  {
-    jobId: 'BCH-2025-039',
-    operation: 'Approve Leave',
-    module: 'Leave',
-    requestedBy: 'Amit Gupta',
-    requestedOn: 'Feb 08, 2025, 02:15 PM',
-    completedOn: 'Feb 08, 2025, 02:16 PM',
-    duration: '35s',
-    status: 'Completed',
-    affectedRecords: '28 requests',
-  },
-];
+export default function BulkJobHistory({ refreshKey = 0 }: BulkJobHistoryProps) {
+  const [rows, setRows] = useState<BulkJobHistoryRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-export default function BulkJobHistory() {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchBulkJobHistory();
+        if (!cancelled) setRows(data);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setRows([]);
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load bulk job history.'
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
   return (
     <Card>
       <CardHeader>
@@ -93,51 +77,69 @@ export default function BulkJobHistory() {
       </CardHeader>
 
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Job ID</TableHead>
-              <TableHead>Operation</TableHead>
-              <TableHead>Module</TableHead>
-              <TableHead>Requested By</TableHead>
-              <TableHead>Requested On</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Affected Records</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-
-          <TableBody>
-            {mockJobsHistory.map((row) => (
-              <TableRow key={row.jobId}>
-                <TableCell>{row.jobId}</TableCell>
-                <TableCell>{row.operation}</TableCell>
-                <TableCell>{row.module}</TableCell>
-                <TableCell>{row.requestedBy}</TableCell>
-                <TableCell>{row.requestedOn}</TableCell>
-                <TableCell>{row.duration}</TableCell>
-                <TableCell>{row.affectedRecords}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {row.status === 'Completed' && (
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                    )}
-                    {row.status === 'Failed' && (
-                      <AlertCircle className="h-4 w-4 text-red-600" />
-                    )}
-                    {row.status === 'Running' && (
-                      <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
-                    )}
-                    {row.status === 'Queued' && (
-                      <Clock className="h-4 w-4 text-orange-600" />
-                    )}
-                    <span>{row.status}</span>
-                  </div>
-                </TableCell>
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-12 text-xs text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Loading history…</span>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
+            <History className="h-8 w-8 stroke-[1.5] text-muted-foreground/60" />
+            <p className="text-sm font-semibold text-foreground">
+              No bulk operations have been recorded yet.
+            </p>
+            <p className="text-xs max-w-sm">
+              Successful activate, deactivate, department transfer, and manager
+              assignment commits will appear here.
+            </p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Job ID</TableHead>
+                <TableHead>Operation</TableHead>
+                <TableHead>Module</TableHead>
+                <TableHead>Requested By</TableHead>
+                <TableHead>Requested On</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Affected Records</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.jobId}>
+                  <TableCell className="font-mono text-xs">{row.jobId}</TableCell>
+                  <TableCell>{row.operation}</TableCell>
+                  <TableCell>{row.module}</TableCell>
+                  <TableCell>{row.requestedBy}</TableCell>
+                  <TableCell>{row.requestedOn}</TableCell>
+                  <TableCell>{row.duration}</TableCell>
+                  <TableCell>{row.affectedRecords}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {row.status === 'Completed' && (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      )}
+                      {row.status === 'Failed' && (
+                        <AlertCircle className="h-4 w-4 text-red-600" />
+                      )}
+                      {row.status === 'Running' && (
+                        <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
+                      )}
+                      {row.status === 'Queued' && (
+                        <Clock className="h-4 w-4 text-orange-600" />
+                      )}
+                      <span>{row.status}</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
