@@ -115,7 +115,7 @@ export async function listBulkJobHistory(options?: {
       requestedOn: formatRequestedOn(g.oldestAt),
       duration: "—",
       status: "Completed" as const,
-      affectedRecords: count === 1 ? "1 employee" : `${count} employees",
+      affectedRecords: count === 1 ? "1 employee" : `${count} employees`,
     };
   });
 }
