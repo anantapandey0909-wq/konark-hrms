@@ -51,7 +51,6 @@ const formats: FormatOption[] = [
   },
   {
     id: 'json',
-    // cast: JSON is implemented as ExportFormat
     title: 'JSON Stream',
     ext: '.json',
     desc: 'Structured JSON array of row objects.',
@@ -61,6 +60,41 @@ const formats: FormatOption[] = [
     icon: Code,
   },
 ];
+
+function formatCardClass(isSelected: boolean, selectable: boolean): string {
+  const base =
+    'p-4 rounded-xl border flex flex-col justify-between space-y-4 text-left transition-all';
+  const selected =
+    'border-indigo-600 dark:border-indigo-500 ring-2 ring-indigo-600/10 dark:ring-indigo-500/10 bg-indigo-50/5 dark:bg-zinc-900/40';
+  const idle =
+    'border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/20';
+  const interaction = selectable
+    ? 'cursor-pointer hover:border-zinc-300'
+    : 'opacity-60 cursor-not-allowed';
+  return [base, isSelected ? selected : idle, interaction].join(' ');
+}
+
+function iconWrapClass(isSelected: boolean): string {
+  if (isSelected) {
+    return 'p-2 rounded-lg border bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-150 dark:border-indigo-900';
+  }
+  return 'p-2 rounded-lg border bg-zinc-50 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200/60 dark:border-zinc-700';
+}
+
+function statusBadgeClass(status: 'Ready' | 'Maintenance'): string {
+  const base =
+    'text-[8.5px] font-extrabold uppercase py-0.5 px-1.5 border';
+  if (status === 'Ready') {
+    return (
+      base +
+      ' bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
+    );
+  }
+  return (
+    base +
+    ' bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
+  );
+}
 
 export default function ExportFormatSelector() {
   const { selectedFormat, setSelectedFormat } = useExportCenter();
@@ -81,38 +115,27 @@ export default function ExportFormatSelector() {
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {formats.map((fmt) => {
             const Icon = fmt.icon;
-            const isSelected =
-              fmt.selectable && fmt.id === selectedFormat;
+            const isSelected = fmt.selectable && fmt.id === selectedFormat;
             return (
               <button
                 key={fmt.id}
                 type="button"
                 disabled={!fmt.selectable}
                 onClick={() => {
-                  if (fmt.selectable) setSelectedFormat(fmt.id as ExportFormat);
+                  if (fmt.selectable) {
+                    setSelectedFormat(fmt.id as ExportFormat);
+                  }
                 }}
-                className={`p-4 rounded-xl border flex flex-col justify-between space-y-4 text-left transition-all ${
-                  isSelected
-                    ? 'border-indigo-600 dark:border-indigo-500 ring-2 ring-indigo-600/10 dark:ring-indigo-500/10 bg-indigo-50/5 dark:bg-zinc-900/40'
-                    : 'border-zinc-200 dark:border-zinc-850 bg-zinc-50/20 dark:bg-zinc-900/20'
-                } ${!fmt.selectable ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-zinc-300'}`}
+                className={formatCardClass(isSelected, fmt.selectable)}
               >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <div
-                      className={`p-2 rounded-lg border ${\n                        isSelected
-                          ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-150 dark:border-indigo-900'
-                          : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200/60 dark:border-zinc-700'
-                      }`}
-                    >
+                    <div className={iconWrapClass(isSelected)}>
                       <Icon className="h-4.5 w-4.5" />
                     </div>
                     <Badge
                       variant="outline"
-                      className={`text-[8.5px] font-extrabold uppercase py-0.5 px-1.5 border ${\n                        fmt.status === 'Ready'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
-                          : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
-                      }`}
+                      className={statusBadgeClass(fmt.status)}
                     >
                       {fmt.status}
                     </Badge>
