@@ -44,17 +44,32 @@ const ExportCenterContext = createContext<ExportCenterContextValue | null>(
   null
 );
 
-export function ExportCenterProvider({ children }: { children: React.ReactNode }) {
+function selectionKey(module: ExportModule, format: ExportFormat): string {
+  return module + "|" + format;
+}
+
+export function ExportCenterProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [modules, setModules] = useState<ExportModuleSummary[]>([]);
   const [selectedModule, setSelectedModule] =
     useState<ExportModule>("employees");
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>("csv");
   const [preview, setPreview] = useState<ExportPreviewResult | null>(null);
+  /** Key for which selection the current `preview` / last completed load applies. */
+  const [previewSettledKey, setPreviewSettledKey] = useState<string | null>(
+    null
+  );
   const [history, setHistory] = useState<ExportHistoryItem[]>([]);
   const [isLoadingModules, setIsLoadingModules] = useState(true);
-  const [isPreviewing, setIsPreviewing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const previewSeq = useRef(0);
+
+  const currentKey = selectionKey(selectedModule, selectedFormat);
+  // Derived: true until async preview for this selection has settled.
+  const isPreviewing = previewSettledKey !== currentKey;
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -65,10 +80,10 @@ export function ExportCenterProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  // Load modules once on mount. Initial isLoadingModules=true; only clear after async.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      setIsLoadingModules(true);
       try {
         const list = await fetchExportModules();
         if (cancelled) return;
@@ -87,33 +102,55 @@ export function ExportCenterProvider({ children }: { children: React.ReactNode }
         if (!cancelled) setIsLoadingModules(false);
       }
     })();
-    void refreshHistory();
     return () => {
       cancelled = true;
     };
-  }, [refreshHistory]);
+  }, []);
 
+  // Initial history load (async result only — no sync setState at effect entry).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await fetchExportHistory();
+        if (!cancelled) setHistory(rows);
+      } catch {
+        // non-blocking
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Preview: fire async request; settle key only after response (derived loading).
   useEffect(() => {
     const seq = ++previewSeq.current;
-    setIsPreviewing(true);
+    const key = selectionKey(selectedModule, selectedFormat);
+    let cancelled = false;
+
     void (async () => {
       try {
         const result = await previewExportBatch({
           module: selectedModule,
           format: selectedFormat,
         });
-        if (previewSeq.current !== seq) return;
+        if (cancelled || previewSeq.current !== seq) return;
         setPreview(result);
+        setPreviewSettledKey(key);
       } catch (error) {
-        if (previewSeq.current !== seq) return;
+        if (cancelled || previewSeq.current !== seq) return;
         setPreview(null);
+        setPreviewSettledKey(key);
         toast.error(
           error instanceof Error ? error.message : "Preview failed."
         );
-      } finally {
-        if (previewSeq.current === seq) setIsPreviewing(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedModule, selectedFormat]);
 
   const generate = useCallback(async () => {
@@ -129,7 +166,11 @@ export function ExportCenterProvider({ children }: { children: React.ReactNode }
       if (!ok) return;
     } else {
       const ok = window.confirm(
-        `Generate ${selectedFormat.toUpperCase()} export for ${preview.totalRows.toLocaleString()} record(s)?`
+        "Generate " +
+          selectedFormat.toUpperCase() +
+          " export for " +
+          preview.totalRows.toLocaleString() +
+          " record(s)?"
       );
       if (!ok) return;
     }
@@ -146,7 +187,11 @@ export function ExportCenterProvider({ children }: { children: React.ReactNode }
         result.contentBase64
       );
       toast.success(
-        `Exported ${result.recordCount.toLocaleString()} row(s) as ${result.filename}.`
+        "Exported " +
+          result.recordCount.toLocaleString() +
+          " row(s) as " +
+          result.filename +
+          "."
       );
       await refreshHistory();
     } catch (error) {
