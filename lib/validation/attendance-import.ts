@@ -82,3 +82,14 @@ export interface AttendanceImportResult {
   errors: AttendanceImportRowError[];
   importedIds: string[];
 }
+
+/** Read-only server validation result (no mutations). */
+export interface AttendanceImportPreviewResult {
+  totalRows: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  canCommit: boolean;
+  errors: AttendanceImportRowError[];
+  validRowNumbers: number[];
+}
