@@ -33,8 +33,15 @@ const blockVariants: Variants = {
 };
 
 function AttendanceImportDashboardInner() {
-  const { canExecute, isImporting, executeImport, importResult, validCount } =
-    useAttendanceImport();
+  const {
+    canExecute,
+    isImporting,
+    isValidating,
+    executeImport,
+    importResult,
+    validCount,
+    invalidCount,
+  } = useAttendanceImport();
 
   return (
     <motion.div
@@ -82,9 +89,9 @@ function AttendanceImportDashboardInner() {
             <div className="space-y-1">
               <span className="font-bold">Overtime Calculation</span>
               <p className="leading-relaxed text-[11px] text-indigo-700/90 dark:text-indigo-400/90">
-                Worked hours are calculated dynamically based on local check-in
-                and check-out stamps. Overtime hours are automatically compiled
-                based on organizational guidelines (standard day = 8 hours).
+                Worked hours use the existing computeHours helper from check-in
+                and check-out. Import is all-or-nothing: any invalid or
+                conflicting row blocks the entire commit.
               </p>
             </div>
           </motion.div>
@@ -100,13 +107,16 @@ function AttendanceImportDashboardInner() {
               <ShieldAlert className="h-4.5 w-4.5 text-zinc-400 shrink-0 mt-0.5" />
               <div className="leading-normal text-[11px] space-y-1">
                 <p>
-                  Valid biometric parameters. Rows with warning markers can be
-                  bypassed during the synchronization write operation.
+                  {isValidating
+                    ? 'Validating rows against your organization…'
+                    : invalidCount > 0
+                      ? 'Fix all invalid rows (or re-upload) before committing. Partial import is disabled.'
+                      : 'All validations must pass before execution. The commit is transactional.'}
                 </p>
                 {importResult && (
                   <p className="font-semibold text-zinc-700 dark:text-zinc-200">
-                    Last run: {importResult.importedCount} imported,{" "}
-                    {importResult.failedCount} failed (of{" "}
+                    Last run: {importResult.importedCount} imported,{' '}
+                    {importResult.failedCount} failed (of{' '}
                     {importResult.totalRows}).
                   </p>
                 )}
@@ -119,16 +129,20 @@ function AttendanceImportDashboardInner() {
               onClick={() => void executeImport()}
               className={
                 canExecute
-                  ? "px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm shrink-0 inline-flex items-center gap-2"
-                  : "px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none shrink-0 inline-flex items-center gap-2"
+                  ? 'px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm shrink-0 inline-flex items-center gap-2'
+                  : 'px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none shrink-0 inline-flex items-center gap-2'
               }
             >
-              {isImporting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {(isImporting || isValidating) && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
               {isImporting
-                ? "Committing…"
-                : validCount > 0
-                  ? `Commit Attendance Records (${validCount})`
-                  : "Commit Attendance Records"}
+                ? 'Committing…'
+                : isValidating
+                  ? 'Validating…'
+                  : validCount > 0 && invalidCount === 0
+                    ? 'Commit Attendance Records (' + validCount + ')'
+                    : 'Commit Attendance Records'}
             </button>
           </div>
         </div>
