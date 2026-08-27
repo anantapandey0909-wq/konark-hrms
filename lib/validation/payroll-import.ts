@@ -55,3 +55,14 @@ export interface PayrollImportResult {
   errors: PayrollImportRowError[];
   importedIds: string[];
 }
+
+/** Read-only server validation result (no mutations). */
+export interface PayrollImportPreviewResult {
+  totalRows: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  canCommit: boolean;
+  errors: PayrollImportRowError[];
+  validRowNumbers: number[];
+}
