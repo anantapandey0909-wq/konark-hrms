@@ -23,6 +23,50 @@ export async function findDepartmentByCodeGlobal(departmentCode: string) {
   });
 }
 
+/**
+ * Batch global lookup by department codes (avoids N+1).
+ * Matches case-insensitively in application after fetch of candidate codes.
+ */
+export async function findDepartmentsByCodesGlobal(departmentCodes: string[]) {
+  const unique = Array.from(
+    new Set(departmentCodes.map((c) => c.trim()).filter(Boolean))
+  );
+  if (unique.length === 0) return [];
+
+  return prisma.department.findMany({
+    where: {
+      departmentCode: { in: unique },
+    },
+    select: {
+      id: true,
+      departmentCode: true,
+      companyId: true,
+    },
+  });
+}
+
+/** Batch tenant-scoped lookup by department codes. */
+export async function findDepartmentsByCodesInCompany(
+  companyId: string,
+  departmentCodes: string[]
+) {
+  const unique = Array.from(
+    new Set(departmentCodes.map((c) => c.trim()).filter(Boolean))
+  );
+  if (unique.length === 0) return [];
+
+  return prisma.department.findMany({
+    where: tenantScope(companyId, {
+      departmentCode: { in: unique },
+    }),
+    select: {
+      id: true,
+      departmentCode: true,
+      companyId: true,
+    },
+  });
+}
+
 export async function createDepartmentInTx(
   tx: Prisma.TransactionClient,
   data: {
