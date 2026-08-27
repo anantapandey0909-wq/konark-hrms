@@ -40,10 +40,8 @@ export async function findEmployeesByCodesForImport(
  * Existing PENDING/APPROVED leave for the given employees (batch).
  * Used for in-memory exact-duplicate and overlap checks (avoids N+1).
  *
- * IMPORTANT: Do not pass `status: { in: ["PENDING", "APPROVED"] }` through
- * tenantScope's generic merge — string literals widen to `string[]` and fail
- * Prisma's LeaveRequestWhereInput (expects LeaveStatus[]).
- * companyId still comes only from the trusted server parameter.
+ * IMPORTANT: Do not pass string-literal status arrays through tenantScope —
+ * they widen to string[] and fail LeaveRequestWhereInput.
  */
 export async function findActiveLeavesForEmployees(
   companyId: string,
@@ -68,6 +66,37 @@ export async function findActiveLeavesForEmployees(
       startDate: true,
       endDate: true,
       status: true,
+    },
+  });
+}
+
+/** Batch leave balances for soft insufficient-balance checks (same year). */
+export async function findLeaveBalancesForEmployees(
+  companyId: string,
+  employeeIds: string[],
+  year: number
+) {
+  if (employeeIds.length === 0) return [];
+  const unique = Array.from(new Set(employeeIds.filter(Boolean)));
+  if (unique.length === 0) return [];
+
+  const where: Prisma.LeaveBalanceWhereInput = {
+    companyId,
+    year,
+    employeeId: { in: unique },
+  };
+
+  return prisma.leaveBalance.findMany({
+    where,
+    select: {
+      employeeId: true,
+      year: true,
+      casualLeave: true,
+      sickLeave: true,
+      earnedLeave: true,
+      maternityLeave: true,
+      paternityLeave: true,
+      compOff: true,
     },
   });
 }
