@@ -6,6 +6,7 @@
  * - LeaveType is a Prisma enum (not a tenant table)
  * - Imported rows are always status PENDING
  * - totalDays from existing calculateLeaveDays (ignores CSV totalDays for storage)
+ * - Soft balance check matches createLeaveRequest (hard check remains on approve)
  * - Preview never mutates
  * - Commit is all-or-nothing: any invalid row blocks the entire import
  */
@@ -15,7 +16,10 @@ import { prisma } from "@/lib/prisma";
 import { getTenantPrisma } from "@/lib/db/prisma-with-tenant";
 import { AppError } from "@/lib/errors/app-error";
 import * as leaveImportRepo from "@/lib/repositories/leave-import.repository";
-import { calculateLeaveDays } from "@/lib/mappers/leave.mapper";
+import {
+  balanceFieldForLeaveType,
+  calculateLeaveDays,
+} from "@/lib/mappers/leave.mapper";
 import { writeAuditLog } from "@/lib/services/audit.service";
 import {
   leaveImportBatchSchema,
@@ -72,10 +76,19 @@ async function validateLeaveImportBatch(
   );
 
   const employeeIds = employees.map((e) => e.id);
-  const existingLeaves =
-    await leaveImportRepo.findActiveLeavesForEmployees(companyId, employeeIds);
+  const years = Array.from(
+    new Set(
+      rows.map((r) => parseDateOnly(r.startDate).getUTCFullYear())
+    )
+  );
 
-  // Group existing leaves by employee for in-memory checks
+  const [existingLeaves, ...balanceGroups] = await Promise.all([
+    leaveImportRepo.findActiveLeavesForEmployees(companyId, employeeIds),
+    ...years.map((year) =>
+      leaveImportRepo.findLeaveBalancesForEmployees(companyId, employeeIds, year)
+    ),
+  ]);
+
   const leavesByEmployee = new Map<
     string,
     {
@@ -94,12 +107,39 @@ async function validateLeaveImportBatch(
     leavesByEmployee.set(leave.employeeId, list);
   }
 
+  // Key: employeeId|year → balance fields
+  const balanceByKey = new Map<
+    string,
+    {
+      casualLeave: number;
+      sickLeave: number;
+      earnedLeave: number;
+      maternityLeave: number;
+      paternityLeave: number;
+      compOff: number;
+    }
+  >();
+  for (const group of balanceGroups) {
+    for (const b of group) {
+      balanceByKey.set(b.employeeId + "|" + b.year, {
+        casualLeave: b.casualLeave,
+        sickLeave: b.sickLeave,
+        earnedLeave: b.earnedLeave,
+        maternityLeave: b.maternityLeave,
+        paternityLeave: b.paternityLeave,
+        compOff: b.compOff,
+      });
+    }
+  }
+
+  // Track cumulative days requested in this file per employee|year|balanceField
+  const batchDemand = new Map<string, number>();
+
   const seenKeys = new Set<string>();
   const errors: LeaveImportRowError[] = [];
   const prepared: Prepared[] = [];
   let duplicateCount = 0;
 
-  // Track ranges already accepted in this batch (for intra-file overlap)
   const batchRanges: {
     employeeDbId: string;
     leaveType: string;
@@ -113,6 +153,7 @@ async function validateLeaveImportBatch(
     const startDate = parseDateOnly(row.startDate);
     const endDate = parseDateOnly(row.endDate);
     const appliedOn = parseDateOnly(row.appliedOn);
+    const year = startDate.getUTCFullYear();
     const dupKey =
       codeKey +
       "|" +
@@ -143,6 +184,14 @@ async function validateLeaveImportBatch(
         message: "Employee not found in current organization.",
       });
       rowFailed = true;
+    } else if (employee.status === "TERMINATED") {
+      errors.push({
+        rowNumber: row.rowNumber,
+        employeeId: row.employeeId,
+        field: "employeeId",
+        message: "Cannot import leave for a terminated employee.",
+      });
+      rowFailed = true;
     }
 
     if (endDate < startDate) {
@@ -165,9 +214,6 @@ async function validateLeaveImportBatch(
       leaveType,
       leaveType === "HALF_DAY"
     );
-
-    // Optional CSV totalDays is informational only; system calculation wins.
-    // (No hard failure if CSV days differ — avoids timezone/format friction.)
 
     const existing = leavesByEmployee.get(employee.id) ?? [];
     const exactDup = existing.some(
@@ -213,6 +259,29 @@ async function validateLeaveImportBatch(
           "This request overlaps another leave row for the same employee in the import file.",
       });
       continue;
+    }
+
+    // Soft balance check (same rule as createLeaveRequest — hard check on approve).
+    // Missing balance rows are treated as unlimited for import preview (create path
+    // also only fails when a balance row exists and is insufficient).
+    const field = balanceFieldForLeaveType(leaveType);
+    if (field) {
+      const balKey = employee.id + "|" + year;
+      const balance = balanceByKey.get(balKey);
+      if (balance) {
+        const available = balance[field];
+        const demandKey = balKey + "|" + field;
+        const priorDemand = batchDemand.get(demandKey) ?? 0;
+        if (available < priorDemand + totalDays) {
+          errors.push({
+            rowNumber: row.rowNumber,
+            employeeId: row.employeeId,
+            message: "Insufficient leave balance for this request.",
+          });
+          continue;
+        }
+        batchDemand.set(demandKey, priorDemand + totalDays);
+      }
     }
 
     seenKeys.add(dupKey);
@@ -347,7 +416,7 @@ export async function importLeaveRequests(
   await writeAuditLog({
     companyId,
     actorId: user.id,
-    action: "LEAVES_IMPORTED",
+    action: "LEAVE_IMPORT_COMPLETED",
     entity: "LeaveRequest",
     metadata: {
       source: "leave_import",
