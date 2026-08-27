@@ -97,7 +97,8 @@ export function buildSpreadsheetMl(
     })
     .join("");
 
-  const safeSheet = sheetName.replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 31) || "Export";
+  const safeSheet =
+    sheetName.replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 31) || "Export";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -119,5 +120,9 @@ export function formatByteSize(bytes: number): string {
 }
 
 export function estimateUtf8Bytes(text: string): number {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(text).length;
+  }
+  // Server fallback
   return Buffer.byteLength(text, "utf8");
 }
