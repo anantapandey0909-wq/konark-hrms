@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { LeaveStatus, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
@@ -23,6 +23,11 @@ export type LeaveListFilters = {
 function dayStart(iso: string): Date {
   return new Date(`${iso}T00:00:00.000Z`);
 }
+
+const ACTIVE_LEAVE_STATUSES: LeaveStatus[] = [
+  LeaveStatus.PENDING,
+  LeaveStatus.APPROVED,
+];
 
 export async function findLeaveRequestsByCompany(
   companyId: string,
@@ -64,15 +69,17 @@ export async function findOverlappingLeaves(
   endDate: Date,
   excludeId?: string
 ) {
+  const where: Prisma.LeaveRequestWhereInput = {
+    companyId,
+    employeeId,
+    status: { in: ACTIVE_LEAVE_STATUSES },
+    ...(excludeId ? { id: { not: excludeId } } : {}),
+    startDate: { lte: endDate },
+    endDate: { gte: startDate },
+  };
+
   return prisma.leaveRequest.findMany({
-    where: {
-      companyId,
-      employeeId,
-      status: { in: ["PENDING", "APPROVED"] },
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-      startDate: { lte: endDate },
-      endDate: { gte: startDate },
-    },
+    where,
   });
 }
 
