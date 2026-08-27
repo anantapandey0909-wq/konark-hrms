@@ -47,10 +47,10 @@ const AVAILABLE_TEMPLATES_LABEL = '9 Active';
 export default function HistoryDashboard() {
   const [jobs, setJobs] = useState<HistoryJobItem[]>([]);
   const [selectedJob, setSelectedJob] = useState<HistoryJobItem | null>(null);
+  // Initial true; only cleared after the async load settles (no sync setState in effect).
   const [isLoading, setIsLoading] = useState(true);
 
   const loadHistory = useCallback(async (signal?: { cancelled: boolean }) => {
-    setIsLoading(true);
     try {
       const data = await fetchImportHistory();
       if (signal?.cancelled) return;
