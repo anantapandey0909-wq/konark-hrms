@@ -58,3 +58,15 @@ export interface EmployeeImportResult {
   errors: EmployeeImportRowError[];
   importedEmployeeIds: string[];
 }
+
+/** Read-only server validation result (no mutations). */
+export interface EmployeeImportPreviewResult {
+  totalRows: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  canCommit: boolean;
+  errors: EmployeeImportRowError[];
+  /** Row numbers that passed all server checks. */
+  validRowNumbers: number[];
+}

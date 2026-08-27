@@ -12,7 +12,10 @@ import {
   parseEmployeeImportCsv,
   type ParsedEmployeeImportRow,
 } from "@/lib/data-management/parse-employee-import";
-import { executeEmployeeImport } from "@/lib/data/employee-import";
+import {
+  executeEmployeeImport,
+  previewEmployeeImportBatch,
+} from "@/lib/data/employee-import";
 import type { EmployeeImportResult } from "@/lib/validation/employee-import";
 
 interface EmployeeImportContextValue {
@@ -20,6 +23,7 @@ interface EmployeeImportContextValue {
   fileName: string | null;
   importResult: EmployeeImportResult | null;
   isImporting: boolean;
+  isValidating: boolean;
   validCount: number;
   invalidCount: number;
   totalCount: number;
@@ -32,6 +36,22 @@ interface EmployeeImportContextValue {
 const EmployeeImportContext =
   createContext<EmployeeImportContextValue | null>(null);
 
+function mergeServerErrors(
+  prev: ParsedEmployeeImportRow[],
+  serverErrors: { rowNumber: number; field?: string; message: string }[]
+): ParsedEmployeeImportRow[] {
+  if (serverErrors.length === 0) return prev;
+  return prev.map((row) => {
+    const matched = serverErrors.filter((e) => e.rowNumber === row.rowNumber);
+    if (matched.length === 0) return row;
+    return {
+      ...row,
+      status: "invalid" as const,
+      errors: [...row.errors, ...matched],
+    };
+  });
+}
+
 export function EmployeeImportProvider({
   children,
 }: {
@@ -42,11 +62,18 @@ export function EmployeeImportProvider({
   const [importResult, setImportResult] =
     useState<EmployeeImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
 
   const validCount = rows.filter((r) => r.status === "valid").length;
   const invalidCount = rows.filter((r) => r.status === "invalid").length;
   const totalCount = rows.length;
-  const canExecute = validCount > 0 && !isImporting;
+  // All-or-nothing: every row must be valid before commit is allowed.
+  const canExecute =
+    totalCount > 0 &&
+    invalidCount === 0 &&
+    validCount === totalCount &&
+    !isImporting &&
+    !isValidating;
 
   const setFileFromText = useCallback((name: string, text: string) => {
     const parsed = parseEmployeeImportCsv(text);
@@ -57,10 +84,56 @@ export function EmployeeImportProvider({
       setImportResult(null);
       return;
     }
+
     setRows(parsed.rows);
     setFileName(name);
     setImportResult(null);
-    toast.success(`Loaded ${parsed.rows.length} row(s) from ${name}`);
+
+    const clientValid = parsed.rows.filter((r) => r.status === "valid" && r.data);
+    if (clientValid.length === 0) {
+      toast.warning(
+        "Loaded " +
+          parsed.rows.length +
+          " row(s) from " +
+          name +
+          ", but none passed client validation."
+      );
+      return;
+    }
+
+    // Server-side read-only validation (departments, DB duplicates).
+    setIsValidating(true);
+    void (async () => {
+      try {
+        const preview = await previewEmployeeImportBatch({
+          rows: clientValid.map((r) => r.data!),
+        });
+        if (preview.errors.length > 0) {
+          setRows((prev) => mergeServerErrors(prev, preview.errors));
+          toast.warning(
+            "Server validation found " +
+              preview.invalidCount +
+              " invalid row(s). Fix or re-upload before importing."
+          );
+        } else {
+          toast.success(
+            "Loaded and validated " +
+              preview.validCount +
+              " row(s) from " +
+              name +
+              "."
+          );
+        }
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Server validation failed."
+        );
+      } finally {
+        setIsValidating(false);
+      }
+    })();
   }, []);
 
   const clearFile = useCallback(() => {
@@ -79,36 +152,43 @@ export function EmployeeImportProvider({
       return;
     }
 
+    if (rows.some((r) => r.status === "invalid")) {
+      toast.error(
+        "Resolve all invalid rows before importing. Partial import is not allowed."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Import " +
+        validRows.length +
+        " employee(s)? This will create user accounts and cannot be undone from this screen."
+    );
+    if (!confirmed) return;
+
     setIsImporting(true);
     try {
       const result = await executeEmployeeImport({ rows: validRows });
       setImportResult(result);
 
-      // Merge server-side failures into row status display
       if (result.errors.length > 0) {
-        setRows((prev) =>
-          prev.map((row) => {
-            const serverErrors = result.errors.filter(
-              (e) => e.rowNumber === row.rowNumber
-            );
-            if (serverErrors.length === 0) return row;
-            return {
-              ...row,
-              status: "invalid" as const,
-              errors: [...row.errors, ...serverErrors],
-            };
-          })
-        );
+        setRows((prev) => mergeServerErrors(prev, result.errors));
       }
 
-      if (result.importedCount > 0 && result.failedCount === 0) {
-        toast.success(`Imported ${result.importedCount} employee(s).`);
-      } else if (result.importedCount > 0) {
-        toast.warning(
-          `Imported ${result.importedCount}; ${result.failedCount} failed.`
+      if (result.success && result.importedCount > 0) {
+        toast.success(
+          result.importedCount === 1
+            ? "1 employee imported successfully."
+            : result.importedCount + " employees imported successfully."
         );
       } else {
-        toast.error(`Import failed for ${result.failedCount} row(s).`);
+        toast.error(
+          result.failedCount > 0
+            ? "Import blocked: " +
+                result.failedCount +
+                " row(s) failed validation. No employees were created."
+            : "Import failed. No employees were created."
+        );
       }
     } catch (error) {
       toast.error(
@@ -125,6 +205,7 @@ export function EmployeeImportProvider({
       fileName,
       importResult,
       isImporting,
+      isValidating,
       validCount,
       invalidCount,
       totalCount,
@@ -138,6 +219,7 @@ export function EmployeeImportProvider({
       fileName,
       importResult,
       isImporting,
+      isValidating,
       validCount,
       invalidCount,
       totalCount,

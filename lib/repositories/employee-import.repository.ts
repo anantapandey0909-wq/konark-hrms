@@ -1,6 +1,6 @@
 /**
- * Employee-import helpers that extend department lookup without duplicating
- * the main employee repository write path.
+ * Employee-import helpers — tenant-scoped lookups for validation and commit.
+ * companyId is always trusted (from getTenantPrisma), never from the client.
  */
 
 import { Prisma } from "@prisma/client";
@@ -14,10 +14,6 @@ export async function findDepartmentByNameOrCode(
   const q = nameOrCode.trim();
   if (!q) return null;
 
-  // Build DepartmentWhereInput directly so `mode` is typed as Prisma.QueryMode.
-  // Do not pass StringFilter through tenantScope's generic merge (that widens
-  // "insensitive" to string). companyId still comes only from the trusted
-  // server parameter — never the client.
   const byCodeWhere: Prisma.DepartmentWhereInput = {
     companyId,
     departmentCode: {
@@ -53,5 +49,60 @@ export async function listCompanyDepartmentsForImport(companyId: string) {
       departmentName: true,
       status: true,
     },
+  });
+}
+
+/** Batch lookup of employee codes within the tenant (case-sensitive codes as stored). */
+export async function findEmployeesByCodes(
+  companyId: string,
+  codes: string[]
+) {
+  if (codes.length === 0) return [];
+  return prisma.employee.findMany({
+    where: tenantScope(companyId, {
+      employeeCode: { in: codes },
+    }),
+    select: { id: true, employeeCode: true, email: true },
+  });
+}
+
+/** Batch case-insensitive email lookup within the tenant. */
+export async function findEmployeesByEmails(
+  companyId: string,
+  emails: string[]
+) {
+  if (emails.length === 0) return [];
+  const normalized = Array.from(
+    new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))
+  );
+  if (normalized.length === 0) return [];
+
+  // Prisma `in` is case-sensitive for most collations — fetch candidates via OR equals insensitive.
+  return prisma.employee.findMany({
+    where: {
+      companyId,
+      OR: normalized.map((email) => ({
+        email: { equals: email, mode: Prisma.QueryMode.insensitive },
+      })),
+    },
+    select: { id: true, employeeCode: true, email: true },
+  });
+}
+
+/** Global User email uniqueness (User.email is unique across tenants). */
+export async function findUsersByEmails(emails: string[]) {
+  if (emails.length === 0) return [];
+  const normalized = Array.from(
+    new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))
+  );
+  if (normalized.length === 0) return [];
+
+  return prisma.user.findMany({
+    where: {
+      OR: normalized.map((email) => ({
+        email: { equals: email, mode: Prisma.QueryMode.insensitive },
+      })),
+    },
+    select: { id: true, email: true },
   });
 }
