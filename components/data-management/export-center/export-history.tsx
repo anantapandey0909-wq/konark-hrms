@@ -6,6 +6,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { History, CheckCircle, AlertCircle } from 'lucide-react';
 import { useExportCenter } from './export-center-context';
 
+function statusClass(status: 'Completed' | 'Failed'): string {
+  const base =
+    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider';
+  if (status === 'Completed') {
+    return (
+      base +
+      ' bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/40'
+    );
+  }
+  return (
+    base +
+    ' bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-100 dark:border-rose-900/40'
+  );
+}
+
 export default function ExportHistory() {
   const { history } = useExportCenter();
 
@@ -89,12 +104,7 @@ export default function ExportHistory() {
                     {new Date(row.date).toLocaleString()}
                   </TableCell>
                   <TableCell className="px-5 py-4 text-center">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider ${\n                        row.status === 'Completed'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/40'
-                          : 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-100 dark:border-rose-900/40'
-                      }`}
-                    >
+                    <span className={statusClass(row.status)}>
                       {row.status === 'Completed' ? (
                         <CheckCircle className="h-3 w-3 shrink-0" />
                       ) : (
