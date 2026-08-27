@@ -8,7 +8,11 @@ import ExportFormatSelector from './export-format-selector';
 import ExportPreview from './export-preview';
 import ExportHistory from './export-history';
 import ScheduledExports from './scheduled-exports';
-import { DownloadCloud, Info, ShieldAlert } from 'lucide-react';
+import {
+  ExportCenterProvider,
+  useExportCenter,
+} from './export-center-context';
+import { DownloadCloud, Info, ShieldAlert, Loader2 } from 'lucide-react';
 
 const pageVariants: Variants = {
   hidden: { opacity: 0 },
@@ -29,7 +33,11 @@ const blockVariants: Variants = {
   },
 };
 
-export default function ExportCenterDashboard() {
+function ExportCenterDashboardInner() {
+  const { generate, isGenerating, isPreviewing, preview } = useExportCenter();
+  const canGenerate =
+    !!preview?.canExport && !isGenerating && !isPreviewing;
+
   return (
     <motion.div
       className="space-y-6"
@@ -37,7 +45,6 @@ export default function ExportCenterDashboard() {
       initial="hidden"
       animate="visible"
     >
-      {/* Title block */}
       <div className="flex flex-col gap-1.5 md:flex-row md:items-center md:justify-between pb-4 border-b border-zinc-150 dark:border-zinc-800">
         <div className="space-y-1">
           <div className="flex items-center space-x-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
@@ -48,18 +55,20 @@ export default function ExportCenterDashboard() {
             Export Center
           </h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-2xl leading-relaxed">
-            Generate and schedule highly structured data extractions from core database registers. Filter and preview specific parameters to ensure perfect compliance before downloading secure snapshots.
+            Generate tenant-scoped data extractions from core registers. Preview
+            sample rows, then download a bounded CSV, JSON, or Excel-compatible
+            file. Exports are limited to 10,000 rows per request.
           </p>
         </div>
       </div>
 
-      {/* Grid workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left hand: Module Cards Grid & Format Selector */}
         <div className="lg:col-span-2 space-y-6">
           <motion.div variants={blockVariants} className="space-y-3">
             <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">Available Databases</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                Available Databases
+              </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <ExportModuleCard />
@@ -75,21 +84,22 @@ export default function ExportCenterDashboard() {
           </motion.div>
         </div>
 
-        {/* Right hand: Schedules & Action Parameters */}
         <div className="space-y-6">
           <motion.div variants={blockVariants}>
             <ScheduledExports />
           </motion.div>
 
-          <motion.div 
+          <motion.div
             variants={blockVariants}
             className="p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/20 dark:bg-indigo-950/10 flex gap-3 text-xs text-indigo-800 dark:text-indigo-400"
           >
             <Info className="h-5 w-5 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <span className="font-bold">Encrypted File Streams</span>
+              <span className="font-bold">Tenant-scoped downloads</span>
               <p className="leading-relaxed text-[11px] text-indigo-700/90 dark:text-indigo-400/90">
-                All platform files generated undergo standard server-side AES-256 encryption. Snapshot archives are automatically deleted from server memory 24 hours after generation.
+                Files are generated in memory for your authenticated company
+                only, then streamed to your browser. No permanent export storage
+                or AES archive retention is configured in this release.
               </p>
             </div>
           </motion.div>
@@ -98,24 +108,48 @@ export default function ExportCenterDashboard() {
             <div className="flex gap-2 text-xs text-zinc-500 dark:text-zinc-450 items-start">
               <ShieldAlert className="h-4.5 w-4.5 text-zinc-400 shrink-0 mt-0.5" />
               <p className="leading-normal text-[11px]">
-                Evaluate parameters of structural file components. Ready snapshots will be compiled securely inside background operational queues.
+                {preview?.message
+                  ? preview.message
+                  : preview?.canExport
+                    ? `Ready to export ${preview.totalRows.toLocaleString()} record(s).`
+                    : 'Select a module and format, then wait for preview before generating.'}
               </p>
             </div>
-            
+
             <button
-              disabled
-              className="px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none text-center"
+              type="button"
+              disabled={!canGenerate}
+              onClick={() => void generate()}
+              className={
+                canGenerate
+                  ? 'px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm text-center inline-flex items-center justify-center gap-2'
+                  : 'px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none text-center inline-flex items-center justify-center gap-2'
+              }
             >
-              Trigger Extract Compiler
+              {(isGenerating || isPreviewing) && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              {isGenerating
+                ? 'Generating…'
+                : isPreviewing
+                  ? 'Preparing preview…'
+                  : 'Generate Export'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Full Width: History table */}
       <motion.div variants={blockVariants}>
         <ExportHistory />
       </motion.div>
     </motion.div>
+  );
+}
+
+export default function ExportCenterDashboard() {
+  return (
+    <ExportCenterProvider>
+      <ExportCenterDashboardInner />
+    </ExportCenterProvider>
   );
 }
