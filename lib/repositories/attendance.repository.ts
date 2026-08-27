@@ -88,6 +88,42 @@ export async function findAttendanceByEmployeeDate(
   });
 }
 
+/**
+ * Batch lookup for import conflict detection (avoids N+1).
+ * companyId is trusted server context only.
+ */
+export async function findAttendancesByEmployeeDates(
+  companyId: string,
+  employeeIds: string[],
+  attendanceDates: Date[]
+) {
+  if (employeeIds.length === 0 || attendanceDates.length === 0) return [];
+
+  const uniqueEmployees = Array.from(new Set(employeeIds.filter(Boolean)));
+  const uniqueDates = Array.from(
+    new Map(
+      attendanceDates.map((d) => [d.toISOString().slice(0, 10), d])
+    ).values()
+  );
+
+  if (uniqueEmployees.length === 0 || uniqueDates.length === 0) return [];
+
+  const where: Prisma.AttendanceWhereInput = {
+    companyId,
+    employeeId: { in: uniqueEmployees },
+    attendanceDate: { in: uniqueDates },
+  };
+
+  return prisma.attendance.findMany({
+    where,
+    select: {
+      id: true,
+      employeeId: true,
+      attendanceDate: true,
+    },
+  });
+}
+
 export async function createAttendance(data: Prisma.AttendanceCreateInput) {
   return prisma.attendance.create({
     data,
