@@ -12,7 +12,10 @@ import {
   parseDepartmentImportCsv,
   type ParsedDepartmentImportRow,
 } from "@/lib/data-management/parse-department-import";
-import { executeDepartmentImport } from "@/lib/data/department-import";
+import {
+  executeDepartmentImport,
+  previewDepartmentImportBatch,
+} from "@/lib/data/department-import";
 import type { DepartmentImportResult } from "@/lib/validation/department-import";
 
 interface DepartmentImportContextValue {
@@ -20,6 +23,7 @@ interface DepartmentImportContextValue {
   fileName: string | null;
   importResult: DepartmentImportResult | null;
   isImporting: boolean;
+  isValidating: boolean;
   blankRowsSkipped: number;
   validCount: number;
   invalidCount: number;
@@ -33,6 +37,27 @@ interface DepartmentImportContextValue {
 const DepartmentImportContext =
   createContext<DepartmentImportContextValue | null>(null);
 
+function mergeServerErrors(
+  prev: ParsedDepartmentImportRow[],
+  serverErrors: {
+    rowNumber: number;
+    field?: string;
+    message: string;
+    departmentCode?: string;
+  }[]
+): ParsedDepartmentImportRow[] {
+  if (serverErrors.length === 0) return prev;
+  return prev.map((row) => {
+    const matched = serverErrors.filter((e) => e.rowNumber === row.rowNumber);
+    if (matched.length === 0) return row;
+    return {
+      ...row,
+      status: "invalid" as const,
+      errors: [...row.errors, ...matched],
+    };
+  });
+}
+
 export function DepartmentImportProvider({
   children,
 }: {
@@ -43,12 +68,19 @@ export function DepartmentImportProvider({
   const [importResult, setImportResult] =
     useState<DepartmentImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
   const [blankRowsSkipped, setBlankRowsSkipped] = useState(0);
 
   const validCount = rows.filter((r) => r.status === "valid").length;
   const invalidCount = rows.filter((r) => r.status === "invalid").length;
   const totalCount = rows.length;
-  const canExecute = validCount > 0 && !isImporting;
+  // All-or-nothing: every row must be valid before commit is allowed.
+  const canExecute =
+    totalCount > 0 &&
+    invalidCount === 0 &&
+    validCount === totalCount &&
+    !isImporting &&
+    !isValidating;
 
   const setFileFromText = useCallback((name: string, text: string) => {
     const parsed = parseDepartmentImportCsv(text);
@@ -60,15 +92,63 @@ export function DepartmentImportProvider({
       setBlankRowsSkipped(0);
       return;
     }
+
     setRows(parsed.rows);
     setFileName(name);
     setImportResult(null);
     setBlankRowsSkipped(parsed.blankRowsSkipped);
-    const blankNote =
-      parsed.blankRowsSkipped > 0
-        ? ` (${parsed.blankRowsSkipped} blank row(s) skipped)`
-        : "";
-    toast.success(`Loaded ${parsed.rows.length} row(s) from ${name}${blankNote}`);
+
+    const clientValid = parsed.rows.filter(
+      (r) => r.status === "valid" && r.data
+    );
+    if (clientValid.length === 0) {
+      toast.warning(
+        "Loaded " +
+          parsed.rows.length +
+          " row(s) from " +
+          name +
+          ", but none passed client validation."
+      );
+      return;
+    }
+
+    setIsValidating(true);
+    void (async () => {
+      try {
+        const preview = await previewDepartmentImportBatch({
+          rows: clientValid.map((r) => r.data!),
+        });
+        if (preview.errors.length > 0) {
+          setRows((prev) => mergeServerErrors(prev, preview.errors));
+          toast.warning(
+            "Server validation found " +
+              preview.invalidCount +
+              " invalid row(s). Fix or re-upload before importing."
+          );
+        } else {
+          const blankNote =
+            parsed.blankRowsSkipped > 0
+              ? " (" + parsed.blankRowsSkipped + " blank row(s) skipped)"
+              : "";
+          toast.success(
+            "Loaded and validated " +
+              preview.validCount +
+              " row(s) from " +
+              name +
+              blankNote +
+              "."
+          );
+        }
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Server validation failed."
+        );
+      } finally {
+        setIsValidating(false);
+      }
+    })();
   }, []);
 
   const clearFile = useCallback(() => {
@@ -88,35 +168,45 @@ export function DepartmentImportProvider({
       return;
     }
 
+    if (rows.some((r) => r.status === "invalid")) {
+      toast.error(
+        "Resolve all invalid rows before importing. Partial import is not allowed."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "You are about to create " +
+        validRows.length +
+        " department(s).\n" +
+        "This import will either create all records or none."
+    );
+    if (!confirmed) return;
+
     setIsImporting(true);
     try {
       const result = await executeDepartmentImport({ rows: validRows });
       setImportResult(result);
 
       if (result.errors.length > 0) {
-        setRows((prev) =>
-          prev.map((row) => {
-            const serverErrors = result.errors.filter(
-              (e) => e.rowNumber === row.rowNumber
-            );
-            if (serverErrors.length === 0) return row;
-            return {
-              ...row,
-              status: "invalid" as const,
-              errors: [...row.errors, ...serverErrors],
-            };
-          })
-        );
+        setRows((prev) => mergeServerErrors(prev, result.errors));
       }
 
-      if (result.importedCount > 0 && result.failedCount === 0) {
-        toast.success(`Imported ${result.importedCount} department(s).`);
-      } else if (result.importedCount > 0) {
-        toast.warning(
-          `Imported ${result.importedCount}; ${result.failedCount} failed.`
+      if (result.success && result.importedCount > 0) {
+        toast.success(
+          result.importedCount === 1
+            ? "1 department imported successfully."
+            : result.importedCount +
+                " departments imported successfully."
         );
       } else {
-        toast.error(`Import failed for ${result.failedCount} row(s).`);
+        toast.error(
+          result.failedCount > 0
+            ? "Import blocked: " +
+                result.failedCount +
+                " row(s) failed validation. No departments were created."
+            : "Import failed. No departments were created."
+        );
       }
     } catch (error) {
       toast.error(
@@ -133,6 +223,7 @@ export function DepartmentImportProvider({
       fileName,
       importResult,
       isImporting,
+      isValidating,
       blankRowsSkipped,
       validCount,
       invalidCount,
@@ -147,6 +238,7 @@ export function DepartmentImportProvider({
       fileName,
       importResult,
       isImporting,
+      isValidating,
       blankRowsSkipped,
       validCount,
       invalidCount,
