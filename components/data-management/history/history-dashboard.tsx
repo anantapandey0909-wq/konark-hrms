@@ -17,7 +17,15 @@ import {
   History,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { fetchImportHistory } from '@/lib/data/import-history';
+import {
+  ensureImportHistoryLoaded,
+  getImportHistoryError,
+  getImportHistoryJobs,
+  getImportHistoryJobsOrEmpty,
+  getImportHistoryServerVersion,
+  getImportHistoryVersion,
+  subscribeImportHistory,
+} from '@/lib/client/import-history-store';
 import type { HistoryJobItem as ServiceHistoryJobItem } from '@/lib/services/import-history.service';
 import { toast } from 'sonner';
 
@@ -44,96 +52,30 @@ export type HistoryJobItem = ServiceHistoryJobItem;
 /** Static template library count — not transactional history. */
 const AVAILABLE_TEMPLATES_LABEL = '9 Active';
 
-const EMPTY_JOBS: HistoryJobItem[] = [];
-
-type HistorySnapshot = {
-  data: HistoryJobItem[] | null;
-  error: string | null;
-};
-
-/** Stable server + initial client snapshot (same reference every getSnapshot call). */
-const EMPTY_HISTORY_SNAPSHOT: HistorySnapshot = {
-  data: null,
-  error: null,
-};
-
-/**
- * Module-level cache so React Strict Mode double-mount does not double-fetch,
- * and so the effect only subscribes to an external async result (no sync setState).
- * Mutate fields only — keep the outer object const for prefer-const.
- * `snapshot` is replaced only when the store actually changes.
- */
-const historyCache: {
-  promise: Promise<HistoryJobItem[]> | null;
-  snapshot: HistorySnapshot;
-} = {
-  promise: null,
-  snapshot: EMPTY_HISTORY_SNAPSHOT,
-};
-
-const historyListeners = new Set<() => void>();
-
-function notifyHistoryListeners() {
-  historyListeners.forEach((l) => l());
-}
-
-function subscribeHistory(listener: () => void) {
-  historyListeners.add(listener);
-  return () => {
-    historyListeners.delete(listener);
-  };
-}
-
-/** Always returns the current cached reference (never a fresh object). */
-function getHistorySnapshot(): HistorySnapshot {
-  return historyCache.snapshot;
-}
-
-/** Always returns the same module-level empty snapshot. */
-function getServerHistorySnapshot(): HistorySnapshot {
-  return EMPTY_HISTORY_SNAPSHOT;
-}
-
-function ensureHistoryLoad() {
-  if (historyCache.promise) return;
-  historyCache.promise = fetchImportHistory()
-    .then((data) => {
-      // Replace snapshot once — new reference only when data changes.
-      historyCache.snapshot = { data, error: null };
-      notifyHistoryListeners();
-      return data;
-    })
-    .catch((error: unknown) => {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to load import history.';
-      historyCache.snapshot = { data: EMPTY_JOBS, error: message };
-      notifyHistoryListeners();
-      return EMPTY_JOBS;
-    });
-}
-
 export default function HistoryDashboard() {
-  const snapshot = React.useSyncExternalStore(
-    subscribeHistory,
-    getHistorySnapshot,
-    getServerHistorySnapshot
+  // Snapshot is a number — always stable under Object.is until the store bumps version.
+  const version = React.useSyncExternalStore(
+    subscribeImportHistory,
+    getImportHistoryVersion,
+    getImportHistoryServerVersion
   );
 
-  // Kick off the external fetch once (outside React setState-in-effect).
+  // Read module data after version (re-render when version changes).
+  void version;
+  const jobsLoaded = getImportHistoryJobs();
+  const jobs = getImportHistoryJobsOrEmpty();
+  const storeError = getImportHistoryError();
+  const isLoading = jobsLoaded === null;
+
   useEffect(() => {
-    ensureHistoryLoad();
+    ensureImportHistoryLoaded();
   }, []);
 
   useEffect(() => {
-    if (snapshot.error) {
-      toast.error(snapshot.error);
+    if (storeError) {
+      toast.error(storeError);
     }
-  }, [snapshot.error]);
-
-  const jobs = snapshot.data ?? EMPTY_JOBS;
-  const isLoading = snapshot.data === null;
+  }, [storeError]);
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
