@@ -51,17 +51,24 @@ type HistorySnapshot = {
   error: string | null;
 };
 
+/** Stable server + initial client snapshot (same reference every getSnapshot call). */
+const EMPTY_HISTORY_SNAPSHOT: HistorySnapshot = {
+  data: null,
+  error: null,
+};
+
 /**
  * Module-level cache so React Strict Mode double-mount does not double-fetch,
  * and so the effect only subscribes to an external async result (no sync setState).
  * Mutate fields only — keep the outer object const for prefer-const.
+ * `snapshot` is replaced only when the store actually changes.
  */
 const historyCache: {
   promise: Promise<HistoryJobItem[]> | null;
   snapshot: HistorySnapshot;
 } = {
   promise: null,
-  snapshot: { data: null, error: null },
+  snapshot: EMPTY_HISTORY_SNAPSHOT,
 };
 
 const historyListeners = new Set<() => void>();
@@ -77,19 +84,21 @@ function subscribeHistory(listener: () => void) {
   };
 }
 
-/** Stable reference until the next successful/failed load. */
+/** Always returns the current cached reference (never a fresh object). */
 function getHistorySnapshot(): HistorySnapshot {
   return historyCache.snapshot;
 }
 
+/** Always returns the same module-level empty snapshot. */
 function getServerHistorySnapshot(): HistorySnapshot {
-  return { data: null, error: null };
+  return EMPTY_HISTORY_SNAPSHOT;
 }
 
 function ensureHistoryLoad() {
   if (historyCache.promise) return;
   historyCache.promise = fetchImportHistory()
     .then((data) => {
+      // Replace snapshot once — new reference only when data changes.
       historyCache.snapshot = { data, error: null };
       notifyHistoryListeners();
       return data;
