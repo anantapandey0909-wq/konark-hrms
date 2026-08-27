@@ -44,18 +44,24 @@ export type HistoryJobItem = ServiceHistoryJobItem;
 /** Static template library count — not transactional history. */
 const AVAILABLE_TEMPLATES_LABEL = '9 Active';
 
+const EMPTY_JOBS: HistoryJobItem[] = [];
+
+type HistorySnapshot = {
+  data: HistoryJobItem[] | null;
+  error: string | null;
+};
+
 /**
  * Module-level cache so React Strict Mode double-mount does not double-fetch,
  * and so the effect only subscribes to an external async result (no sync setState).
+ * Mutate fields only — keep the outer object const for prefer-const.
  */
-let historyCache: {
+const historyCache: {
   promise: Promise<HistoryJobItem[]> | null;
-  data: HistoryJobItem[] | null;
-  error: string | null;
+  snapshot: HistorySnapshot;
 } = {
   promise: null,
-  data: null,
-  error: null,
+  snapshot: { data: null, error: null },
 };
 
 const historyListeners = new Set<() => void>();
@@ -71,30 +77,31 @@ function subscribeHistory(listener: () => void) {
   };
 }
 
-function getHistorySnapshot(): {
-  data: HistoryJobItem[] | null;
-  error: string | null;
-} {
-  return { data: historyCache.data, error: historyCache.error };
+/** Stable reference until the next successful/failed load. */
+function getHistorySnapshot(): HistorySnapshot {
+  return historyCache.snapshot;
+}
+
+function getServerHistorySnapshot(): HistorySnapshot {
+  return { data: null, error: null };
 }
 
 function ensureHistoryLoad() {
   if (historyCache.promise) return;
   historyCache.promise = fetchImportHistory()
     .then((data) => {
-      historyCache.data = data;
-      historyCache.error = null;
+      historyCache.snapshot = { data, error: null };
       notifyHistoryListeners();
       return data;
     })
     .catch((error: unknown) => {
-      historyCache.data = [];
-      historyCache.error =
+      const message =
         error instanceof Error
           ? error.message
           : 'Failed to load import history.';
+      historyCache.snapshot = { data: EMPTY_JOBS, error: message };
       notifyHistoryListeners();
-      return [] as HistoryJobItem[];
+      return EMPTY_JOBS;
     });
 }
 
@@ -102,7 +109,7 @@ export default function HistoryDashboard() {
   const snapshot = React.useSyncExternalStore(
     subscribeHistory,
     getHistorySnapshot,
-    () => ({ data: null, error: null })
+    getServerHistorySnapshot
   );
 
   // Kick off the external fetch once (outside React setState-in-effect).
@@ -116,7 +123,7 @@ export default function HistoryDashboard() {
     }
   }, [snapshot.error]);
 
-  const jobs = snapshot.data ?? [];
+  const jobs = snapshot.data ?? EMPTY_JOBS;
   const isLoading = snapshot.data === null;
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
