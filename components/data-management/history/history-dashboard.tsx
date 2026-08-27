@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import ImportHistoryTable from './import-history-table';
@@ -44,51 +44,96 @@ export type HistoryJobItem = ServiceHistoryJobItem;
 /** Static template library count — not transactional history. */
 const AVAILABLE_TEMPLATES_LABEL = '9 Active';
 
-export default function HistoryDashboard() {
-  const [jobs, setJobs] = useState<HistoryJobItem[]>([]);
-  const [selectedJob, setSelectedJob] = useState<HistoryJobItem | null>(null);
-  // Initial true; only cleared after the async load settles (no sync setState in effect).
-  const [isLoading, setIsLoading] = useState(true);
+/**
+ * Module-level cache so React Strict Mode double-mount does not double-fetch,
+ * and so the effect only subscribes to an external async result (no sync setState).
+ */
+let historyCache: {
+  promise: Promise<HistoryJobItem[]> | null;
+  data: HistoryJobItem[] | null;
+  error: string | null;
+} = {
+  promise: null,
+  data: null,
+  error: null,
+};
 
-  const loadHistory = useCallback(async (signal?: { cancelled: boolean }) => {
-    try {
-      const data = await fetchImportHistory();
-      if (signal?.cancelled) return;
-      setJobs(data);
-      setSelectedJob((prev) => {
-        if (prev && data.some((j) => j.id === prev.id)) {
-          return data.find((j) => j.id === prev.id) ?? data[0] ?? null;
-        }
-        return data[0] ?? null;
-      });
-    } catch (error) {
-      if (signal?.cancelled) return;
-      setJobs([]);
-      setSelectedJob(null);
-      toast.error(
+const historyListeners = new Set<() => void>();
+
+function notifyHistoryListeners() {
+  historyListeners.forEach((l) => l());
+}
+
+function subscribeHistory(listener: () => void) {
+  historyListeners.add(listener);
+  return () => {
+    historyListeners.delete(listener);
+  };
+}
+
+function getHistorySnapshot(): {
+  data: HistoryJobItem[] | null;
+  error: string | null;
+} {
+  return { data: historyCache.data, error: historyCache.error };
+}
+
+function ensureHistoryLoad() {
+  if (historyCache.promise) return;
+  historyCache.promise = fetchImportHistory()
+    .then((data) => {
+      historyCache.data = data;
+      historyCache.error = null;
+      notifyHistoryListeners();
+      return data;
+    })
+    .catch((error: unknown) => {
+      historyCache.data = [];
+      historyCache.error =
         error instanceof Error
           ? error.message
-          : 'Failed to load import history.'
-      );
-    } finally {
-      if (!signal?.cancelled) setIsLoading(false);
-    }
+          : 'Failed to load import history.';
+      notifyHistoryListeners();
+      return [] as HistoryJobItem[];
+    });
+}
+
+export default function HistoryDashboard() {
+  const snapshot = React.useSyncExternalStore(
+    subscribeHistory,
+    getHistorySnapshot,
+    () => ({ data: null, error: null })
+  );
+
+  // Kick off the external fetch once (outside React setState-in-effect).
+  useEffect(() => {
+    ensureHistoryLoad();
   }, []);
 
   useEffect(() => {
-    const signal = { cancelled: false };
-    void loadHistory(signal);
-    return () => {
-      signal.cancelled = true;
-    };
-  }, [loadHistory]);
+    if (snapshot.error) {
+      toast.error(snapshot.error);
+    }
+  }, [snapshot.error]);
+
+  const jobs = snapshot.data ?? [];
+  const isLoading = snapshot.data === null;
+
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
+  const selectedJob = useMemo(() => {
+    if (jobs.length === 0) return null;
+    if (selectedJobId) {
+      return jobs.find((j) => j.id === selectedJobId) ?? jobs[0] ?? null;
+    }
+    return jobs[0] ?? null;
+  }, [jobs, selectedJobId]);
 
   const stats = useMemo(() => {
     const totalImports = jobs.filter((j) => j.operation === 'Import').length;
     const totalExports = jobs.filter((j) => j.operation === 'Export').length;
     const successful = jobs.filter((j) => j.status === 'Completed').length;
     const failed = jobs.filter((j) => j.status === 'Failed').length;
-    // AuditLog only records successful commits — queued is not represented.
     const queued = 0;
 
     return [
@@ -194,7 +239,7 @@ export default function HistoryDashboard() {
           <ImportHistoryTable
             jobs={jobs}
             selectedJobId={selectedJob?.id ?? null}
-            onSelectJob={setSelectedJob}
+            onSelectJob={(job) => setSelectedJobId(job.id)}
             isLoading={isLoading}
           />
           <TemplateLibrary />
