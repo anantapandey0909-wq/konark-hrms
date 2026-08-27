@@ -1,20 +1,26 @@
 /**
- * Leave import service — validates rows, resolves employee codes within the
- * authenticated tenant, calculates totalDays via existing calculateLeaveDays,
- * detects duplicates/overlaps, and creates PENDING LeaveRequest records.
+ * Leave import service — preview (read-only) and transactional commit.
+ *
+ * Rules:
+ * - companyId from getTenantPrisma() only
+ * - LeaveType is a Prisma enum (not a tenant table)
+ * - Imported rows are always status PENDING
+ * - totalDays from existing calculateLeaveDays (ignores CSV totalDays for storage)
+ * - Preview never mutates
+ * - Commit is all-or-nothing: any invalid row blocks the entire import
  */
 
 import type { LeaveType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTenantPrisma } from "@/lib/db/prisma-with-tenant";
 import { AppError } from "@/lib/errors/app-error";
-import * as employeeRepo from "@/lib/repositories/employee.repository";
 import * as leaveImportRepo from "@/lib/repositories/leave-import.repository";
 import { calculateLeaveDays } from "@/lib/mappers/leave.mapper";
 import { writeAuditLog } from "@/lib/services/audit.service";
 import {
   leaveImportBatchSchema,
   type LeaveImportBatchInput,
+  type LeaveImportPreviewResult,
   type LeaveImportResult,
   type LeaveImportRowError,
   type LeaveImportRowInput,
@@ -22,45 +28,101 @@ import {
 } from "@/lib/validation/leave-import";
 
 function parseDateOnly(isoDate: string): Date {
-  return new Date(`${isoDate}T00:00:00.000Z`);
+  return new Date(isoDate + "T00:00:00.000Z");
 }
 
-export async function importLeaveRequests(
-  input: LeaveImportBatchInput
-): Promise<LeaveImportResult> {
-  const { companyId, user } = await getTenantPrisma();
-  const parsed = leaveImportBatchSchema.parse(input);
+function dateKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
 
-  if (parsed.rows.length > LEAVE_IMPORT_MAX_ROWS) {
-    throw new AppError(
-      "VALIDATION",
-      `Import is limited to ${LEAVE_IMPORT_MAX_ROWS} rows.`
-    );
-  }
+type Prepared = {
+  row: LeaveImportRowInput;
+  employeeDbId: string;
+  startDate: Date;
+  endDate: Date;
+  appliedOn: Date;
+  totalDays: number;
+  leaveType: LeaveType;
+};
 
-  const companyEmployees = await employeeRepo.findEmployeesByCompany(companyId);
-  const byCode = new Map(
-    companyEmployees.map((e) => [e.employeeCode.toLowerCase(), e])
+function rangesOverlap(
+  aStart: Date,
+  aEnd: Date,
+  bStart: Date,
+  bEnd: Date
+): boolean {
+  return aStart.getTime() <= bEnd.getTime() && aEnd.getTime() >= bStart.getTime();
+}
+
+async function validateLeaveImportBatch(
+  companyId: string,
+  rows: LeaveImportRowInput[]
+): Promise<{
+  prepared: Prepared[];
+  errors: LeaveImportRowError[];
+  duplicateCount: number;
+}> {
+  const codes = rows.map((r) => r.employeeId.trim());
+  const employees = await leaveImportRepo.findEmployeesByCodesForImport(
+    companyId,
+    codes
   );
+  const byCode = new Map(
+    employees.map((e) => [e.employeeCode.toLowerCase(), e])
+  );
+
+  const employeeIds = employees.map((e) => e.id);
+  const existingLeaves =
+    await leaveImportRepo.findActiveLeavesForEmployees(companyId, employeeIds);
+
+  // Group existing leaves by employee for in-memory checks
+  const leavesByEmployee = new Map<
+    string,
+    {
+      leaveType: string;
+      startDate: Date;
+      endDate: Date;
+    }[]
+  >();
+  for (const leave of existingLeaves) {
+    const list = leavesByEmployee.get(leave.employeeId) ?? [];
+    list.push({
+      leaveType: leave.leaveType,
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+    });
+    leavesByEmployee.set(leave.employeeId, list);
+  }
 
   const seenKeys = new Set<string>();
   const errors: LeaveImportRowError[] = [];
+  const prepared: Prepared[] = [];
+  let duplicateCount = 0;
 
-  type Prepared = {
-    row: LeaveImportRowInput;
+  // Track ranges already accepted in this batch (for intra-file overlap)
+  const batchRanges: {
     employeeDbId: string;
+    leaveType: string;
     startDate: Date;
     endDate: Date;
-    appliedOn: Date;
-    totalDays: number;
-    leaveType: LeaveType;
-  };
+  }[] = [];
 
-  const prepared: Prepared[] = [];
-
-  for (const row of parsed.rows) {
+  for (const row of rows) {
     const codeKey = row.employeeId.trim().toLowerCase();
-    const dupKey = `${codeKey}|${row.leaveType}|${row.startDate}|${row.endDate}`;
+    const leaveType = row.leaveType as LeaveType;
+    const startDate = parseDateOnly(row.startDate);
+    const endDate = parseDateOnly(row.endDate);
+    const appliedOn = parseDateOnly(row.appliedOn);
+    const dupKey =
+      codeKey +
+      "|" +
+      leaveType +
+      "|" +
+      row.startDate +
+      "|" +
+      row.endDate;
+
+    let rowFailed = false;
 
     if (seenKeys.has(dupKey)) {
       errors.push({
@@ -68,7 +130,8 @@ export async function importLeaveRequests(
         employeeId: row.employeeId,
         message: "Duplicate leave row within the import file.",
       });
-      continue;
+      duplicateCount++;
+      rowFailed = true;
     }
 
     const employee = byCode.get(codeKey);
@@ -79,12 +142,8 @@ export async function importLeaveRequests(
         field: "employeeId",
         message: "Employee not found in current organization.",
       });
-      continue;
+      rowFailed = true;
     }
-
-    const startDate = parseDateOnly(row.startDate);
-    const endDate = parseDateOnly(row.endDate);
-    const appliedOn = parseDateOnly(row.appliedOn);
 
     if (endDate < startDate) {
       errors.push({
@@ -93,10 +152,13 @@ export async function importLeaveRequests(
         field: "endDate",
         message: "End date cannot be before start date.",
       });
+      rowFailed = true;
+    }
+
+    if (rowFailed || !employee) {
       continue;
     }
 
-    const leaveType = row.leaveType as LeaveType;
     const totalDays = calculateLeaveDays(
       startDate,
       endDate,
@@ -104,32 +166,31 @@ export async function importLeaveRequests(
       leaveType === "HALF_DAY"
     );
 
-    // Exact duplicate (same employee, type, start, end)
-    const exactDup = await leaveImportRepo.findDuplicateLeaveRequests(
-      companyId,
-      employee.id,
-      leaveType,
-      startDate,
-      endDate
+    // Optional CSV totalDays is informational only; system calculation wins.
+    // (No hard failure if CSV days differ — avoids timezone/format friction.)
+
+    const existing = leavesByEmployee.get(employee.id) ?? [];
+    const exactDup = existing.some(
+      (l) =>
+        l.leaveType === leaveType &&
+        dateKey(l.startDate) === row.startDate &&
+        dateKey(l.endDate) === row.endDate
     );
-    if (exactDup.length > 0) {
+    if (exactDup) {
       errors.push({
         rowNumber: row.rowNumber,
         employeeId: row.employeeId,
         message:
           "A leave request already exists for this employee, type, and date range.",
       });
+      duplicateCount++;
       continue;
     }
 
-    // Overlapping pending/approved leave (same rule as leave.service)
-    const overlaps = await leaveImportRepo.findOverlappingForImport(
-      companyId,
-      employee.id,
-      startDate,
-      endDate
+    const dbOverlap = existing.some((l) =>
+      rangesOverlap(startDate, endDate, l.startDate, l.endDate)
     );
-    if (overlaps.length > 0) {
+    if (dbOverlap) {
       errors.push({
         rowNumber: row.rowNumber,
         employeeId: row.employeeId,
@@ -139,7 +200,28 @@ export async function importLeaveRequests(
       continue;
     }
 
+    const fileOverlap = batchRanges.some(
+      (b) =>
+        b.employeeDbId === employee.id &&
+        rangesOverlap(startDate, endDate, b.startDate, b.endDate)
+    );
+    if (fileOverlap) {
+      errors.push({
+        rowNumber: row.rowNumber,
+        employeeId: row.employeeId,
+        message:
+          "This request overlaps another leave row for the same employee in the import file.",
+      });
+      continue;
+    }
+
     seenKeys.add(dupKey);
+    batchRanges.push({
+      employeeDbId: employee.id,
+      leaveType,
+      startDate,
+      endDate,
+    });
     prepared.push({
       row,
       employeeDbId: employee.id,
@@ -151,54 +233,137 @@ export async function importLeaveRequests(
     });
   }
 
-  const importedIds: string[] = [];
+  return { prepared, errors, duplicateCount };
+}
 
-  if (prepared.length > 0) {
-    try {
-      await prisma.$transaction(async (tx) => {
-        for (const item of prepared) {
-          const created = await leaveImportRepo.createLeaveRequestInTx(tx, {
-            leaveType: item.leaveType,
-            startDate: item.startDate,
-            endDate: item.endDate,
-            totalDays: item.totalDays,
-            reason: item.row.reason,
-            appliedOn: item.appliedOn,
-            companyId,
-            employeeId: item.employeeDbId,
-          });
-          importedIds.push(created.id);
-        }
-      });
-    } catch (err) {
-      console.error("[leave-import] transaction failed", err);
-      throw new AppError(
-        "INTERNAL",
-        "Failed to commit leave records. Please try again."
-      );
-    }
+export async function previewLeaveImport(
+  input: LeaveImportBatchInput
+): Promise<LeaveImportPreviewResult> {
+  const { companyId } = await getTenantPrisma();
+  const parsed = leaveImportBatchSchema.parse(input);
 
-    await writeAuditLog({
-      companyId,
-      actorId: user.id,
-      action: "LEAVE_IMPORTED",
-      entity: "LeaveRequest",
-      metadata: {
-        importedCount: importedIds.length,
-        failedCount: errors.length,
-        totalRows: parsed.rows.length,
-        importedIds,
-      },
-    });
+  if (parsed.rows.length > LEAVE_IMPORT_MAX_ROWS) {
+    throw new AppError(
+      "VALIDATION",
+      "Import is limited to " + LEAVE_IMPORT_MAX_ROWS + " rows."
+    );
   }
 
+  const { prepared, errors, duplicateCount } = await validateLeaveImportBatch(
+    companyId,
+    parsed.rows
+  );
+
+  const invalidRowNumbers = new Set(errors.map((e) => e.rowNumber));
+
   return {
-    success: importedIds.length > 0 && errors.length === 0,
-    importedCount: importedIds.length,
-    failedCount: errors.length,
-    skippedCount: errors.length,
     totalRows: parsed.rows.length,
+    validCount: prepared.length,
+    invalidCount: invalidRowNumbers.size,
+    duplicateCount,
+    canCommit: prepared.length > 0 && errors.length === 0,
     errors,
+    validRowNumbers: prepared.map((p) => p.row.rowNumber),
+  };
+}
+
+export async function importLeaveRequests(
+  input: LeaveImportBatchInput
+): Promise<LeaveImportResult> {
+  const { companyId, user } = await getTenantPrisma();
+  const parsed = leaveImportBatchSchema.parse(input);
+
+  if (parsed.rows.length > LEAVE_IMPORT_MAX_ROWS) {
+    throw new AppError(
+      "VALIDATION",
+      "Import is limited to " + LEAVE_IMPORT_MAX_ROWS + " rows."
+    );
+  }
+
+  const { prepared, errors } = await validateLeaveImportBatch(
+    companyId,
+    parsed.rows
+  );
+
+  // All-or-nothing: any invalid row blocks the entire commit.
+  if (errors.length > 0 || prepared.length === 0) {
+    return {
+      success: false,
+      importedCount: 0,
+      failedCount: errors.length || parsed.rows.length,
+      skippedCount: errors.length || parsed.rows.length,
+      totalRows: parsed.rows.length,
+      errors:
+        errors.length > 0
+          ? errors
+          : [
+              {
+                rowNumber: 0,
+                message: "No valid rows to import.",
+              },
+            ],
+      importedIds: [],
+    };
+  }
+
+  if (prepared.length !== parsed.rows.length) {
+    return {
+      success: false,
+      importedCount: 0,
+      failedCount: errors.length,
+      skippedCount: errors.length,
+      totalRows: parsed.rows.length,
+      errors,
+      importedIds: [],
+    };
+  }
+
+  const importedIds: string[] = [];
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const item of prepared) {
+        const created = await leaveImportRepo.createLeaveRequestInTx(tx, {
+          leaveType: item.leaveType,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          totalDays: item.totalDays,
+          reason: item.row.reason,
+          appliedOn: item.appliedOn,
+          companyId,
+          employeeId: item.employeeDbId,
+        });
+        importedIds.push(created.id);
+      }
+    });
+  } catch (err) {
+    console.error("[leave-import] transaction failed", err);
+    throw new AppError(
+      "INTERNAL",
+      "Failed to commit leave import. No rows were imported."
+    );
+  }
+
+  await writeAuditLog({
+    companyId,
+    actorId: user.id,
+    action: "LEAVES_IMPORTED",
+    entity: "LeaveRequest",
+    metadata: {
+      source: "leave_import",
+      importedCount: importedIds.length,
+      totalRows: parsed.rows.length,
+      importedIds: importedIds.slice(0, 50),
+    },
+  });
+
+  return {
+    success: true,
+    importedCount: importedIds.length,
+    failedCount: 0,
+    skippedCount: 0,
+    totalRows: parsed.rows.length,
+    errors: [],
     importedIds,
   };
 }

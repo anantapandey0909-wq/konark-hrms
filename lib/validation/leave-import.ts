@@ -13,6 +13,7 @@ const isoDateSchema = z
  * One normalized import row after client header mapping.
  * employeeId is the human-readable employee code (e.g. EMP-0001).
  * leaveType must resolve to an existing Prisma LeaveType enum value.
+ * Status is not imported — records are always created as PENDING.
  */
 export const leaveImportRowSchema = z
   .object({
@@ -44,7 +45,7 @@ export const leaveImportBatchSchema = z
       .min(1, "At least one row is required")
       .max(
         LEAVE_IMPORT_MAX_ROWS,
-        `Import is limited to ${LEAVE_IMPORT_MAX_ROWS} rows`
+        "Import is limited to " + LEAVE_IMPORT_MAX_ROWS + " rows"
       ),
   })
   .strict();
@@ -66,4 +67,15 @@ export interface LeaveImportResult {
   totalRows: number;
   errors: LeaveImportRowError[];
   importedIds: string[];
+}
+
+/** Read-only server validation result (no mutations). */
+export interface LeaveImportPreviewResult {
+  totalRows: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  canCommit: boolean;
+  errors: LeaveImportRowError[];
+  validRowNumbers: number[];
 }
