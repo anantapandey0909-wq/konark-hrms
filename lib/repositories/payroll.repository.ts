@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PayrollMonth } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
@@ -75,6 +75,48 @@ export async function findPayrollByEmployeePeriod(
       month: month as Prisma.EnumPayrollMonthFilter["equals"],
       year,
     }),
+  });
+}
+
+/**
+ * Batch lookup for import conflict detection (avoids N+1).
+ * companyId is trusted server context only.
+ */
+export async function findPayrollsByEmployeePeriods(
+  companyId: string,
+  employeeIds: string[],
+  months: PayrollMonth[],
+  years: number[]
+) {
+  if (employeeIds.length === 0) return [];
+
+  const uniqueEmployees = Array.from(new Set(employeeIds.filter(Boolean)));
+  const uniqueMonths = Array.from(new Set(months.filter(Boolean)));
+  const uniqueYears = Array.from(new Set(years.filter((y) => Number.isFinite(y))));
+
+  if (
+    uniqueEmployees.length === 0 ||
+    uniqueMonths.length === 0 ||
+    uniqueYears.length === 0
+  ) {
+    return [];
+  }
+
+  const where: Prisma.PayrollWhereInput = {
+    companyId,
+    employeeId: { in: uniqueEmployees },
+    month: { in: uniqueMonths },
+    year: { in: uniqueYears },
+  };
+
+  return prisma.payroll.findMany({
+    where,
+    select: {
+      id: true,
+      employeeId: true,
+      month: true,
+      year: true,
+    },
   });
 }
 
