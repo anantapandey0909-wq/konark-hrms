@@ -43,9 +43,11 @@ function MasterDataImportDashboardInner({
   const {
     canExecute,
     isImporting,
+    isValidating,
     executeImport,
     importResult,
     validCount,
+    invalidCount,
   } = useDepartmentImport();
 
   const isDepartments = selectedType === 'departments';
@@ -105,7 +107,7 @@ function MasterDataImportDashboardInner({
               <span className="font-bold">Registry Consistency</span>
               <p className="leading-relaxed text-[11px] text-indigo-700/90 dark:text-indigo-400/90">
                 {isDepartments
-                  ? 'Department import is create-only. Duplicate department codes are rejected. Other master-data types are not wired in this phase.'
+                  ? 'Department import is create-only and all-or-nothing. Duplicate or existing department codes block the entire commit. Other master-data types are not wired in this phase.'
                   : 'Foundational registers dictate security pathways and UI fields. Department CSV import is available when Departments is selected.'}
               </p>
             </div>
@@ -122,14 +124,18 @@ function MasterDataImportDashboardInner({
               <ShieldAlert className="h-4.5 w-4.5 text-zinc-400 shrink-0 mt-0.5" />
               <div className="leading-normal text-[11px] space-y-1">
                 <p>
-                  {isDepartments
-                    ? 'Valid layout parameters detected. Rows containing error flags can be ignored during structural synchronization writes.'
-                    : 'Select Departments to import CSV master data. Other registry types are not available yet.'}
+                  {!isDepartments
+                    ? 'Select Departments to import CSV master data. Other registry types are not available yet.'
+                    : isValidating
+                      ? 'Validating department codes against the registry…'
+                      : invalidCount > 0
+                        ? 'Fix all invalid rows (or re-upload) before committing. Partial import is disabled.'
+                        : 'All validations must pass before execution. The commit is transactional.'}
                 </p>
                 {isDepartments && importResult && (
                   <p className="font-semibold text-zinc-700 dark:text-zinc-200">
-                    Last run: {importResult.importedCount} imported,{" "}
-                    {importResult.failedCount} failed (of{" "}
+                    Last run: {importResult.importedCount} imported,{' '}
+                    {importResult.failedCount} failed (of{' '}
                     {importResult.totalRows}).
                   </p>
                 )}
@@ -148,14 +154,16 @@ function MasterDataImportDashboardInner({
                   : 'px-4 py-2 bg-indigo-600/50 dark:bg-indigo-500/50 text-white rounded-lg text-xs font-bold shadow-sm cursor-not-allowed select-none shrink-0 inline-flex items-center gap-2'
               }
             >
-              {isImporting && isDepartments && (
+              {isDepartments && (isImporting || isValidating) && (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               )}
-              {isImporting && isDepartments
+              {isDepartments && isImporting
                 ? 'Committing…'
-                : isDepartments && validCount > 0
-                  ? `Commit Master Registry (${validCount})`
-                  : 'Commit Master Registry'}
+                : isDepartments && isValidating
+                  ? 'Validating…'
+                  : isDepartments && validCount > 0 && invalidCount === 0
+                    ? 'Commit Master Registry (' + validCount + ')'
+                    : 'Commit Master Registry'}
             </button>
           </div>
         </div>
