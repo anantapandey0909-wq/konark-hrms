@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireCanImportPayroll } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -35,6 +36,12 @@ function mockPreview(
 export async function previewPayrollImportAction(
   input: PayrollImportBatchInput
 ): Promise<ActionResult<PayrollImportPreviewResult>> {
+  try {
+    await requireCanImportPayroll();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     "[payroll-import] previewPayrollImportAction dataSource=" +
@@ -65,6 +72,12 @@ export async function previewPayrollImportAction(
 export async function importPayrollRecordsAction(
   input: PayrollImportBatchInput
 ): Promise<ActionResult<PayrollImportResult>> {
+  try {
+    await requireCanImportPayroll();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     "[payroll-import] importPayrollRecordsAction dataSource=" +

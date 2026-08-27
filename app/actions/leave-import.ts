@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireCanManageData } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -33,6 +34,12 @@ function mockPreview(input: LeaveImportBatchInput): LeaveImportPreviewResult {
 export async function previewLeaveImportAction(
   input: LeaveImportBatchInput
 ): Promise<ActionResult<LeaveImportPreviewResult>> {
+  try {
+    await requireCanManageData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     "[leave-import] previewLeaveImportAction dataSource=" +
@@ -63,6 +70,12 @@ export async function previewLeaveImportAction(
 export async function importLeaveRequestsAction(
   input: LeaveImportBatchInput
 ): Promise<ActionResult<LeaveImportResult>> {
+  try {
+    await requireCanManageData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     "[leave-import] importLeaveRequestsAction dataSource=" +

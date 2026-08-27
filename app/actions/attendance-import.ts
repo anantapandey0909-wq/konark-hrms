@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireCanManageData } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -35,6 +36,12 @@ function mockPreview(
 export async function previewAttendanceImportAction(
   input: AttendanceImportBatchInput
 ): Promise<ActionResult<AttendanceImportPreviewResult>> {
+  try {
+    await requireCanManageData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     "[attendance-import] previewAttendanceImportAction dataSource=" +
@@ -65,6 +72,12 @@ export async function previewAttendanceImportAction(
 export async function importAttendanceAction(
   input: AttendanceImportBatchInput
 ): Promise<ActionResult<AttendanceImportResult>> {
+  try {
+    await requireCanManageData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     "[attendance-import] importAttendanceAction dataSource=" +

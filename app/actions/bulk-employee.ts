@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireCanManageData } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -59,6 +60,12 @@ function mockPreview(
 export async function previewBulkEmployeesAction(
   input: BulkEmployeeOperationInput
 ): Promise<ActionResult<BulkEmployeePreviewResult>> {
+  try {
+    await requireCanManageData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     if (!input.employeeIds?.length) {
       return {
@@ -80,6 +87,12 @@ export async function previewBulkEmployeesAction(
 export async function executeBulkEmployeesAction(
   input: BulkEmployeeOperationInput
 ): Promise<ActionResult<BulkEmployeeExecuteResult>> {
+  try {
+    await requireCanManageData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     if (!input.employeeIds?.length) {
       return {
