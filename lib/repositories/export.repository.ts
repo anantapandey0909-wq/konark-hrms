@@ -6,7 +6,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
-import type { ExportFilters, ExportModule } from "@/lib/validation/export";
+import type { ExportFilters } from "@/lib/validation/export";
 import { MAX_EXPORT_ROWS } from "@/lib/validation/export";
 
 function dayStart(iso: string): Date {
@@ -258,10 +258,7 @@ export async function fetchReportSnapshot(companyId: string) {
   ];
 }
 
-export async function findExportAuditHistory(
-  companyId: string,
-  take = 25
-) {
+export async function findExportAuditHistory(companyId: string, take = 25) {
   return prisma.auditLog.findMany({
     where: {
       companyId,
@@ -271,27 +268,28 @@ export async function findExportAuditHistory(
     orderBy: { createdAt: "desc" },
     take,
     include: {
-      // actor may not be a relation — check schema; use actorId only if no relation
+      actor: {
+        select: {
+          email: true,
+          userCode: true,
+        },
+      },
     },
   });
 }
 
-export async function findLastExportAt(
-  companyId: string,
-  module: ExportModule
-): Promise<Date | null> {
-  const row = await prisma.auditLog.findFirst({
+export async function findRecentExportAudits(companyId: string, take = 100) {
+  return prisma.auditLog.findMany({
     where: {
       companyId,
       action: "DATA_EXPORTED",
       entity: "Export",
-      metadata: {
-        path: ["module"],
-        equals: module,
-      },
     },
     orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
+    take,
+    select: {
+      createdAt: true,
+      metadata: true,
+    },
   });
-  return row?.createdAt ?? null;
 }
