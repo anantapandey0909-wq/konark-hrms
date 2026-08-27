@@ -2,35 +2,41 @@
 
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Activity, 
-  ArrowDownLeft, 
-  ArrowUpRight, 
-  FileDown, 
-  ShieldAlert, 
-  XCircle,
-  HelpCircle,
-  Clock
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Clock,
 } from 'lucide-react';
+import type { HistoryJobItem } from './history-dashboard';
 
-interface TimelineEvent {
-  title: string;
-  desc: string;
-  time: string;
-  status: string;
-  icon: React.ComponentType<{ className?: string }>;
-  colorClass: string;
+interface ActivityTimelineProps {
+  jobs: HistoryJobItem[];
 }
 
-const timelineEvents: TimelineEvent[] = [
-  { title: 'Attendance logs synchronized', desc: 'Sync compiled 1,420 biometric records successfully.', time: '10m ago', status: 'Success', icon: ArrowDownLeft, colorClass: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/50' },
-  { title: 'Payroll export initialized', desc: 'Financial snapshot requested for ledger analysis.', time: '1h ago', status: 'In Queue', icon: ArrowUpRight, colorClass: 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-100 dark:border-indigo-900/50' },
-  { title: 'Departments schema downloaded', desc: 'Organizational model XLSX file requested.', time: '4h ago', status: 'Bypassed', icon: FileDown, colorClass: 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 border-zinc-150 dark:border-zinc-700/60' },
-  { title: 'Personnel imports failed', desc: 'Strict validation parameters blocked write limits.', time: 'Yesterday', status: 'Aborted', icon: XCircle, colorClass: 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border-rose-100 dark:border-rose-900/50' }
-];
+export default function ActivityTimeline({ jobs }: ActivityTimelineProps) {
+  const events = jobs.slice(0, 8).map((job) => {
+    const isExport = job.operation === 'Export';
+    return {
+      id: job.id,
+      title:
+        job.module +
+        ' ' +
+        (isExport ? 'export' : 'import') +
+        ' completed',
+      desc:
+        job.importedRows > 0
+          ? job.importedRows.toLocaleString() +
+            ' row(s) · ' +
+            job.requestedBy
+          : job.requestedBy,
+      time: job.completedAt,
+      icon: isExport ? ArrowUpRight : ArrowDownLeft,
+      colorClass: isExport
+        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/50'
+        : 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-100 dark:border-indigo-900/50',
+    };
+  });
 
-export default function ActivityTimeline() {
   return (
     <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 shadow-sm overflow-hidden select-none">
       <CardHeader className="p-5 border-b border-zinc-100 dark:border-zinc-800/80">
@@ -41,38 +47,51 @@ export default function ActivityTimeline() {
               Audit Activity Timeline
             </CardTitle>
             <CardDescription className="text-xs text-zinc-500">
-              Chronological log of dynamic platform operations events.
+              Recent import, export, and bulk operations from the audit log.
             </CardDescription>
           </div>
         </div>
       </CardHeader>
       <CardContent className="p-5 space-y-4">
-        {timelineEvents.map((evt, idx) => {
-          const Icon = evt.icon;
-          return (
-            <div key={idx} className="flex space-x-3.5 relative">
-              {idx < timelineEvents.length - 1 && (
-                <div className="absolute top-8 left-4 w-[2px] h-[calc(100%-1rem)] bg-zinc-100 dark:bg-zinc-800 -z-10" />
-              )}
-              
-              <div className={`p-2 rounded-lg border h-8.5 w-8.5 shrink-0 flex items-center justify-center ${evt.colorClass}`}>
-                <Icon className="h-4 w-4" />
-              </div>
+        {events.length === 0 ? (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed py-2">
+            No recent pipeline activity has been recorded yet.
+          </p>
+        ) : (
+          events.map((evt, idx) => {
+            const Icon = evt.icon;
+            return (
+              <div key={evt.id} className="flex space-x-3.5 relative">
+                {idx < events.length - 1 && (
+                  <div className="absolute top-8 left-4 w-[2px] h-[calc(100%-1rem)] bg-zinc-100 dark:bg-zinc-800 -z-10" />
+                )}
 
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-50">
-                    {evt.title}
-                  </h4>
-                  <span className="text-[10px] text-zinc-400 font-mono">{evt.time}</span>
+                <div
+                  className={
+                    'p-2 rounded-lg border h-8.5 w-8.5 shrink-0 flex items-center justify-center ' +
+                    evt.colorClass
+                  }
+                >
+                  <Icon className="h-4 w-4" />
                 </div>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-normal">
-                  {evt.desc}
-                </p>
+
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-50 truncate">
+                      {evt.title}
+                    </h4>
+                    <span className="text-[10px] text-zinc-400 font-mono shrink-0">
+                      {evt.time}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-normal">
+                    {evt.desc}
+                  </p>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </CardContent>
     </Card>
   );
