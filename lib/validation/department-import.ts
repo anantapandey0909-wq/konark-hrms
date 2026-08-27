@@ -71,3 +71,14 @@ export interface DepartmentImportResult {
   errors: DepartmentImportRowError[];
   importedIds: string[];
 }
+
+/** Read-only server validation result (no mutations). */
+export interface DepartmentImportPreviewResult {
+  totalRows: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  canCommit: boolean;
+  errors: DepartmentImportRowError[];
+  validRowNumbers: number[];
+}
