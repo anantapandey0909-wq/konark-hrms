@@ -7,6 +7,12 @@ import { LeaveStatus, type LeaveType, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
+/** PENDING + APPROVED — typed as LeaveStatus[] so Prisma WhereInput accepts it. */
+const ACTIVE_LEAVE_STATUSES: LeaveStatus[] = [
+  LeaveStatus.PENDING,
+  LeaveStatus.APPROVED,
+];
+
 /** Employees in the tenant matching any of the given employee codes. */
 export async function findEmployeesByCodesForImport(
   companyId: string,
@@ -34,10 +40,10 @@ export async function findEmployeesByCodesForImport(
  * Existing PENDING/APPROVED leave for the given employees (batch).
  * Used for in-memory exact-duplicate and overlap checks (avoids N+1).
  *
- * Build LeaveRequestWhereInput directly so `status.in` is typed as LeaveStatus[].
- * Do not pass the enum filter through tenantScope's generic merge (that widens
- * string literals to string). companyId still comes only from the trusted
- * server parameter — never the client.
+ * IMPORTANT: Do not pass `status: { in: ["PENDING", "APPROVED"] }` through
+ * tenantScope's generic merge — string literals widen to `string[]` and fail
+ * Prisma's LeaveRequestWhereInput (expects LeaveStatus[]).
+ * companyId still comes only from the trusted server parameter.
  */
 export async function findActiveLeavesForEmployees(
   companyId: string,
@@ -47,15 +53,10 @@ export async function findActiveLeavesForEmployees(
   const unique = Array.from(new Set(employeeIds.filter(Boolean)));
   if (unique.length === 0) return [];
 
-  const activeStatuses: LeaveStatus[] = [
-    LeaveStatus.PENDING,
-    LeaveStatus.APPROVED,
-  ];
-
   const where: Prisma.LeaveRequestWhereInput = {
     companyId,
     employeeId: { in: unique },
-    status: { in: activeStatuses },
+    status: { in: ACTIVE_LEAVE_STATUSES },
   };
 
   return prisma.leaveRequest.findMany({
@@ -78,18 +79,13 @@ export async function findDuplicateLeaveRequests(
   startDate: Date,
   endDate: Date
 ) {
-  const activeStatuses: LeaveStatus[] = [
-    LeaveStatus.PENDING,
-    LeaveStatus.APPROVED,
-  ];
-
   const where: Prisma.LeaveRequestWhereInput = {
     companyId,
     employeeId,
     leaveType,
     startDate,
     endDate,
-    status: { in: activeStatuses },
+    status: { in: ACTIVE_LEAVE_STATUSES },
   };
 
   return prisma.leaveRequest.findMany({
@@ -103,15 +99,10 @@ export async function findOverlappingForImport(
   startDate: Date,
   endDate: Date
 ) {
-  const activeStatuses: LeaveStatus[] = [
-    LeaveStatus.PENDING,
-    LeaveStatus.APPROVED,
-  ];
-
   const where: Prisma.LeaveRequestWhereInput = {
     companyId,
     employeeId,
-    status: { in: activeStatuses },
+    status: { in: ACTIVE_LEAVE_STATUSES },
     startDate: { lte: endDate },
     endDate: { gte: startDate },
   };
