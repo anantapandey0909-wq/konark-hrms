@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCanManageData } from "@/lib/auth/assert-data-management";
+import { requireCanImportDepartments } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -37,7 +37,7 @@ export async function previewDepartmentImportAction(
   input: DepartmentImportBatchInput
 ): Promise<ActionResult<DepartmentImportPreviewResult>> {
   try {
-    await requireCanManageData();
+    await requireCanImportDepartments();
   } catch (error) {
     return toSafeActionResult(error);
   }
@@ -73,7 +73,7 @@ export async function importDepartmentsAction(
   input: DepartmentImportBatchInput
 ): Promise<ActionResult<DepartmentImportResult>> {
   try {
-    await requireCanManageData();
+    await requireCanImportDepartments();
   } catch (error) {
     return toSafeActionResult(error);
   }
