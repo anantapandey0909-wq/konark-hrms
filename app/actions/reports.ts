@@ -1,5 +1,9 @@
 "use server";
 
+import {
+  assertProductionRealData,
+  requireReportsView,
+} from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import { getReportsDashboard } from "@/lib/services/reports.service";
@@ -47,6 +51,13 @@ function buildMockReportsDashboard(): ReportsDashboardData {
 export async function getReportsDashboardAction(): Promise<
   ActionResult<ReportsDashboardData>
 > {
+  try {
+    await requireReportsView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     `[reports] getReportsDashboardAction dataSource=${real ? "postgres" : "mock"}`
