@@ -37,6 +37,31 @@ const updateEmployeeSchema = createEmployeeSchema.partial();
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 
+/** Manager must exist in-tenant and be ACTIVE. */
+async function assertActiveManager(
+  companyId: string,
+  managerId: string,
+  excludeEmployeeId?: string
+) {
+  if (excludeEmployeeId && managerId === excludeEmployeeId) {
+    throw new AppError("VALIDATION", "Employee cannot manage themselves.");
+  }
+  const manager = await employeeRepo.findEmployeeById(companyId, managerId);
+  if (!manager) {
+    throw new AppError(
+      "VALIDATION",
+      "Manager not found in your organization."
+    );
+  }
+  if (manager.status !== "ACTIVE") {
+    throw new AppError(
+      "VALIDATION",
+      "Manager must be an active employee."
+    );
+  }
+  return manager;
+}
+
 export async function listEmployees(filters?: {
   search?: string;
   departmentId?: string;
@@ -83,16 +108,7 @@ export async function createEmployee(
   }
 
   if (parsed.managerId) {
-    const manager = await employeeRepo.findEmployeeById(
-      companyId,
-      parsed.managerId
-    );
-    if (!manager) {
-      throw new AppError(
-        "VALIDATION",
-        "Manager not found in your organization."
-      );
-    }
+    await assertActiveManager(companyId, parsed.managerId);
   }
 
   const [byCode, byEmail, globalEmail] = await Promise.all([
@@ -203,19 +219,7 @@ export async function updateEmployee(
   }
 
   if (parsed.managerId) {
-    if (parsed.managerId === id) {
-      throw new AppError("VALIDATION", "Employee cannot manage themselves.");
-    }
-    const manager = await employeeRepo.findEmployeeById(
-      companyId,
-      parsed.managerId
-    );
-    if (!manager) {
-      throw new AppError(
-        "VALIDATION",
-        "Manager not found in your organization."
-      );
-    }
+    await assertActiveManager(companyId, parsed.managerId, id);
   }
 
   if (parsed.employeeId && parsed.employeeId !== existing.employeeCode) {
@@ -228,20 +232,30 @@ export async function updateEmployee(
     }
   }
 
-  if (parsed.email && parsed.email.toLowerCase() !== existing.email.toLowerCase()) {
-    const email = parsed.email.toLowerCase();
-    const clash = await employeeRepo.findEmployeeByEmail(companyId, email);
-    if (clash) {
+  const emailChanging =
+    parsed.email !== undefined &&
+    parsed.email.toLowerCase() !== existing.email.toLowerCase();
+  const nextEmail = emailChanging ? parsed.email!.toLowerCase() : null;
+
+  if (nextEmail) {
+    const [empClash, userClash] = await Promise.all([
+      employeeRepo.findEmployeeByEmail(companyId, nextEmail),
+      prisma.user.findFirst({
+        where: {
+          email: { equals: nextEmail, mode: "insensitive" },
+          NOT: { id: existing.userId },
+        },
+      }),
+    ]);
+    if (empClash || userClash) {
       throw new AppError("CONFLICT", "Email is already in use.");
     }
   }
 
-  const updated = await employeeRepo.updateEmployee(companyId, id, {
+  const employeeData = {
     ...(parsed.firstName !== undefined ? { firstName: parsed.firstName } : {}),
     ...(parsed.lastName !== undefined ? { lastName: parsed.lastName } : {}),
-    ...(parsed.email !== undefined
-      ? { email: parsed.email.toLowerCase() }
-      : {}),
+    ...(nextEmail ? { email: nextEmail } : {}),
     ...(parsed.phone !== undefined
       ? { phone: parsed.phone?.trim() || "" }
       : {}),
@@ -274,11 +288,30 @@ export async function updateEmployee(
     ...(parsed.employeeId !== undefined
       ? { employeeCode: parsed.employeeId }
       : {}),
-  });
+  };
 
-  if (!updated) {
-    throw new AppError("NOT_FOUND", "Employee not found.", 404);
-  }
+  const updated = await prisma.$transaction(async (tx) => {
+    // Guard ownership inside the transaction
+    const owned = await tx.employee.findFirst({
+      where: { id, companyId },
+    });
+    if (!owned) {
+      throw new AppError("NOT_FOUND", "Employee not found.", 404);
+    }
+
+    if (nextEmail) {
+      await tx.user.update({
+        where: { id: owned.userId },
+        data: { email: nextEmail },
+      });
+    }
+
+    return tx.employee.update({
+      where: { id },
+      data: employeeData,
+      include: { department: true, manager: true },
+    });
+  });
 
   await writeAuditLog({
     companyId,
@@ -286,6 +319,7 @@ export async function updateEmployee(
     action: "EMPLOYEE_UPDATED",
     entity: "Employee",
     entityId: id,
+    metadata: nextEmail ? { emailUpdated: true } : undefined,
   });
 
   return mapEmployeeToFrontend(updated);
@@ -294,10 +328,32 @@ export async function updateEmployee(
 export async function deactivateEmployee(id: string): Promise<Employee> {
   const { companyId, user } = await getTenantPrisma();
 
-  const updated = await employeeRepo.softDeactivateEmployee(companyId, id);
-  if (!updated) {
+  const existing = await employeeRepo.findEmployeeById(companyId, id);
+  if (!existing) {
     throw new AppError("NOT_FOUND", "Employee not found.", 404);
   }
+
+  // Atomic: TERMINATED employee + linked User cannot authenticate.
+  // AccountStatus.INACTIVE is the existing non-login state (real-auth rejects non-ACTIVE).
+  const updated = await prisma.$transaction(async (tx) => {
+    const owned = await tx.employee.findFirst({
+      where: { id, companyId },
+    });
+    if (!owned) {
+      throw new AppError("NOT_FOUND", "Employee not found.", 404);
+    }
+
+    await tx.user.update({
+      where: { id: owned.userId },
+      data: { accountStatus: "INACTIVE" },
+    });
+
+    return tx.employee.update({
+      where: { id },
+      data: { status: "TERMINATED" },
+      include: { department: true, manager: true },
+    });
+  });
 
   await writeAuditLog({
     companyId,
@@ -305,6 +361,7 @@ export async function deactivateEmployee(id: string): Promise<Employee> {
     action: "EMPLOYEE_DEACTIVATED",
     entity: "Employee",
     entityId: id,
+    metadata: { userAccountStatus: "INACTIVE" },
   });
 
   return mapEmployeeToFrontend(updated);
