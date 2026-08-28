@@ -1,6 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  assertProductionRealData,
+  requireDepartmentsManage,
+  requireDepartmentsView,
+} from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import {
   mockDepartments,
@@ -30,6 +35,13 @@ export type ActionResult<T> =
 export async function listDepartmentsAction(): Promise<
   ActionResult<ResolvedDepartment[]>
 > {
+  try {
+    await requireDepartmentsView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return { success: true, data: mockDepartments };
   }
@@ -44,6 +56,13 @@ export async function listDepartmentsAction(): Promise<
 export async function getDepartmentAction(
   id: string
 ): Promise<ActionResult<ResolvedDepartment>> {
+  try {
+    await requireDepartmentsView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const row = getDepartmentById(id);
     if (!row) {
@@ -62,6 +81,13 @@ export async function getDepartmentAction(
 export async function getDepartmentSummaryAction(): Promise<
   ActionResult<DepartmentSummary>
 > {
+  try {
+    await requireDepartmentsView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return { success: true, data: mockDepartmentSummary };
   }
@@ -76,6 +102,13 @@ export async function getDepartmentSummaryAction(): Promise<
 export async function createDepartmentAction(
   input: DepartmentInput
 ): Promise<ActionResult<Department>> {
+  try {
+    await requireDepartmentsManage();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return {
       success: true,
@@ -108,6 +141,13 @@ export async function updateDepartmentAction(
   id: string,
   input: Partial<DepartmentInput>
 ): Promise<ActionResult<Department>> {
+  try {
+    await requireDepartmentsManage();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = getDepartmentById(id);
     if (!existing) {
@@ -135,6 +175,13 @@ export async function updateDepartmentAction(
 export async function deactivateDepartmentAction(
   id: string
 ): Promise<ActionResult<Department>> {
+  try {
+    await requireDepartmentsManage();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = getDepartmentById(id);
     if (!existing) {
