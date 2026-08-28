@@ -1,6 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  assertProductionRealData,
+  requirePayrollGenerate,
+  requirePayrollView,
+} from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { mockPayrollRecords } from "@/mock/payroll";
 import {
@@ -70,6 +75,13 @@ export async function listPayrollRecordsAction(filters?: {
   departmentId?: string;
   employeeId?: string;
 }): Promise<ActionResult<PayrollRecord[]>> {
+  try {
+    await requirePayrollView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return { success: true, data: filterMock(filters) };
   }
@@ -83,6 +95,13 @@ export async function listPayrollRecordsAction(filters?: {
 export async function getPayrollRecordAction(
   id: string
 ): Promise<ActionResult<PayrollRecord>> {
+  try {
+    await requirePayrollView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const row = mockPayrollRecords.find((r) => r.id === id);
     if (!row) {
@@ -104,6 +123,13 @@ export async function getPayrollRecordAction(
 export async function getPayrollStatsAction(): Promise<
   ActionResult<{ summary: PayrollSummary; stats: PayrollStats }>
 > {
+  try {
+    await requirePayrollView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const statsLib = calculatePayrollStatistics(mockPayrollRecords);
     const summaryLib = calculatePayrollSummary(mockPayrollRecords);
@@ -139,6 +165,13 @@ export async function getPayrollStatsAction(): Promise<
 export async function createPayrollAction(
   input: CreatePayrollInput
 ): Promise<ActionResult<PayrollRecord>> {
+  try {
+    await requirePayrollGenerate();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const id = `pay-mock-${Date.now()}`;
     const mock = filterMock({})[0];
@@ -221,6 +254,13 @@ export async function updatePayrollAction(
   id: string,
   input: UpdatePayrollInput
 ): Promise<ActionResult<PayrollRecord>> {
+  try {
+    await requirePayrollGenerate();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = mockPayrollRecords.find((r) => r.id === id);
     if (!existing) {
