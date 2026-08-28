@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCanManageData } from "@/lib/auth/assert-data-management";
+import { requireCanImportLeave } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -35,7 +35,7 @@ export async function previewLeaveImportAction(
   input: LeaveImportBatchInput
 ): Promise<ActionResult<LeaveImportPreviewResult>> {
   try {
-    await requireCanManageData();
+    await requireCanImportLeave();
   } catch (error) {
     return toSafeActionResult(error);
   }
@@ -71,7 +71,7 @@ export async function importLeaveRequestsAction(
   input: LeaveImportBatchInput
 ): Promise<ActionResult<LeaveImportResult>> {
   try {
-    await requireCanManageData();
+    await requireCanImportLeave();
   } catch (error) {
     return toSafeActionResult(error);
   }
