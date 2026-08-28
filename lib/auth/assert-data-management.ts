@@ -1,74 +1,94 @@
 /**
  * Server-side authorization for Data Management imports and bulk operations.
- * Mirrors Export Center's assertCanExport pattern: deny EMPLOYEE; tighten payroll.
  *
- * Must be called inside server actions / services — never rely on UI alone.
+ * Derives allow/deny from the existing ROLE_PERMISSIONS matrix in
+ * lib/auth/permissions.ts — does not invent new permissions or role lists.
+ *
+ * Must be called inside server actions — never rely on UI alone.
  * Applies in both mock and real-data modes.
  */
 
-import type { AuthRole, AuthUser } from "@/types/auth";
+import type { AuthUser } from "@/types/auth";
 import { requireCurrentUser } from "@/lib/auth/current-user";
+import {
+  getPermissions,
+  type RolePermissions,
+} from "@/lib/auth/permissions";
 import { AppError } from "@/lib/errors/app-error";
 
+export type PermissionCheck = (permissions: RolePermissions) => boolean;
+
 /**
- * Non-employee staff roles that may run general Data Management mutations
- * (employee/leave/attendance/department import, bulk employee ops).
- * Aligns with Export Center: any authenticated role except EMPLOYEE.
+ * Whether the user has the given permission according to ROLE_PERMISSIONS.
+ * Super-admin bypasses the matrix (same as operational override elsewhere).
  */
-const DATA_MANAGEMENT_ROLES: readonly AuthRole[] = [
-  "ADMIN",
-  "HR",
-  "ACCOUNTANT",
-  "MANAGER",
-  "SUPERVISOR",
-];
-
-/** Payroll import — same restriction as Export Center payroll module. */
-const PAYROLL_IMPORT_ROLES: readonly AuthRole[] = [
-  "ADMIN",
-  "HR",
-  "ACCOUNTANT",
-];
-
-export function assertCanManageData(user: AuthUser): void {
-  if (user.isSuperAdmin) return;
-
-  if (user.role === "EMPLOYEE") {
-    throw new AppError(
-      "FORBIDDEN",
-      "Employees cannot use Data Management imports or bulk operations."
-    );
-  }
-
-  if (!DATA_MANAGEMENT_ROLES.includes(user.role)) {
-    throw new AppError(
-      "FORBIDDEN",
-      "You are not authorized to use Data Management operations."
-    );
-  }
+export function hasPermission(
+  user: AuthUser,
+  check: PermissionCheck
+): boolean {
+  if (user.isSuperAdmin) return true;
+  return check(getPermissions(user.role));
 }
 
-export function assertCanImportPayroll(user: AuthUser): void {
-  if (user.isSuperAdmin) return;
-
-  if (!PAYROLL_IMPORT_ROLES.includes(user.role)) {
-    throw new AppError(
-      "FORBIDDEN",
-      "Payroll import requires HR, Accountant, or Admin role."
-    );
-  }
-}
-
-/** Session + role gate for general Data Management mutations/previews. */
-export async function requireCanManageData(): Promise<AuthUser> {
+/**
+ * Require authenticated session + ROLE_PERMISSIONS check.
+ * Throws AppError FORBIDDEN / UnauthenticatedError.
+ */
+export async function requirePermission(
+  check: PermissionCheck,
+  message = "You do not have permission to perform this action."
+): Promise<AuthUser> {
   const user = await requireCurrentUser();
-  assertCanManageData(user);
+  if (!hasPermission(user, check)) {
+    throw new AppError("FORBIDDEN", message);
+  }
   return user;
 }
 
-/** Session + role gate for payroll import preview/commit. */
+/** Employee CSV import — creates employees → employees.create */
+export async function requireCanImportEmployees(): Promise<AuthUser> {
+  return requirePermission(
+    (p) => p.employees.create,
+    "You do not have permission to import employees."
+  );
+}
+
+/** Department CSV import — departments.manage */
+export async function requireCanImportDepartments(): Promise<AuthUser> {
+  return requirePermission(
+    (p) => p.departments.manage,
+    "You do not have permission to import departments."
+  );
+}
+
+/** Leave CSV import (org-wide) — leave.approve (not self-service leave.apply) */
+export async function requireCanImportLeave(): Promise<AuthUser> {
+  return requirePermission(
+    (p) => p.leave.approve,
+    "You do not have permission to import leave requests."
+  );
+}
+
+/** Attendance CSV import — attendance.mark */
+export async function requireCanImportAttendance(): Promise<AuthUser> {
+  return requirePermission(
+    (p) => p.attendance.mark,
+    "You do not have permission to import attendance."
+  );
+}
+
+/** Payroll CSV import — payroll.upload */
 export async function requireCanImportPayroll(): Promise<AuthUser> {
-  const user = await requireCurrentUser();
-  assertCanImportPayroll(user);
-  return user;
+  return requirePermission(
+    (p) => p.payroll.upload,
+    "You do not have permission to import payroll."
+  );
+}
+
+/** Bulk employee mutations (activate/deactivate/transfer/manager) — employees.update */
+export async function requireCanBulkUpdateEmployees(): Promise<AuthUser> {
+  return requirePermission(
+    (p) => p.employees.update,
+    "You do not have permission to run bulk employee operations."
+  );
 }
