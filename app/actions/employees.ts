@@ -1,6 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  assertProductionRealData,
+  requireEmployeesCreate,
+  requireEmployeesDelete,
+  requireEmployeesUpdate,
+  requireEmployeesView,
+} from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { mockEmployees } from "@/mock/employee";
 import {
@@ -65,7 +72,13 @@ export async function listEmployeesAction(filters?: {
   status?: string;
   employmentType?: string;
 }): Promise<ActionResult<Employee[]>> {
-  // Flag evaluated on the SERVER only.
+  try {
+    await requireEmployeesView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return { success: true, data: filterMockEmployees(filters) };
   }
@@ -80,6 +93,13 @@ export async function listEmployeesAction(filters?: {
 export async function getEmployeeAction(
   id: string
 ): Promise<ActionResult<Employee>> {
+  try {
+    await requireEmployeesView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const emp = mockEmployees.find((e) => e.id === id);
     if (!emp) {
@@ -98,6 +118,13 @@ export async function getEmployeeAction(
 export async function createEmployeeAction(
   input: CreateEmployeeInput
 ): Promise<ActionResult<Employee>> {
+  try {
+    await requireEmployeesCreate();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const created: Employee = {
       id: `emp-mock-${Date.now()}`,
@@ -134,6 +161,13 @@ export async function updateEmployeeAction(
   id: string,
   input: UpdateEmployeeInput
 ): Promise<ActionResult<Employee>> {
+  try {
+    await requireEmployeesUpdate();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = mockEmployees.find((e) => e.id === id);
     if (!existing) {
@@ -141,7 +175,11 @@ export async function updateEmployeeAction(
     }
     return {
       success: true,
-      data: { ...existing, ...input, updatedAt: new Date().toISOString() } as Employee,
+      data: {
+        ...existing,
+        ...input,
+        updatedAt: new Date().toISOString(),
+      } as Employee,
     };
   }
   try {
@@ -157,6 +195,13 @@ export async function updateEmployeeAction(
 export async function deactivateEmployeeAction(
   id: string
 ): Promise<ActionResult<Employee>> {
+  try {
+    await requireEmployeesDelete();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = mockEmployees.find((e) => e.id === id);
     if (!existing) {
