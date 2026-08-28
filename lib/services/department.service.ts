@@ -35,6 +35,27 @@ const departmentSchema = z.object({
 
 export type DepartmentInput = z.infer<typeof departmentSchema>;
 
+/** Manager must exist in-tenant and be ACTIVE. */
+async function assertActiveDepartmentManager(
+  companyId: string,
+  managerId: string
+) {
+  const manager = await employeeRepo.findEmployeeById(companyId, managerId);
+  if (!manager) {
+    throw new AppError(
+      "VALIDATION",
+      "Manager not found in your organization."
+    );
+  }
+  if (manager.status !== "ACTIVE") {
+    throw new AppError(
+      "VALIDATION",
+      "Manager must be an active employee."
+    );
+  }
+  return manager;
+}
+
 export async function listDepartments(): Promise<ResolvedDepartment[]> {
   const { companyId } = await getTenantPrisma();
   const rows = await departmentRepo.findDepartmentsByCompany(companyId);
@@ -75,16 +96,7 @@ export async function createDepartment(
   }
 
   if (parsed.managerId) {
-    const manager = await employeeRepo.findEmployeeById(
-      companyId,
-      parsed.managerId
-    );
-    if (!manager) {
-      throw new AppError(
-        "VALIDATION",
-        "Manager not found in your organization."
-      );
-    }
+    await assertActiveDepartmentManager(companyId, parsed.managerId);
   }
 
   const created = await departmentRepo.createDepartment({
@@ -133,16 +145,7 @@ export async function updateDepartment(
   }
 
   if (parsed.managerId) {
-    const manager = await employeeRepo.findEmployeeById(
-      companyId,
-      parsed.managerId
-    );
-    if (!manager) {
-      throw new AppError(
-        "VALIDATION",
-        "Manager not found in your organization."
-      );
-    }
+    await assertActiveDepartmentManager(companyId, parsed.managerId);
   }
 
   const updated = await departmentRepo.updateDepartment(companyId, id, {
