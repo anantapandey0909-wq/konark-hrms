@@ -21,12 +21,13 @@ import {
   type CreateLeaveInput,
   type UpdateLeaveInput,
 } from "@/lib/validation/leave";
+import { getPermissions } from "@/lib/auth/permissions";
 import type {
   LeaveRequest,
   LeaveBalance,
   LeaveStatsSummary,
 } from "@/types/leave";
-import type { AuthRole } from "@/types/auth";
+import type { AuthRole, AuthUser } from "@/types/auth";
 
 const APPROVER_ROLES: readonly AuthRole[] = [
   "ADMIN",
@@ -47,6 +48,15 @@ function assertCanApprove(role: AuthRole) {
       403
     );
   }
+}
+
+/**
+ * Self-service actors (leave.apply without leave.approve) may only act for
+ * their own Employee record. Approvers / super-admin may act on behalf.
+ */
+function canCreateOnBehalf(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  return getPermissions(user.role).leave.approve;
 }
 
 export async function listLeaveRequests(filters?: {
@@ -129,17 +139,46 @@ export async function getLeaveBalance(
 export async function createLeaveRequest(
   input: CreateLeaveInput
 ): Promise<LeaveRequest> {
-  const { companyId, user } = await getTenantPrisma();
+  const { companyId, user, prisma: db } = await getTenantPrisma();
   const parsed = createLeaveSchema.parse(input);
+
+  let targetEmployeeId = parsed.employeeId;
+
+  // Self-service: leave.apply without leave.approve → own employee only
+  if (!canCreateOnBehalf(user)) {
+    const linked = await db.employee.findFirst({
+      where: { companyId, userId: user.id },
+    });
+    if (!linked) {
+      throw new AppError(
+        "VALIDATION",
+        "No employee profile is linked to your account."
+      );
+    }
+    if (targetEmployeeId !== linked.id) {
+      throw new AppError(
+        "FORBIDDEN",
+        "You may only submit leave requests for yourself.",
+        403
+      );
+    }
+    targetEmployeeId = linked.id;
+  }
 
   const employee = await employeeRepo.findEmployeeById(
     companyId,
-    parsed.employeeId
+    targetEmployeeId
   );
   if (!employee) {
     throw new AppError(
       "VALIDATION",
       "Employee not found in your organization."
+    );
+  }
+  if (employee.status !== "ACTIVE") {
+    throw new AppError(
+      "VALIDATION",
+      "Leave can only be created for active employees."
     );
   }
 
@@ -160,7 +199,7 @@ export async function createLeaveRequest(
 
   const overlaps = await leaveRepo.findOverlappingLeaves(
     companyId,
-    parsed.employeeId,
+    targetEmployeeId,
     startDate,
     endDate
   );
@@ -177,7 +216,7 @@ export async function createLeaveRequest(
     const year = startDate.getUTCFullYear();
     const balance = await leaveRepo.findLeaveBalance(
       companyId,
-      parsed.employeeId,
+      targetEmployeeId,
       year
     );
     if (balance && (balance[field] as number) < totalDays) {
@@ -201,7 +240,7 @@ export async function createLeaveRequest(
     status: "PENDING",
     attachment: parsed.attachment ?? null,
     company: { connect: { id: companyId } },
-    employee: { connect: { id: parsed.employeeId } },
+    employee: { connect: { id: targetEmployeeId } },
   });
 
   await writeAuditLog({
@@ -211,7 +250,7 @@ export async function createLeaveRequest(
     entity: "LeaveRequest",
     entityId: created.id,
     metadata: {
-      employeeId: parsed.employeeId,
+      employeeId: targetEmployeeId,
       leaveType: parsed.leaveType,
       totalDays,
     },
@@ -252,7 +291,27 @@ export async function updateLeaveRequest(
   const isHalfDay = leaveType === "HALF_DAY" || parsed.isHalfDay === true;
   const totalDays = calculateLeaveDays(startDate, endDate, leaveType, isHalfDay);
 
-  const employeeId = parsed.employeeId ?? existing.employeeId;
+  let employeeId = existing.employeeId;
+  if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
+    const target = await employeeRepo.findEmployeeById(
+      companyId,
+      parsed.employeeId
+    );
+    if (!target) {
+      throw new AppError(
+        "VALIDATION",
+        "Employee not found in your organization."
+      );
+    }
+    if (target.status !== "ACTIVE") {
+      throw new AppError(
+        "VALIDATION",
+        "Leave can only be assigned to active employees."
+      );
+    }
+    employeeId = parsed.employeeId;
+  }
+
   const overlaps = await leaveRepo.findOverlappingLeaves(
     companyId,
     employeeId,
@@ -268,8 +327,8 @@ export async function updateLeaveRequest(
   }
 
   const updated = await leaveRepo.updateLeaveRequest(companyId, id, {
-    ...(parsed.employeeId
-      ? { employee: { connect: { id: parsed.employeeId } } }
+    ...(employeeId !== existing.employeeId
+      ? { employee: { connect: { id: employeeId } } }
       : {}),
     ...(parsed.leaveType
       ? { leaveType: parsed.leaveType as LeaveType }
