@@ -69,12 +69,14 @@ export async function realLogin(
     throw new Error(GENERIC_AUTH_ERROR);
   }
 
-  // Support transitional seed plaintext until re-seeded with hashes
   let valid = false;
   if (isArgon2Hash(dbUser.password)) {
     valid = await verifyPassword(password, dbUser.password);
+  } else if (process.env.NODE_ENV === "production") {
+    // Fail closed: plaintext / legacy hashes are not accepted in production.
+    valid = false;
   } else {
-    // Legacy plaintext (e.g. manual Studio edit) — upgrade hash on success
+    // Development only — upgrade legacy plaintext to Argon2id on successful match.
     valid = dbUser.password === password;
     if (valid) {
       const upgraded = await hashPassword(password);
