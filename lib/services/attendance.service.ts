@@ -82,6 +82,12 @@ export async function createAttendance(
       "Employee not found in your organization."
     );
   }
+  if (employee.status !== "ACTIVE") {
+    throw new AppError(
+      "VALIDATION",
+      "Attendance can only be created for active employees."
+    );
+  }
 
   const attendanceDate = parseDateOnly(parsed.attendanceDate);
   const existing = await attendanceRepo.findAttendanceByEmployeeDate(
