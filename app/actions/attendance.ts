@@ -2,6 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  assertProductionRealData,
+  requireAttendanceMark,
+  requireAttendanceSelfService,
+  requireAttendanceView,
+} from "@/lib/auth/assert-data-management";
+import {
   listAttendance,
   getAttendance,
   createAttendance,
@@ -29,6 +35,8 @@ export async function listAttendanceAction(filters?: {
   departmentId?: string;
 }): Promise<ActionResult<AttendanceWithEmployee[]>> {
   try {
+    await requireAttendanceView();
+    assertProductionRealData();
     const data = await listAttendance(filters);
     return { success: true, data };
   } catch (error) {
@@ -40,6 +48,8 @@ export async function getAttendanceAction(
   id: string
 ): Promise<ActionResult<AttendanceWithEmployee>> {
   try {
+    await requireAttendanceView();
+    assertProductionRealData();
     const data = await getAttendance(id);
     return { success: true, data };
   } catch (error) {
@@ -51,6 +61,8 @@ export async function createAttendanceAction(
   input: CreateAttendanceInput
 ): Promise<ActionResult<AttendanceWithEmployee>> {
   try {
+    await requireAttendanceMark();
+    assertProductionRealData();
     const data = await createAttendance(input);
     revalidatePath("/dashboard/attendance");
     return { success: true, data };
@@ -64,6 +76,8 @@ export async function updateAttendanceAction(
   input: UpdateAttendanceInput
 ): Promise<ActionResult<AttendanceWithEmployee>> {
   try {
+    await requireAttendanceMark();
+    assertProductionRealData();
     const data = await updateAttendance(id, input);
     revalidatePath("/dashboard/attendance");
     revalidatePath(`/dashboard/attendance/${id}`);
@@ -78,6 +92,8 @@ export async function checkInAction(options?: {
   location?: string | null;
 }): Promise<ActionResult<AttendanceWithEmployee>> {
   try {
+    await requireAttendanceSelfService();
+    assertProductionRealData();
     const data = await checkIn(options);
     revalidatePath("/dashboard/attendance");
     revalidatePath("/dashboard/employee/attendance");
@@ -91,6 +107,8 @@ export async function checkOutAction(): Promise<
   ActionResult<AttendanceWithEmployee>
 > {
   try {
+    await requireAttendanceSelfService();
+    assertProductionRealData();
     const data = await checkOut();
     revalidatePath("/dashboard/attendance");
     revalidatePath("/dashboard/employee/attendance");
