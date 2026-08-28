@@ -1,6 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  assertProductionRealData,
+  requireLeaveApply,
+  requireLeaveApprove,
+  requireLeaveView,
+} from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { mockLeaveRequests, mockLeaveBalances } from "@/mock/leave";
 import {
@@ -95,12 +101,16 @@ export async function listLeaveRequestsAction(filters?: {
   employeeId?: string;
   departmentId?: string;
 }): Promise<ActionResult<LeaveRequest[]>> {
+  try {
+    await requireLeaveView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
-  // Visible in the `next dev` terminal — proves which branch runs.
   console.info(
-    `[leave] listLeaveRequestsAction dataSource=${real ? "postgres" : "mock"} NEXT_PUBLIC_USE_REAL_DATA=${String(
-      process.env.NEXT_PUBLIC_USE_REAL_DATA ?? "(unset)"
-    )}`
+    `[leave] listLeaveRequestsAction dataSource=${real ? "postgres" : "mock"}`
   );
 
   if (!real) {
@@ -116,6 +126,13 @@ export async function listLeaveRequestsAction(filters?: {
 export async function getLeaveRequestAction(
   id: string
 ): Promise<ActionResult<LeaveRequest>> {
+  try {
+    await requireLeaveView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const row = mockLeaveRequests.find((r) => r.id === id);
     if (!row) {
@@ -133,6 +150,13 @@ export async function getLeaveRequestAction(
 export async function getLeaveStatsAction(): Promise<
   ActionResult<LeaveStatsSummary>
 > {
+  try {
+    await requireLeaveView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return { success: true, data: mockStats() };
   }
@@ -146,6 +170,13 @@ export async function getLeaveStatsAction(): Promise<
 export async function getLeaveBalanceAction(
   employeeId: string
 ): Promise<ActionResult<LeaveBalance>> {
+  try {
+    await requireLeaveView();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const row = mockLeaveBalances.find((b) => b.employeeId === employeeId);
     if (!row) {
@@ -167,6 +198,13 @@ export async function getLeaveBalanceAction(
 export async function createLeaveRequestAction(
   input: CreateLeaveInput
 ): Promise<ActionResult<LeaveRequest>> {
+  try {
+    await requireLeaveApply();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   const real = isRealDataEnabled();
   console.info(
     `[leave] createLeaveRequestAction dataSource=${real ? "postgres" : "mock"}`
@@ -206,6 +244,13 @@ export async function updateLeaveRequestAction(
   id: string,
   input: UpdateLeaveInput
 ): Promise<ActionResult<LeaveRequest>> {
+  try {
+    await requireLeaveApply();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
@@ -236,6 +281,13 @@ export async function approveLeaveRequestAction(
   id: string,
   remarks?: string | null
 ): Promise<ActionResult<LeaveRequest>> {
+  try {
+    await requireLeaveApprove();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
@@ -265,6 +317,13 @@ export async function rejectLeaveRequestAction(
   id: string,
   remarks?: string | null
 ): Promise<ActionResult<LeaveRequest>> {
+  try {
+    await requireLeaveApprove();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
@@ -293,6 +352,13 @@ export async function rejectLeaveRequestAction(
 export async function cancelLeaveRequestAction(
   id: string
 ): Promise<ActionResult<LeaveRequest>> {
+  try {
+    await requireLeaveApply();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
