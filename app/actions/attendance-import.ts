@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCanManageData } from "@/lib/auth/assert-data-management";
+import { requireCanImportAttendance } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -37,7 +37,7 @@ export async function previewAttendanceImportAction(
   input: AttendanceImportBatchInput
 ): Promise<ActionResult<AttendanceImportPreviewResult>> {
   try {
-    await requireCanManageData();
+    await requireCanImportAttendance();
   } catch (error) {
     return toSafeActionResult(error);
   }
@@ -73,7 +73,7 @@ export async function importAttendanceAction(
   input: AttendanceImportBatchInput
 ): Promise<ActionResult<AttendanceImportResult>> {
   try {
-    await requireCanManageData();
+    await requireCanImportAttendance();
   } catch (error) {
     return toSafeActionResult(error);
   }
@@ -104,7 +104,6 @@ export async function importAttendanceAction(
 
   try {
     const data = await importAttendance(input);
-    // Only revalidate when something was actually written.
     if (data.success && data.importedCount > 0) {
       revalidatePath("/dashboard/attendance");
       revalidatePath("/dashboard/data-management/attendance-import");
