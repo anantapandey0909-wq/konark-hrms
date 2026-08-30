@@ -1,9 +1,9 @@
 /**
  * Payroll service — business rules, tenant isolation, audit.
  *
- * Salary arithmetic is always derived from the line items that are stored.
- * Pay period dates are always derived from month + year on create
- * (client-supplied period dates are not authoritative).
+ * Salary arithmetic is always derived server-side from basic salary
+ * via default allowance/deduction line items (client line amounts are not trusted).
+ * Pay period dates are always derived from month + year on create.
  */
 
 import type { Prisma, PayrollMonth, PayrollStatus } from "@prisma/client";
@@ -21,17 +21,15 @@ import {
 } from "@/lib/validation/payroll";
 import { payPeriodBounds } from "@/lib/payroll/formatters";
 import {
-  defaultAllowances,
-  defaultDeductions,
   resolveSalaryComponents,
   generatePayrollNumber,
 } from "@/lib/payroll/salary-defaults";
+import { getPermissions } from "@/lib/auth/permissions";
+import type { AuthUser } from "@/types/auth";
 import type {
   PayrollRecord,
   PayrollSummary,
   PayrollStats,
-  PayrollAllowance,
-  PayrollDeduction,
   PayrollAttendanceSummary,
   PayrollLeaveSummary,
 } from "@/types/payroll";
@@ -63,6 +61,34 @@ function defaultLeave(): PayrollLeaveSummary {
 
 const PAID_IMMUTABLE = new Set(["PAID"]);
 
+/** Organization-level payroll access (not self-service only). */
+function hasOrgPayrollAccess(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  const p = getPermissions(user.role);
+  return p.payroll.generate || p.payroll.approve || p.payroll.upload;
+}
+
+function canApprovePayroll(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  return getPermissions(user.role).payroll.approve;
+}
+
+/**
+ * Resolve the authenticated user's linked Employee id within the tenant.
+ * Returns null if no employee profile is linked.
+ */
+async function resolveSessionEmployeeId(
+  companyId: string,
+  userId: string
+): Promise<string | null> {
+  const { prisma } = await getTenantPrisma();
+  const linked = await prisma.employee.findFirst({
+    where: { companyId, userId },
+    select: { id: true },
+  });
+  return linked?.id ?? null;
+}
+
 export async function listPayrollRecords(filters?: {
   search?: string;
   status?: string;
@@ -71,17 +97,38 @@ export async function listPayrollRecords(filters?: {
   departmentId?: string;
   employeeId?: string;
 }): Promise<PayrollRecord[]> {
-  const { companyId } = await getTenantPrisma();
-  const rows = await payrollRepo.findPayrollsByCompany(companyId, filters ?? {});
+  const { companyId, user } = await getTenantPrisma();
+
+  const scopedFilters = { ...(filters ?? {}) };
+
+  if (!hasOrgPayrollAccess(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return [];
+    }
+    // Force self-scope; ignore client employeeId for enumeration.
+    scopedFilters.employeeId = ownId;
+  }
+
+  const rows = await payrollRepo.findPayrollsByCompany(companyId, scopedFilters);
   return rows.map(mapPayrollToFrontend);
 }
 
 export async function getPayrollRecord(id: string): Promise<PayrollRecord> {
-  const { companyId } = await getTenantPrisma();
+  const { companyId, user } = await getTenantPrisma();
   const row = await payrollRepo.findPayrollById(companyId, id);
   if (!row) {
     throw new AppError("NOT_FOUND", "Payroll record not found.", 404);
   }
+
+  if (!hasOrgPayrollAccess(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId || row.employeeId !== ownId) {
+      // Same surface as missing record — avoid existence leaks.
+      throw new AppError("NOT_FOUND", "Payroll record not found.", 404);
+    }
+  }
+
   return mapPayrollToFrontend(row);
 }
 
@@ -89,7 +136,68 @@ export async function getPayrollDashboardStats(): Promise<{
   summary: PayrollSummary;
   stats: PayrollStats;
 }> {
-  const { companyId } = await getTenantPrisma();
+  const { companyId, user } = await getTenantPrisma();
+
+  // Self-service: stats only for own records
+  if (!hasOrgPayrollAccess(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return {
+        summary: {
+          totalPayrollRecords: 0,
+          totalEmployees: 0,
+          paidPayroll: 0,
+          pendingPayroll: 0,
+          approvedPayroll: 0,
+          draftPayroll: 0,
+        },
+        stats: {
+          employeeCount: 0,
+          totalGrossSalary: 0,
+          totalNetSalary: 0,
+          totalAllowances: 0,
+          totalDeductions: 0,
+          averageNetSalary: 0,
+        },
+      };
+    }
+    const rows = await payrollRepo.findPayrollsByCompany(companyId, {
+      employeeId: ownId,
+    });
+    const byStatus: Record<string, number> = {};
+    let totalGross = 0;
+    let totalNet = 0;
+    let totalAll = 0;
+    let totalDed = 0;
+    for (const r of rows) {
+      byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+      totalGross += r.grossSalary;
+      totalNet += r.netSalary;
+      totalAll += r.totalAllowances;
+      totalDed += r.totalDeductions;
+    }
+    const total = rows.length;
+    return {
+      summary: {
+        totalPayrollRecords: total,
+        totalEmployees: total > 0 ? 1 : 0,
+        paidPayroll: byStatus.PAID ?? 0,
+        pendingPayroll: byStatus.PENDING ?? 0,
+        approvedPayroll: byStatus.APPROVED ?? 0,
+        draftPayroll: byStatus.DRAFT ?? 0,
+      },
+      stats: {
+        employeeCount: total > 0 ? 1 : 0,
+        totalGrossSalary: totalGross,
+        totalNetSalary: totalNet,
+        totalAllowances: totalAll,
+        totalDeductions: totalDed,
+        averageNetSalary:
+          total > 0 ? Math.round((totalNet / total) * 100) / 100 : 0,
+      },
+    };
+  }
+
   const [groups, agg] = await Promise.all([
     payrollRepo.countPayrollsByStatus(companyId),
     payrollRepo.aggregatePayrollAmounts(companyId),
@@ -138,6 +246,12 @@ export async function createPayrollRecord(
       "Employee not found in your organization."
     );
   }
+  if (employee.status !== "ACTIVE") {
+    throw new AppError(
+      "VALIDATION",
+      "Payroll can only be created for active employees."
+    );
+  }
 
   const duplicate = await payrollRepo.findPayrollByEmployeePeriod(
     companyId,
@@ -152,16 +266,37 @@ export async function createPayrollRecord(
     );
   }
 
-  // Authoritative period: always from month + year (ignore mismatched client dates).
+  // Create must start as DRAFT unless caller may approve (still no PAID on create).
+  let status = (parsed.status ?? "DRAFT") as PayrollStatus;
+  if (status === "APPROVED" || status === "PAID") {
+    if (!canApprovePayroll(user)) {
+      throw new AppError(
+        "FORBIDDEN",
+        "You do not have permission to create payroll in an approved or paid status.",
+        403
+      );
+    }
+  }
+  if (status === "PAID" && !canApprovePayroll(user)) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to mark payroll as paid.",
+      403
+    );
+  }
+  // Users with generate but not approve cannot create as APPROVED/PAID
+  if ((status === "APPROVED" || status === "PAID") && !canApprovePayroll(user)) {
+    status = "DRAFT";
+  }
+
+  // Authoritative period: always from month + year.
   const bounds = payPeriodBounds(parsed.month, parsed.year);
   const start = parseDateOnly(bounds.startIso);
   const end = parseDateOnly(bounds.endIso);
 
   const basic = parsed.basicSalary;
-  const salary = resolveSalaryComponents(basic, {
-    allowances: parsed.allowances,
-    deductions: parsed.deductions,
-  });
+  // Server-authoritative line items — ignore client allowance/deduction arrays.
+  const salary = resolveSalaryComponents(basic);
 
   const attendanceSummary = parsed.attendanceSummary ?? defaultAttendance();
   const leaveSummary = parsed.leaveSummary ?? defaultLeave();
@@ -173,8 +308,6 @@ export async function createPayrollRecord(
     parsed.month,
     employee.employeeCode
   );
-
-  const status = (parsed.status ?? "DRAFT") as PayrollStatus;
 
   const created = await payrollRepo.createPayroll({
     payrollNumber,
@@ -265,35 +398,34 @@ export async function updatePayrollRecord(
     );
   }
 
+  // Approval / paid transitions require payroll.approve
+  if (
+    nextStatus === "APPROVED" &&
+    existing.status !== "APPROVED" &&
+    !canApprovePayroll(user)
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to approve payroll.",
+      403
+    );
+  }
+  if (
+    nextStatus === "PAID" &&
+    existing.status !== "PAID" &&
+    !canApprovePayroll(user)
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to mark payroll as paid.",
+      403
+    );
+  }
+
   const basic = parsed.basicSalary ?? existing.basicSalary;
 
-  let allowancesOpt: PayrollAllowance[] | undefined = parsed.allowances;
-  let deductionsOpt: PayrollDeduction[] | undefined = parsed.deductions;
-
-  if (!allowancesOpt && parsed.basicSalary !== undefined) {
-    allowancesOpt = defaultAllowances(basic);
-  }
-  if (!deductionsOpt && parsed.basicSalary !== undefined) {
-    deductionsOpt = defaultDeductions(basic);
-  }
-
-  if (!allowancesOpt) {
-    const existingAll = existing.allowances;
-    if (Array.isArray(existingAll) && existingAll.length > 0) {
-      allowancesOpt = existingAll as unknown as PayrollAllowance[];
-    }
-  }
-  if (!deductionsOpt) {
-    const existingDed = existing.deductions;
-    if (Array.isArray(existingDed) && existingDed.length > 0) {
-      deductionsOpt = existingDed as unknown as PayrollDeduction[];
-    }
-  }
-
-  const salary = resolveSalaryComponents(basic, {
-    allowances: allowancesOpt,
-    deductions: deductionsOpt,
-  });
+  // Server-authoritative line items from basic; never trust client arrays.
+  const salary = resolveSalaryComponents(basic);
 
   const data: Prisma.PayrollUpdateInput = {
     status: nextStatus,
@@ -307,7 +439,6 @@ export async function updatePayrollRecord(
     deductions: salary.deductions as unknown as Prisma.InputJsonValue,
   };
 
-  // Keep period aligned with stored month/year (month/year are not mutable on update).
   if (parsed.payPeriodStart !== undefined || parsed.payPeriodEnd !== undefined) {
     const bounds = payPeriodBounds(existing.month, existing.year);
     data.payPeriodStart = parseDateOnly(bounds.startIso);
