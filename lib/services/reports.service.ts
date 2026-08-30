@@ -1,14 +1,29 @@
 /**
  * Reports service — read-only aggregations for the Reports dashboard.
  * All data is tenant-scoped via getTenantPrisma(); never trusts client companyId.
+ *
+ * Payroll compensation metrics are included only when the actor has payroll.view
+ * (or super-admin). Roles with reports.view alone (e.g. SUPERVISOR) receive
+ * workforce/attendance/leave metrics without salary figures.
  */
 
 import { getTenantPrisma } from "@/lib/db/prisma-with-tenant";
+import { getPermissions } from "@/lib/auth/permissions";
+import type { AuthUser } from "@/types/auth";
 import * as reportsRepo from "@/lib/repositories/reports.repository";
-import type { EmployeeStats, DepartmentDistribution, StatusDistribution, EmploymentTypeDistribution, RecentHireMetric } from "@/lib/reports/employee-metrics";
+import type {
+  EmployeeStats,
+  DepartmentDistribution,
+  StatusDistribution,
+  EmploymentTypeDistribution,
+  RecentHireMetric,
+} from "@/lib/reports/employee-metrics";
 import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import type { LeaveMetrics } from "@/types/report-metrics";
-import type { DepartmentPayrollMetric, MonthlyPayrollTrend } from "@/lib/reports/payroll-metrics";
+import type {
+  DepartmentPayrollMetric,
+  MonthlyPayrollTrend,
+} from "@/lib/reports/payroll-metrics";
 import type { PayrollStats, PayrollSummary } from "@/types/payroll";
 import type { EmployeeStatus, EmploymentType } from "@/types/employee";
 
@@ -20,14 +35,25 @@ export interface ReportsDashboardData {
   recentHires: RecentHireMetric[];
   attendanceMetrics: AttendanceMetrics;
   leaveMetrics: LeaveMetrics;
-  payrollStats: PayrollStats;
-  payrollSummary: PayrollSummary;
+  /** Null when the actor lacks payroll.view (server-enforced). */
+  payrollStats: PayrollStats | null;
+  /** Null when the actor lacks payroll.view (server-enforced). */
+  payrollSummary: PayrollSummary | null;
+  /** Empty when the actor lacks payroll.view (server-enforced). */
   departmentPayrollMetrics: DepartmentPayrollMetric[];
+  /** Empty when the actor lacks payroll.view (server-enforced). */
   monthlyPayrollTrend: MonthlyPayrollTrend[];
+  /** Whether compensation metrics were included for this actor. */
+  includePayrollMetrics: boolean;
+}
+
+function canViewPayrollMetrics(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  const p = getPermissions(user.role);
+  return p.payroll.view || p.payroll.generate || p.payroll.approve || p.payroll.upload;
 }
 
 function mapEmployeeStatus(dbStatus: string): EmployeeStatus {
-  // Prisma uses RESIGNED; frontend contract uses INACTIVE.
   if (dbStatus === "RESIGNED") return "INACTIVE";
   if (
     dbStatus === "ACTIVE" ||
@@ -41,7 +67,8 @@ function mapEmployeeStatus(dbStatus: string): EmployeeStatus {
 }
 
 export async function getReportsDashboard(): Promise<ReportsDashboardData> {
-  const { companyId } = await getTenantPrisma();
+  const { companyId, user } = await getTenantPrisma();
+  const includePayroll = canViewPayrollMetrics(user);
 
   const [
     totalEmployees,
@@ -69,10 +96,18 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
     reportsRepo.aggregateAttendanceHours(companyId),
     reportsRepo.countRegularizedAttendance(companyId),
     reportsRepo.groupLeaveByStatus(companyId),
-    reportsRepo.aggregatePayrollAmounts(companyId),
-    reportsRepo.sumNetSalaryByPayrollStatus(companyId),
-    reportsRepo.distinctPayrollEmployeeCount(companyId),
-    reportsRepo.listPayrollForTrends(companyId),
+    includePayroll
+      ? reportsRepo.aggregatePayrollAmounts(companyId)
+      : Promise.resolve(null),
+    includePayroll
+      ? reportsRepo.sumNetSalaryByPayrollStatus(companyId)
+      : Promise.resolve(null),
+    includePayroll
+      ? reportsRepo.distinctPayrollEmployeeCount(companyId)
+      : Promise.resolve(0),
+    includePayroll
+      ? reportsRepo.listPayrollForTrends(companyId)
+      : Promise.resolve([]),
   ]);
 
   const statusCount: Record<string, number> = {};
@@ -163,13 +198,31 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
     cancelledRequests: leaveStatus.CANCELLED ?? 0,
   };
 
+  if (!includePayroll || !payrollAmountAgg || !payrollStatusSums) {
+    return {
+      employeeStats,
+      departmentDistribution,
+      statusDistribution,
+      employmentTypeDistribution,
+      recentHires,
+      attendanceMetrics,
+      leaveMetrics,
+      payrollStats: null,
+      payrollSummary: null,
+      departmentPayrollMetrics: [],
+      monthlyPayrollTrend: [],
+      includePayrollMetrics: false,
+    };
+  }
+
   const payrollStats: PayrollStats = {
     employeeCount: payrollEmployeeCount,
     totalGrossSalary: payrollAmountAgg._sum.grossSalary ?? 0,
     totalNetSalary: payrollAmountAgg._sum.netSalary ?? 0,
     totalAllowances: payrollAmountAgg._sum.totalAllowances ?? 0,
     totalDeductions: payrollAmountAgg._sum.totalDeductions ?? 0,
-    averageNetSalary: Math.round((payrollAmountAgg._avg.netSalary ?? 0) * 100) / 100,
+    averageNetSalary:
+      Math.round((payrollAmountAgg._avg.netSalary ?? 0) * 100) / 100,
   };
 
   const payrollSummary: PayrollSummary = {
@@ -199,7 +252,6 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
     }
   }
 
-  // Department payroll metrics
   const deptNameById = new Map(
     departments.map((d) => [d.id, d.departmentName] as const)
   );
@@ -215,9 +267,7 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
       deptPayrollMap.set(deptId, {
         departmentId: deptId,
         departmentName:
-          row.departmentName ??
-          deptNameById.get(deptId) ??
-          "Unassigned",
+          row.departmentName ?? deptNameById.get(deptId) ?? "Unassigned",
         totalGross: row.grossSalary,
         totalNet: row.netSalary,
         recordCount: 1,
@@ -226,7 +276,6 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
   }
   const departmentPayrollMetrics = Array.from(deptPayrollMap.values());
 
-  // Monthly trend
   const trendMap = new Map<string, MonthlyPayrollTrend>();
   for (const row of payrollTrendRows) {
     const key = `${row.year}-${row.month}`;
@@ -276,5 +325,6 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
     payrollSummary,
     departmentPayrollMetrics,
     monthlyPayrollTrend,
+    includePayrollMetrics: true,
   };
 }
