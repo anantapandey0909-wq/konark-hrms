@@ -30,6 +30,7 @@ interface ReportsDashboardProps {
 
 export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
   const empStats = data.employeeStats;
+  const showPayroll = data.includePayrollMetrics;
   const payrollStats = data.payrollStats;
   const payrollSummary = data.payrollSummary;
   const recentHires = data.recentHires;
@@ -70,8 +71,8 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
           Reports & Analytics
         </h1>
         <p className="text-muted-foreground">
-          Real-time organizational insights, employee demographics, and strategic
-          payroll summaries.
+          Real-time organizational insights, employee demographics
+          {showPayroll ? ", and strategic payroll summaries" : ""}.
         </p>
       </div>
 
@@ -98,143 +99,153 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
           </Card>
         </motion.div>
 
-        <motion.div variants={itemVariants}>
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Monthly Payroll Cost
-              </CardTitle>
-              <IndianRupee className="h-4 w-4 text-emerald-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatINR(payrollStats.totalGrossSalary)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {formatINR(payrollSummary.paidPayroll)} processed successfully
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
+        {showPayroll && payrollStats && payrollSummary && (
+          <>
+            <motion.div variants={itemVariants}>
+              <Card className="hover:shadow-md transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Monthly Payroll Cost
+                  </CardTitle>
+                  <IndianRupee className="h-4 w-4 text-emerald-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {formatINR(payrollStats.totalGrossSalary)}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatINR(payrollSummary.paidPayroll)} processed successfully
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
 
-        <motion.div variants={itemVariants}>
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Average Compensation
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatINR(payrollStats.averageNetSalary)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Net average salary across all active divisions
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
+            <motion.div variants={itemVariants}>
+              <Card className="hover:shadow-md transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Average Compensation
+                  </CardTitle>
+                  <TrendingUp className="h-4 w-4 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {formatINR(payrollStats.averageNetSalary)}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Net average salary across all active divisions
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
 
-        <motion.div variants={itemVariants}>
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Payroll Operations
-              </CardTitle>
-              <CreditCard className="h-4 w-4 text-violet-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {payrollSummary.totalPayrollRecords}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Active statements generated this period
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
+            <motion.div variants={itemVariants}>
+              <Card className="hover:shadow-md transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Payroll Operations
+                  </CardTitle>
+                  <CreditCard className="h-4 w-4 text-violet-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {payrollSummary.totalPayrollRecords}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Active statements generated this period
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </>
+        )}
       </motion.div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="lg:col-span-4">
-          <CardHeader>
-            <CardTitle>Monthly Payroll Trend</CardTitle>
-            <CardDescription>
-              Aggregate financial commitment across fiscal months.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {payrollTrend.length === 0 && (
-              <p className="text-sm text-muted-foreground">No payroll trend data.</p>
-            )}
-            {payrollTrend.map((trend) => {
-              const maxGross =
-                Math.max(...payrollTrend.map((t) => t.totalGross), 1) || 1;
-              const percentage = (trend.totalGross / maxGross) * 100;
-              return (
-                <div key={`${trend.year}-${trend.month}`} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-foreground">
-                      {trend.month} {trend.year}
-                    </span>
-                    <span className="text-muted-foreground font-semibold">
-                      {formatINR(trend.totalGross)}{" "}
-                      <span className="text-xs">({trend.recordCount} records)</span>
-                    </span>
+      {showPayroll && (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
+          <Card className="lg:col-span-4">
+            <CardHeader>
+              <CardTitle>Monthly Payroll Trend</CardTitle>
+              <CardDescription>
+                Aggregate financial commitment across fiscal months.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {payrollTrend.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No payroll trend data.
+                </p>
+              )}
+              {payrollTrend.map((trend) => {
+                const maxGross =
+                  Math.max(...payrollTrend.map((t) => t.totalGross), 1) || 1;
+                const percentage = (trend.totalGross / maxGross) * 100;
+                return (
+                  <div key={`${trend.year}-${trend.month}`} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-foreground">
+                        {trend.month} {trend.year}
+                      </span>
+                      <span className="text-muted-foreground font-semibold">
+                        {formatINR(trend.totalGross)}{" "}
+                        <span className="text-xs">
+                          ({trend.recordCount} records)
+                        </span>
+                      </span>
+                    </div>
+                    <Progress
+                      value={percentage}
+                      className="h-2 bg-muted [&>div]:bg-emerald-500"
+                    />
                   </div>
-                  <Progress
-                    value={percentage}
-                    className="h-2 bg-muted [&>div]:bg-emerald-500"
-                  />
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
+                );
+              })}
+            </CardContent>
+          </Card>
 
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Department Allocation</CardTitle>
-            <CardDescription>
-              Employee count and payroll cost distributed by business unit.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {deptPayrollMetrics.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                No department payroll data.
-              </p>
-            )}
-            {deptPayrollMetrics.map((dept) => {
-              const headCount =
-                deptDistribution.find((d) => d.departmentId === dept.departmentId)
-                  ?.count ?? 0;
-              return (
-                <div
-                  key={dept.departmentId}
-                  className="flex flex-col gap-2 p-3 rounded-lg border bg-muted/25"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-sm text-foreground">
-                      {dept.departmentName}
-                    </span>
-                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                      {headCount} FTEs
-                    </span>
+          <Card className="lg:col-span-3">
+            <CardHeader>
+              <CardTitle>Department Allocation</CardTitle>
+              <CardDescription>
+                Employee count and payroll cost distributed by business unit.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {deptPayrollMetrics.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No department payroll data.
+                </p>
+              )}
+              {deptPayrollMetrics.map((dept) => {
+                const headCount =
+                  deptDistribution.find((d) => d.departmentId === dept.departmentId)
+                    ?.count ?? 0;
+                return (
+                  <div
+                    key={dept.departmentId}
+                    className="flex flex-col gap-2 p-3 rounded-lg border bg-muted/25"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-sm text-foreground">
+                        {dept.departmentName}
+                      </span>
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                        {headCount} FTEs
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                      <span>Gross Allocation:</span>
+                      <span className="font-semibold text-foreground">
+                        {formatINR(dept.totalGross)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>Gross Allocation:</span>
-                    <span className="font-semibold text-foreground">
-                      {formatINR(dept.totalGross)}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
@@ -249,7 +260,9 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
           </CardHeader>
           <CardContent className="space-y-4">
             {typeDistribution.length === 0 && (
-              <p className="text-sm text-muted-foreground">No employment type data.</p>
+              <p className="text-sm text-muted-foreground">
+                No employment type data.
+              </p>
             )}
             {typeDistribution.map((item) => {
               const pct = (item.count / headcountDenominator) * 100;
