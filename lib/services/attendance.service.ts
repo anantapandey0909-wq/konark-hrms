@@ -17,6 +17,8 @@ import {
   type CreateAttendanceInput,
   type UpdateAttendanceInput,
 } from "@/lib/validation/attendance";
+import { getPermissions } from "@/lib/auth/permissions";
+import type { AuthUser } from "@/types/auth";
 import type { AttendanceWithEmployee } from "@/types/attendance";
 import type { AttendanceStatus, WorkMode } from "@prisma/client";
 
@@ -39,6 +41,30 @@ function assertCheckOrder(checkIn: Date | null, checkOut: Date | null) {
   }
 }
 
+/**
+ * Organizational attendance visibility (company-wide reads).
+ * Uses existing matrix only: mark OR approve (or super-admin).
+ * Actors with only attendance.view (e.g. EMPLOYEE) are self-scoped.
+ */
+function canViewOrgAttendance(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  const p = getPermissions(user.role);
+  return p.attendance.mark || p.attendance.approve;
+}
+
+/** Resolve the authenticated user's linked Employee id within the tenant. */
+async function resolveSessionEmployeeId(
+  companyId: string,
+  userId: string
+): Promise<string | null> {
+  const { prisma } = await getTenantPrisma();
+  const linked = await prisma.employee.findFirst({
+    where: { companyId, userId },
+    select: { id: true },
+  });
+  return linked?.id ?? null;
+}
+
 export async function listAttendance(filters?: {
   startDate?: string;
   endDate?: string;
@@ -47,22 +73,39 @@ export async function listAttendance(filters?: {
   employeeId?: string;
   departmentId?: string;
 }): Promise<AttendanceWithEmployee[]> {
-  const { companyId } = await getTenantPrisma();
-  const rows = await attendanceRepo.findAttendancesByCompany(
-    companyId,
-    filters ?? {}
-  );
+  const { companyId, user } = await getTenantPrisma();
+  const scoped = { ...(filters ?? {}) };
+
+  if (!canViewOrgAttendance(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return [];
+    }
+    // Force self-scope; ignore client employeeId.
+    scoped.employeeId = ownId;
+  }
+
+  const rows = await attendanceRepo.findAttendancesByCompany(companyId, scoped);
   return rows.map(mapAttendanceWithEmployee);
 }
 
 export async function getAttendance(
   id: string
 ): Promise<AttendanceWithEmployee> {
-  const { companyId } = await getTenantPrisma();
+  const { companyId, user } = await getTenantPrisma();
   const row = await attendanceRepo.findAttendanceById(companyId, id);
   if (!row) {
     throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
   }
+
+  if (!canViewOrgAttendance(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId || row.employeeId !== ownId) {
+      // Same surface as missing — avoid peer existence leaks.
+      throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
+    }
+  }
+
   return mapAttendanceWithEmployee(row);
 }
 
