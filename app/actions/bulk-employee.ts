@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCanBulkUpdateEmployees } from "@/lib/auth/assert-data-management";
+import {
+  assertProductionRealData,
+  requireCanBulkUpdateEmployees,
+} from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -89,6 +92,7 @@ export async function executeBulkEmployeesAction(
 ): Promise<ActionResult<BulkEmployeeExecuteResult>> {
   try {
     await requireCanBulkUpdateEmployees();
+    assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
   }
