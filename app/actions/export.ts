@@ -1,5 +1,7 @@
 "use server";
 
+import { requireCurrentUser } from "@/lib/auth/current-user";
+import { assertProductionRealData } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -23,6 +25,13 @@ export type ActionResult<T> =
 export async function listExportModulesAction(): Promise<
   ActionResult<ExportModuleSummary[]>
 > {
+  try {
+    await requireCurrentUser();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return {
       success: true,
@@ -89,6 +98,13 @@ export async function listExportModulesAction(): Promise<
 export async function previewExportAction(
   input: ExportRequestInput
 ): Promise<ActionResult<ExportPreviewResult>> {
+  try {
+    await requireCurrentUser();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return {
       success: true,
@@ -118,6 +134,13 @@ export async function previewExportAction(
 export async function generateExportAction(
   input: ExportRequestInput
 ): Promise<ActionResult<ExportGenerateResult>> {
+  try {
+    await requireCurrentUser();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return {
       success: false,
@@ -136,6 +159,13 @@ export async function generateExportAction(
 export async function listExportHistoryAction(): Promise<
   ActionResult<ExportHistoryItem[]>
 > {
+  try {
+    await requireCurrentUser();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return { success: true, data: [] };
   }
