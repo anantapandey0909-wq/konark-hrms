@@ -51,12 +51,34 @@ function assertCanApprove(role: AuthRole) {
 }
 
 /**
+ * Organizational leave visibility / on-behalf authority.
+ * Mirrors leave.approve (and super-admin) — not inventing new permissions.
+ */
+function canViewOrgLeave(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  return getPermissions(user.role).leave.approve;
+}
+
+/**
  * Self-service actors (leave.apply without leave.approve) may only act for
  * their own Employee record. Approvers / super-admin may act on behalf.
  */
 function canCreateOnBehalf(user: AuthUser): boolean {
-  if (user.isSuperAdmin) return true;
-  return getPermissions(user.role).leave.approve;
+  return canViewOrgLeave(user);
+}
+
+/**
+ * Resolve the authenticated user's linked Employee id within the tenant.
+ */
+async function resolveSessionEmployeeId(
+  companyId: string,
+  userId: string
+): Promise<string | null> {
+  const linked = await prisma.employee.findFirst({
+    where: { companyId, userId },
+    select: { id: true },
+  });
+  return linked?.id ?? null;
 }
 
 export async function listLeaveRequests(filters?: {
@@ -65,24 +87,41 @@ export async function listLeaveRequests(filters?: {
   employeeId?: string;
   departmentId?: string;
 }): Promise<LeaveRequest[]> {
-  const { companyId } = await getTenantPrisma();
-  const rows = await leaveRepo.findLeaveRequestsByCompany(
-    companyId,
-    filters ?? {}
-  );
+  const { companyId, user } = await getTenantPrisma();
+  const scoped = { ...(filters ?? {}) };
+
+  if (!canViewOrgLeave(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return [];
+    }
+    // Force self-scope; ignore client employeeId.
+    scoped.employeeId = ownId;
+  }
+
+  const rows = await leaveRepo.findLeaveRequestsByCompany(companyId, scoped);
   return rows.map(mapLeaveRequestToFrontend);
 }
 
 export async function getLeaveRequest(id: string): Promise<LeaveRequest> {
-  const { companyId } = await getTenantPrisma();
+  const { companyId, user } = await getTenantPrisma();
   const row = await leaveRepo.findLeaveRequestById(companyId, id);
   if (!row) {
     throw new AppError("NOT_FOUND", "Leave request not found.", 404);
   }
+
+  if (!canViewOrgLeave(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId || row.employeeId !== ownId) {
+      throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+    }
+  }
+
   return mapLeaveRequestToFrontend(row);
 }
 
 export async function getLeaveStats(): Promise<LeaveStatsSummary> {
+  // listLeaveRequests already applies self-scope for non-approvers.
   const requests = await listLeaveRequests();
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -123,15 +162,42 @@ export async function getLeaveStats(): Promise<LeaveStatsSummary> {
 export async function getLeaveBalance(
   employeeId: string
 ): Promise<LeaveBalance> {
-  const { companyId } = await getTenantPrisma();
-  const emp = await employeeRepo.findEmployeeById(companyId, employeeId);
+  const { companyId, user } = await getTenantPrisma();
+
+  let targetEmployeeId = employeeId;
+
+  if (!canViewOrgLeave(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError(
+        "NOT_FOUND",
+        "Leave balance not found.",
+        404
+      );
+    }
+    if (employeeId && employeeId !== ownId) {
+      throw new AppError("NOT_FOUND", "Leave balance not found.", 404);
+    }
+    targetEmployeeId = ownId;
+  }
+
+  const emp = await employeeRepo.findEmployeeById(companyId, targetEmployeeId);
   if (!emp) {
     throw new AppError("NOT_FOUND", "Employee not found.", 404);
   }
   const year = new Date().getUTCFullYear();
-  let balance = await leaveRepo.findLeaveBalance(companyId, employeeId, year);
+  let balance = await leaveRepo.findLeaveBalance(
+    companyId,
+    targetEmployeeId,
+    year
+  );
   if (!balance) {
-    balance = await leaveRepo.upsertLeaveBalance(companyId, employeeId, year, {});
+    balance = await leaveRepo.upsertLeaveBalance(
+      companyId,
+      targetEmployeeId,
+      year,
+      {}
+    );
   }
   return mapLeaveBalanceToFrontend(balance);
 }
@@ -270,6 +336,24 @@ export async function updateLeaveRequest(
   if (!existing) {
     throw new AppError("NOT_FOUND", "Leave request not found.", 404);
   }
+
+  const isOrgApprover = canViewOrgLeave(user);
+
+  if (!isOrgApprover) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId || existing.employeeId !== ownId) {
+      throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+    }
+    // Non-approvers cannot reassign leave to another employee.
+    if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
+      throw new AppError(
+        "FORBIDDEN",
+        "You cannot reassign a leave request to another employee.",
+        403
+      );
+    }
+  }
+
   if (existing.status !== "PENDING") {
     throw new AppError(
       "CONFLICT",
@@ -289,10 +373,19 @@ export async function updateLeaveRequest(
 
   const leaveType = (parsed.leaveType ?? existing.leaveType) as string;
   const isHalfDay = leaveType === "HALF_DAY" || parsed.isHalfDay === true;
-  const totalDays = calculateLeaveDays(startDate, endDate, leaveType, isHalfDay);
+  const totalDays = calculateLeaveDays(
+    startDate,
+    endDate,
+    leaveType,
+    isHalfDay
+  );
 
   let employeeId = existing.employeeId;
-  if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
+  if (
+    isOrgApprover &&
+    parsed.employeeId &&
+    parsed.employeeId !== existing.employeeId
+  ) {
     const target = await employeeRepo.findEmployeeById(
       companyId,
       parsed.employeeId
@@ -519,7 +612,11 @@ export async function cancelLeaveRequest(id: string): Promise<LeaveRequest> {
 
   if (existing.status === "PENDING") {
     if (!isOwner && !isApprover) {
-      throw new AppError("FORBIDDEN", "Not allowed to cancel this request.", 403);
+      throw new AppError(
+        "FORBIDDEN",
+        "Not allowed to cancel this request.",
+        403
+      );
     }
     const updated = await leaveRepo.updateLeaveRequest(companyId, id, {
       status: "CANCELLED",
