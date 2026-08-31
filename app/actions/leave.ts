@@ -7,6 +7,7 @@ import {
   requireLeaveApprove,
   requireLeaveView,
 } from "@/lib/auth/assert-data-management";
+import { getPermissions } from "@/lib/auth/permissions";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { mockLeaveRequests, mockLeaveBalances } from "@/mock/leave";
 import {
@@ -25,6 +26,7 @@ import type {
   UpdateLeaveInput,
 } from "@/lib/validation/leave";
 import { toSafeActionResult } from "@/lib/errors/app-error";
+import type { AuthUser } from "@/types/auth";
 import type {
   LeaveRequest,
   LeaveBalance,
@@ -34,6 +36,20 @@ import type {
 export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string; code: string };
+
+function canViewOrgLeave(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  return getPermissions(user.role).leave.approve;
+}
+
+/** Match mock leave rows to session identity (employee code or id). */
+function isOwnMockLeave(user: AuthUser, leave: LeaveRequest): boolean {
+  const identity = user.employeeId;
+  return (
+    leave.employeeId === identity ||
+    leave.employeeCode === identity
+  );
+}
 
 function filterMockLeaves(
   rows: LeaveRequest[],
@@ -58,18 +74,38 @@ function filterMockLeaves(
   });
 }
 
-function mockStats(): LeaveStatsSummary {
+function mockLeavesForUser(
+  user: AuthUser,
+  filters?: {
+    status?: string;
+    leaveType?: string;
+    employeeId?: string;
+    departmentId?: string;
+  }
+): LeaveRequest[] {
+  if (!canViewOrgLeave(user)) {
+    // Force self-scope; ignore client employeeId.
+    return filterMockLeaves(mockLeaveRequests, {
+      ...filters,
+      employeeId: undefined,
+    }).filter((r) => isOwnMockLeave(user, r));
+  }
+  return filterMockLeaves(mockLeaveRequests, filters);
+}
+
+function mockStatsForUser(user: AuthUser): LeaveStatsSummary {
+  const rows = mockLeavesForUser(user);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const summary: LeaveStatsSummary = {
-    totalRequests: mockLeaveRequests.length,
+    totalRequests: rows.length,
     pending: 0,
     approved: 0,
     rejected: 0,
     cancelled: 0,
     onLeaveToday: 0,
   };
-  for (const leave of mockLeaveRequests) {
+  for (const leave of rows) {
     switch (leave.status) {
       case "PENDING":
         summary.pending++;
@@ -101,8 +137,9 @@ export async function listLeaveRequestsAction(filters?: {
   employeeId?: string;
   departmentId?: string;
 }): Promise<ActionResult<LeaveRequest[]>> {
+  let user: AuthUser;
   try {
-    await requireLeaveView();
+    user = await requireLeaveView();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
@@ -114,7 +151,7 @@ export async function listLeaveRequestsAction(filters?: {
   );
 
   if (!real) {
-    return { success: true, data: filterMockLeaves(mockLeaveRequests, filters) };
+    return { success: true, data: mockLeavesForUser(user, filters) };
   }
   try {
     return { success: true, data: await listLeaveRequests(filters) };
@@ -126,8 +163,9 @@ export async function listLeaveRequestsAction(filters?: {
 export async function getLeaveRequestAction(
   id: string
 ): Promise<ActionResult<LeaveRequest>> {
+  let user: AuthUser;
   try {
-    await requireLeaveView();
+    user = await requireLeaveView();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
@@ -136,7 +174,18 @@ export async function getLeaveRequestAction(
   if (!isRealDataEnabled()) {
     const row = mockLeaveRequests.find((r) => r.id === id);
     if (!row) {
-      return { success: false, error: "Leave request not found.", code: "NOT_FOUND" };
+      return {
+        success: false,
+        error: "Leave request not found.",
+        code: "NOT_FOUND",
+      };
+    }
+    if (!canViewOrgLeave(user) && !isOwnMockLeave(user, row)) {
+      return {
+        success: false,
+        error: "Leave request not found.",
+        code: "NOT_FOUND",
+      };
     }
     return { success: true, data: row };
   }
@@ -150,15 +199,16 @@ export async function getLeaveRequestAction(
 export async function getLeaveStatsAction(): Promise<
   ActionResult<LeaveStatsSummary>
 > {
+  let user: AuthUser;
   try {
-    await requireLeaveView();
+    user = await requireLeaveView();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
   }
 
   if (!isRealDataEnabled()) {
-    return { success: true, data: mockStats() };
+    return { success: true, data: mockStatsForUser(user) };
   }
   try {
     return { success: true, data: await getLeaveStats() };
@@ -170,15 +220,28 @@ export async function getLeaveStatsAction(): Promise<
 export async function getLeaveBalanceAction(
   employeeId: string
 ): Promise<ActionResult<LeaveBalance>> {
+  let user: AuthUser;
   try {
-    await requireLeaveView();
+    user = await requireLeaveView();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
   }
 
   if (!isRealDataEnabled()) {
-    const row = mockLeaveBalances.find((b) => b.employeeId === employeeId);
+    let targetId = employeeId;
+    if (!canViewOrgLeave(user)) {
+      const identity = user.employeeId;
+      if (employeeId && employeeId !== identity) {
+        return {
+          success: false,
+          error: "Leave balance not found.",
+          code: "NOT_FOUND",
+        };
+      }
+      targetId = identity;
+    }
+    const row = mockLeaveBalances.find((b) => b.employeeId === targetId);
     if (!row) {
       return {
         success: false,
@@ -244,8 +307,9 @@ export async function updateLeaveRequestAction(
   id: string,
   input: UpdateLeaveInput
 ): Promise<ActionResult<LeaveRequest>> {
+  let user: AuthUser;
   try {
-    await requireLeaveApply();
+    user = await requireLeaveApply();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
@@ -254,7 +318,29 @@ export async function updateLeaveRequestAction(
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
-      return { success: false, error: "Leave request not found.", code: "NOT_FOUND" };
+      return {
+        success: false,
+        error: "Leave request not found.",
+        code: "NOT_FOUND",
+      };
+    }
+    if (!canViewOrgLeave(user) && !isOwnMockLeave(user, existing)) {
+      return {
+        success: false,
+        error: "Leave request not found.",
+        code: "NOT_FOUND",
+      };
+    }
+    if (
+      !canViewOrgLeave(user) &&
+      input.employeeId &&
+      input.employeeId !== existing.employeeId
+    ) {
+      return {
+        success: false,
+        error: "You cannot reassign a leave request to another employee.",
+        code: "FORBIDDEN",
+      };
     }
     return {
       success: true,
@@ -291,7 +377,11 @@ export async function approveLeaveRequestAction(
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
-      return { success: false, error: "Leave request not found.", code: "NOT_FOUND" };
+      return {
+        success: false,
+        error: "Leave request not found.",
+        code: "NOT_FOUND",
+      };
     }
     return {
       success: true,
@@ -327,7 +417,11 @@ export async function rejectLeaveRequestAction(
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
-      return { success: false, error: "Leave request not found.", code: "NOT_FOUND" };
+      return {
+        success: false,
+        error: "Leave request not found.",
+        code: "NOT_FOUND",
+      };
     }
     return {
       success: true,
@@ -362,7 +456,11 @@ export async function cancelLeaveRequestAction(
   if (!isRealDataEnabled()) {
     const existing = mockLeaveRequests.find((r) => r.id === id);
     if (!existing) {
-      return { success: false, error: "Leave request not found.", code: "NOT_FOUND" };
+      return {
+        success: false,
+        error: "Leave request not found.",
+        code: "NOT_FOUND",
+      };
     }
     return { success: true, data: { ...existing, status: "CANCELLED" } };
   }
