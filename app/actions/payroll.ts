@@ -6,6 +6,7 @@ import {
   requirePayrollGenerate,
   requirePayrollView,
 } from "@/lib/auth/assert-data-management";
+import { getPermissions } from "@/lib/auth/permissions";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { mockPayrollRecords } from "@/mock/payroll";
 import {
@@ -20,6 +21,7 @@ import type {
   UpdatePayrollInput,
 } from "@/lib/validation/payroll";
 import { toSafeActionResult } from "@/lib/errors/app-error";
+import type { AuthUser } from "@/types/auth";
 import type {
   PayrollRecord,
   PayrollSummary,
@@ -33,6 +35,13 @@ import {
 export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string; code: string };
+
+/** Same organizational access rule as lib/services/payroll.service.ts */
+function hasOrgPayrollAccess(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  const p = getPermissions(user.role);
+  return p.payroll.generate || p.payroll.approve || p.payroll.upload;
+}
 
 function filterMock(
   filters?: {
@@ -67,6 +76,32 @@ function filterMock(
   });
 }
 
+/** Apply org-access or self-scope to mock payroll rows (parity with real service). */
+function mockPayrollForUser(
+  user: AuthUser,
+  filters?: {
+    search?: string;
+    status?: string;
+    month?: string;
+    year?: number;
+    departmentId?: string;
+    employeeId?: string;
+  }
+): PayrollRecord[] {
+  const scopedFilters = { ...(filters ?? {}) };
+
+  if (!hasOrgPayrollAccess(user)) {
+    // AuthUser.employeeId is the employee code from map-user; also match record id.
+    const identity = user.employeeId;
+    scopedFilters.employeeId = undefined;
+    return filterMock(scopedFilters).filter(
+      (r) => r.employeeCode === identity || r.employeeId === identity
+    );
+  }
+
+  return filterMock(scopedFilters);
+}
+
 export async function listPayrollRecordsAction(filters?: {
   search?: string;
   status?: string;
@@ -75,15 +110,16 @@ export async function listPayrollRecordsAction(filters?: {
   departmentId?: string;
   employeeId?: string;
 }): Promise<ActionResult<PayrollRecord[]>> {
+  let user: AuthUser;
   try {
-    await requirePayrollView();
+    user = await requirePayrollView();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
   }
 
   if (!isRealDataEnabled()) {
-    return { success: true, data: filterMock(filters) };
+    return { success: true, data: mockPayrollForUser(user, filters) };
   }
   try {
     return { success: true, data: await listPayrollRecords(filters) };
@@ -95,8 +131,9 @@ export async function listPayrollRecordsAction(filters?: {
 export async function getPayrollRecordAction(
   id: string
 ): Promise<ActionResult<PayrollRecord>> {
+  let user: AuthUser;
   try {
-    await requirePayrollView();
+    user = await requirePayrollView();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
@@ -111,6 +148,16 @@ export async function getPayrollRecordAction(
         code: "NOT_FOUND",
       };
     }
+    if (!hasOrgPayrollAccess(user)) {
+      const identity = user.employeeId;
+      if (row.employeeCode !== identity && row.employeeId !== identity) {
+        return {
+          success: false,
+          error: "Payroll record not found.",
+          code: "NOT_FOUND",
+        };
+      }
+    }
     return { success: true, data: row };
   }
   try {
@@ -123,30 +170,41 @@ export async function getPayrollRecordAction(
 export async function getPayrollStatsAction(): Promise<
   ActionResult<{ summary: PayrollSummary; stats: PayrollStats }>
 > {
+  let user: AuthUser;
   try {
-    await requirePayrollView();
+    user = await requirePayrollView();
     assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
   }
 
   if (!isRealDataEnabled()) {
-    const statsLib = calculatePayrollStatistics(mockPayrollRecords);
-    const summaryLib = calculatePayrollSummary(mockPayrollRecords);
+    const rows = mockPayrollForUser(user);
+    const statsLib = calculatePayrollStatistics(rows);
+    const summaryLib = calculatePayrollSummary(rows);
     return {
       success: true,
       data: {
         summary: {
           totalPayrollRecords: statsLib.totalRecordsCount,
-          totalEmployees: statsLib.totalRecordsCount,
+          totalEmployees: hasOrgPayrollAccess(user)
+            ? statsLib.totalRecordsCount
+            : rows.length > 0
+              ? 1
+              : 0,
           paidPayroll: statsLib.paidCount,
           pendingPayroll: statsLib.pendingCount,
           approvedPayroll: statsLib.approvedCount,
           draftPayroll: statsLib.draftCount,
         },
         stats: {
-          employeeCount: statsLib.totalRecordsCount,
-          totalGrossSalary: summaryLib.totalBasicSalary + summaryLib.totalAllowances,
+          employeeCount: hasOrgPayrollAccess(user)
+            ? statsLib.totalRecordsCount
+            : rows.length > 0
+              ? 1
+              : 0,
+          totalGrossSalary:
+            summaryLib.totalBasicSalary + summaryLib.totalAllowances,
           totalNetSalary: summaryLib.totalNetSalary,
           totalAllowances: summaryLib.totalAllowances,
           totalDeductions: summaryLib.totalDeductions,
