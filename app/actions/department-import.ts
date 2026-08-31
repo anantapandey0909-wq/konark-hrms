@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCanImportDepartments } from "@/lib/auth/assert-data-management";
+import {
+  assertProductionRealData,
+  requireCanImportDepartments,
+} from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -74,6 +77,7 @@ export async function importDepartmentsAction(
 ): Promise<ActionResult<DepartmentImportResult>> {
   try {
     await requireCanImportDepartments();
+    assertProductionRealData();
   } catch (error) {
     return toSafeActionResult(error);
   }
