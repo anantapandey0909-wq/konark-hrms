@@ -1,5 +1,7 @@
 "use server";
 
+import { requireCurrentUser } from "@/lib/auth/current-user";
+import { assertProductionRealData } from "@/lib/auth/assert-data-management";
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
@@ -53,6 +55,13 @@ function mockImportHistory(): HistoryJobItem[] {
 export async function fetchImportHistoryAction(): Promise<
   ActionResult<HistoryJobItem[]>
 > {
+  try {
+    await requireCurrentUser();
+    assertProductionRealData();
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
   if (!isRealDataEnabled()) {
     return { success: true, data: mockImportHistory() };
   }
