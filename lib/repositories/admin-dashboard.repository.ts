@@ -14,8 +14,8 @@ export async function countActiveEmployees(companyId: string): Promise<number> {
 }
 
 /**
- * Attendance status counts for a single calendar day (YYYY-MM-DD).
- * Date is matched on the attendanceDate field using start/end of that day in UTC.
+ * Attendance status counts for a single calendar day.
+ * Bounds are [dayStart, dayEnd) against attendanceDate (@db.Date).
  */
 export async function groupAttendanceByStatusForDate(
   companyId: string,
@@ -62,5 +62,27 @@ export async function countPayrollByStatus(companyId: string) {
     by: ["status"],
     where: tenantScope(companyId, {}),
     _count: { _all: true },
+  });
+}
+
+/** Recent hires with department name for the admin dashboard table. */
+export async function findRecentHiresWithDepartment(
+  companyId: string,
+  limit = 5
+) {
+  return prisma.employee.findMany({
+    where: tenantScope(companyId, {}),
+    orderBy: { joiningDate: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      employeeCode: true,
+      firstName: true,
+      lastName: true,
+      designation: true,
+      status: true,
+      joiningDate: true,
+      department: { select: { departmentName: true } },
+    },
   });
 }
