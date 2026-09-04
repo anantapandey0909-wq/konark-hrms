@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/hooks/use-auth";
+import { getRoleRoute } from "@/lib/auth/role-routes";
 
 import { AttendanceChart } from "@/components/dashboard/attendance-chart";
 import { KPICards } from "@/components/dashboard/kpi-cards";
@@ -29,31 +30,13 @@ export default function DashboardPage() {
       return;
     }
 
-    switch (user.role) {
-      case "HR":
-        router.replace("/dashboard/hr");
-        break;
-
-      case "MANAGER":
-        router.replace("/dashboard/manager");
-        break;
-
-      case "EMPLOYEE":
-        router.replace("/dashboard/employee");
-        break;
-
-      case "SUPERVISOR":
-        router.replace("/dashboard/supervisor");
-        break;
-
-      case "ACCOUNTANT":
-        router.replace("/dashboard/accountant");
-        break;
-
-      case "ADMIN":
-      default:
-        break;
+    // ADMIN stays on the admin dashboard; other roles land on existing routes
+    // from DEFAULT_ROLE_ROUTES (no missing /supervisor or /accountant pages).
+    if (user.role === "ADMIN") {
+      return;
     }
+
+    router.replace(getRoleRoute(user.role));
   }, [
     user,
     isAuthenticated,
@@ -77,7 +60,7 @@ export default function DashboardPage() {
         </h1>
 
         <p className="max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-          Welcome back. Here&apos;s a live overview of your
+          Welcome back. Here's a live overview of your
           organization, employee attendance, payroll
           progress and recent activities.
         </p>
