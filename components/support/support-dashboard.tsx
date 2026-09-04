@@ -11,7 +11,9 @@ import {
   Flame,
   CheckCircle,
   Plus,
+  Info,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { SupportSummaryCard } from "./support-summary-card";
 import { SupportFilters } from "./support-filters";
@@ -62,15 +64,18 @@ export function SupportDashboard({ className }: SupportDashboardProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Safely calculate system metrics
   const metrics = useMemo(() => {
     return calculateSupportMetrics(mockSupportTickets);
   }, []);
 
-  // Filter and sort the ticket dataset memoized to prevent expensive computations
   const filteredAndSortedTickets = useMemo(() => {
     let result = searchSupportTickets(mockSupportTickets, filters.search);
-    result = filterSupportTickets(result, filters.status, filters.priority, filters.category);
+    result = filterSupportTickets(
+      result,
+      filters.status,
+      filters.priority,
+      filters.category
+    );
     return sortSupportTickets(result, filters.sortBy, filters.sortOrder);
   }, [filters]);
 
@@ -91,15 +96,17 @@ export function SupportDashboard({ className }: SupportDashboardProps) {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleConfirmDelete = async () => {
-    if (!selectedTicket) return;
+  const handleDemoDelete = async (ticket: SupportTicket) => {
     setIsDeleting(true);
     try {
-      // Backend action integration placeholder
-      console.log(`Deleted support ticket: #${selectedTicket.ticketNumber}`);
-      await new Promise((resolve) => setTimeout(resolve, 800));
-    } catch (error) {
-      console.error("An error occurred during ticket deletion:", error);
+      // Intentionally non-persistent — Support has no backend in this phase.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      toast.message("Demo only — ticket was not deleted",
+        {
+          description:
+            "Support Center uses mock data. Changes are not saved to the database.",
+        }
+      );
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
@@ -109,26 +116,50 @@ export function SupportDashboard({ className }: SupportDashboardProps) {
 
   return (
     <div className={cn("space-y-6", className)}>
-      {/* Page Header section matching corporate layout */}
+      <div
+        role="status"
+        className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+      >
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="space-y-0.5">
+          <p className="font-semibold tracking-tight">
+            Demo / mock Support Center
+          </p>
+          <p className="text-amber-900/80 dark:text-amber-100/80 leading-relaxed">
+            Tickets shown here are sample data only. Create, edit, and delete
+            actions do not persist to the server or database.
+          </p>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between select-none">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Support Center
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">
-            Coordinate technical assistance pipelines, manage employee requests, analyze workflow categories, and prioritize critical operational blockers.
+            Coordinate technical assistance pipelines, manage employee requests,
+            analyze workflow categories, and prioritize critical operational
+            blockers.
           </p>
         </div>
         <Button
-          onClick={() => router.push("/dashboard/support/new")}
+          onClick={() => {
+            toast.message("Demo only — ticket will not be saved",
+              {
+                description:
+                  "Opening the create form for UI preview. Nothing is written to the database.",
+              }
+            );
+            router.push("/dashboard/support/new");
+          }}
           className="w-full sm:w-auto shrink-0 inline-flex items-center justify-center"
         >
           <Plus className="mr-2 h-4 w-4" />
-          New Ticket
+          New Ticket (Demo)
         </Button>
       </div>
 
-      {/* Metrics section */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -169,12 +200,10 @@ export function SupportDashboard({ className }: SupportDashboardProps) {
         </motion.div>
       </motion.div>
 
-      {/* Filters section */}
       <div className="w-full">
         <SupportFilters filters={filters} onFiltersChange={setFilters} />
       </div>
 
-      {/* Content Area (Table or Empty State) */}
       <div className="w-full">
         {filteredAndSortedTickets.length === 0 ? (
           <SupportEmptyState
@@ -193,27 +222,13 @@ export function SupportDashboard({ className }: SupportDashboardProps) {
         )}
       </div>
 
-      {/* Reusable Delete Dialog */}
       <SupportDeleteDialog
-  open={isDeleteDialogOpen}
-  onOpenChange={setIsDeleteDialogOpen}
-  ticket={selectedTicket}
-  loading={isDeleting}
-  onConfirm={async (ticket) => {
-    setIsDeleting(true);
-
-    try {
-      console.log(`Deleted support ticket: #${ticket.ticketNumber}`);
-
-      // TODO: Replace with backend delete API
-      await new Promise((resolve) => setTimeout(resolve, 800));
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-      setSelectedTicket(null);
-    }
-  }}
-/>
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        ticket={selectedTicket}
+        loading={isDeleting}
+        onConfirm={handleDemoDelete}
+      />
     </div>
   );
 }
