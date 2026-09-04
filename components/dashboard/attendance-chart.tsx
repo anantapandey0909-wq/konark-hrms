@@ -16,18 +16,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { WeeklyAttendancePoint } from "@/lib/services/admin-dashboard.service";
 
-const attendanceData = [
-  { day: "Mon", present: 850 },
-  { day: "Tue", present: 920 },
-  { day: "Wed", present: 880 },
-  { day: "Thu", present: 940 },
-  { day: "Fri", present: 820 },
-  { day: "Sat", present: 400 },
-  { day: "Sun", present: 320 },
-];
+type Props = {
+  data: WeeklyAttendancePoint[];
+};
 
-export function AttendanceChart() {
+export function AttendanceChart({ data }: Props) {
   return (
     <Card className="border border-zinc-200/70 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       <CardHeader className="flex flex-row items-center justify-between border-b border-zinc-100 pb-4 dark:border-zinc-800">
@@ -46,7 +41,7 @@ export function AttendanceChart() {
         <div className="h-[320px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
-              data={attendanceData}
+              data={data}
               margin={{
                 top: 10,
                 right: 10,
@@ -62,17 +57,8 @@ export function AttendanceChart() {
                   x2="0"
                   y2="1"
                 >
-                  <stop
-                    offset="5%"
-                    stopColor="#f59e0b"
-                    stopOpacity={0.25}
-                  />
-
-                  <stop
-                    offset="95%"
-                    stopColor="#f59e0b"
-                    stopOpacity={0}
-                  />
+                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
                 </linearGradient>
               </defs>
 
@@ -93,6 +79,7 @@ export function AttendanceChart() {
                 tickLine={false}
                 axisLine={false}
                 tick={{ fontSize: 12 }}
+                allowDecimals={false}
               />
 
               <Tooltip
@@ -101,8 +88,7 @@ export function AttendanceChart() {
                   borderRadius: "12px",
                   border: "1px solid #e4e4e7",
                   backgroundColor: "#ffffff",
-                  boxShadow:
-                    "0 10px 15px -3px rgb(0 0 0 / 0.10)",
+                  boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.10)",
                 }}
               />
 
