@@ -1,6 +1,6 @@
 /**
  * Admin dashboard service — read-only KPIs for /dashboard (ADMIN landing).
- * Reuses Reports aggregations where possible; adds present-today and weekly series.
+ * Reuses Reports repository aggregations where possible; adds present-today and weekly series.
  * Tenant identity always from getTenantPrisma() session context.
  */
 
@@ -48,7 +48,7 @@ export type AdminDashboardData = {
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
-/** Statuses treated as "present for work" for rate/chart (existing enum semantics). */
+/** Statuses treated as present for work for rate/chart (AttendanceStatus enum). */
 function isPresentStatus(status: string): boolean {
   return status === "PRESENT" || status === "LATE" || status === "HALF_DAY";
 }
@@ -64,7 +64,6 @@ function canViewPayrollMetrics(user: AuthUser): boolean {
   );
 }
 
-/** Calendar day bounds in UTC for @db.Date comparisons. */
 function utcDayBounds(d: Date): { start: Date; end: Date } {
   const start = new Date(
     Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
@@ -74,9 +73,8 @@ function utcDayBounds(d: Date): { start: Date; end: Date } {
   return { start, end };
 }
 
-/** Monday 00:00 UTC of the week containing `ref` through next Monday. */
 function utcWeekBounds(ref: Date): { start: Date; end: Date } {
-  const day = ref.getUTCDay(); // 0 Sun .. 6 Sat
+  const day = ref.getUTCDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
   const monday = new Date(
     Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate())
@@ -85,10 +83,6 @@ function utcWeekBounds(ref: Date): { start: Date; end: Date } {
   const nextMonday = new Date(monday);
   nextMonday.setUTCDate(nextMonday.getUTCDate() + 7);
   return { start: monday, end: nextMonday };
-}
-
-function formatJoiningRelative(joiningDate: Date): string {
-  return joiningDate.toISOString().slice(0, 10);
 }
 
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
@@ -112,7 +106,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     adminRepo.countActiveEmployees(companyId),
     adminRepo.groupAttendanceByStatusForDate(companyId, todayStart, todayEnd),
     adminRepo.listAttendanceStatusesInRange(companyId, weekStart, weekEnd),
-    prismaRecentHires(companyId),
+    adminRepo.findRecentHiresWithDepartment(companyId, 5),
     includePayroll
       ? adminRepo.countPayrollByStatus(companyId)
       : Promise.resolve(null),
@@ -137,7 +131,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       ? Math.round((presentTodayCount / activeEmployeeCount) * 1000) / 10
       : 0;
 
-  // Build Mon–Sun series for the current week (zeros when no rows).
   const presentByUtcDay = new Map<string, number>();
   for (const row of weekRows) {
     if (!isPresentStatus(row.status)) continue;
@@ -164,7 +157,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     designation: emp.designation,
     departmentName: emp.department?.departmentName ?? "—",
     status: emp.status,
-    joiningDate: formatJoiningRelative(emp.joiningDate),
+    joiningDate: emp.joiningDate.toISOString().slice(0, 10),
   }));
 
   let payrollStatusCounts: AdminPayrollStatusCounts | null = null;
@@ -209,24 +202,4 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     payrollStatusCounts,
     includePayrollMetrics: includePayroll,
   };
-}
-
-async function prismaRecentHires(companyId: string) {
-  const { prisma } = await import("@/lib/prisma");
-  const { tenantScope } = await import("@/lib/db/prisma-with-tenant");
-  return prisma.employee.findMany({
-    where: tenantScope(companyId, {}),
-    orderBy: { joiningDate: "desc" },
-    take: 5,
-    select: {
-      id: true,
-      employeeCode: true,
-      firstName: true,
-      lastName: true,
-      designation: true,
-      status: true,
-      joiningDate: true,
-      department: { select: { departmentName: true } },
-    },
-  });
 }
