@@ -1,10 +1,8 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-
-import { useAuth } from "@/hooks/use-auth";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { getRoleRoute } from "@/lib/auth/role-routes";
+import { fetchAdminDashboard } from "@/lib/data/admin-dashboard";
 
 import { AttendanceChart } from "@/components/dashboard/attendance-chart";
 import { KPICards } from "@/components/dashboard/kpi-cards";
@@ -12,44 +10,26 @@ import { QuickActions } from "@/components/dashboard/quick-actions";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { RecentEmployees } from "@/components/dashboard/recent-employees";
 
-export default function DashboardPage() {
-  const router = useRouter();
+export default async function DashboardPage() {
+  const user = await getCurrentUser();
 
-  const {
-    user,
-    isAuthenticated,
-    isLoading,
-  } = useAuth();
+  if (!user) {
+    redirect("/login");
+  }
 
-  useEffect(() => {
-    if (
-      isLoading ||
-      !isAuthenticated ||
-      !user
-    ) {
-      return;
-    }
+  // Non-ADMIN roles land on existing role routes (attendance, payroll, portals, …).
+  if (user.role !== "ADMIN") {
+    redirect(getRoleRoute(user.role));
+  }
 
-    // ADMIN stays on the admin dashboard; other roles land on existing routes
-    // from DEFAULT_ROLE_ROUTES (no missing /supervisor or /accountant pages).
-    if (user.role === "ADMIN") {
-      return;
-    }
-
-    router.replace(getRoleRoute(user.role));
-  }, [
-    user,
-    isAuthenticated,
-    isLoading,
-    router,
-  ]);
-
-  if (
-    isLoading ||
-    (user &&
-      user.role !== "ADMIN")
-  ) {
-    return null;
+  let data;
+  let loadError: string | null = null;
+  try {
+    data = await fetchAdminDashboard();
+  } catch (err) {
+    loadError =
+      err instanceof Error ? err.message : "Failed to load dashboard metrics.";
+    data = null;
   }
 
   return (
@@ -60,33 +40,40 @@ export default function DashboardPage() {
         </h1>
 
         <p className="max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-          Welcome back. Here's a live overview of your
-          organization, employee attendance, payroll
-          progress and recent activities.
+          Welcome back. Here's a live overview of your organization,
+          employee attendance, payroll progress and recent activities.
         </p>
       </section>
 
-      <KPICards />
+      {loadError || !data ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+          {loadError ?? "Dashboard metrics are unavailable."}
+        </p>
+      ) : (
+        <>
+          <KPICards data={data} />
 
-      <section className="grid gap-6 xl:grid-cols-6">
-        <div className="xl:col-span-4">
-          <AttendanceChart />
-        </div>
+          <section className="grid gap-6 xl:grid-cols-6">
+            <div className="xl:col-span-4">
+              <AttendanceChart data={data.weeklyAttendance} />
+            </div>
 
-        <div className="xl:col-span-2">
-          <QuickActions />
-        </div>
-      </section>
+            <div className="xl:col-span-2">
+              <QuickActions />
+            </div>
+          </section>
 
-      <section className="grid gap-6 xl:grid-cols-4">
-        <div className="xl:col-span-3">
-          <RecentEmployees />
-        </div>
+          <section className="grid gap-6 xl:grid-cols-4">
+            <div className="xl:col-span-3">
+              <RecentEmployees employees={data.recentHires} />
+            </div>
 
-        <div className="xl:col-span-1">
-          <RecentActivity />
-        </div>
-      </section>
+            <div className="xl:col-span-1">
+              <RecentActivity />
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
