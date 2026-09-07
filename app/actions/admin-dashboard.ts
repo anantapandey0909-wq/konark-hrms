@@ -10,6 +10,7 @@ import { toSafeActionResult } from "@/lib/errors/app-error";
 import {
   getAdminDashboardData,
   type AdminDashboardData,
+  type AdminPayrollStatusCounts,
 } from "@/lib/services/admin-dashboard.service";
 import { mockEmployees } from "@/mock/employee";
 import { mockLeaveRequests } from "@/mock/leave";
@@ -36,6 +37,31 @@ function isPresentStatus(status: string): boolean {
   return status === "PRESENT" || status === "LATE" || status === "HALF_DAY";
 }
 
+function incrementMockPayrollStatus(
+  counts: AdminPayrollStatusCounts,
+  status: string
+): void {
+  switch (status) {
+    case "DRAFT":
+      counts.draft += 1;
+      break;
+    case "PENDING":
+      counts.pending += 1;
+      break;
+    case "APPROVED":
+      counts.approved += 1;
+      break;
+    case "PAID":
+      counts.paid += 1;
+      break;
+    case "CANCELLED":
+      counts.cancelled += 1;
+      break;
+    default:
+      break;
+  }
+}
+
 function buildMockAdminDashboard(user: AuthUser): AdminDashboardData {
   const includePayroll = canViewPayrollMetrics(user);
   const activeEmployees = mockEmployees.filter((e) => e.status === "ACTIVE");
@@ -55,21 +81,16 @@ function buildMockAdminDashboard(user: AuthUser): AdminDashboardData {
     (l) => l.status === "PENDING"
   ).length;
 
-  // Mock weekly series from mock attendance (zeros if none match week).
   const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const weeklyAttendance = WEEKDAY_LABELS.map((day) => ({
-    day,
-    present: 0,
-  }));
-  // Align labels to Mon-first display order used by real path
   const monFirst = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
     (day) => ({
       day,
       present: mockAttendances.filter(
         (a) =>
           isPresentStatus(a.status) &&
-          WEEKDAY_LABELS[new Date(a.attendanceDate + "T00:00:00Z").getUTCDay()] ===
-            day
+          WEEKDAY_LABELS[
+            new Date(a.attendanceDate + "T00:00:00Z").getUTCDay()
+          ] === day
       ).length,
     })
   );
@@ -90,7 +111,7 @@ function buildMockAdminDashboard(user: AuthUser): AdminDashboardData {
       joiningDate: emp.joiningDate,
     }));
 
-  let payrollStatusCounts: AdminDashboardData["payrollStatusCounts"] = null;
+  let payrollStatusCounts: AdminPayrollStatusCounts | null = null;
   if (includePayroll) {
     payrollStatusCounts = {
       draft: 0,
@@ -100,12 +121,7 @@ function buildMockAdminDashboard(user: AuthUser): AdminDashboardData {
       cancelled: 0,
     };
     for (const row of mockPayrollRecords) {
-      const key = row.status.toLowerCase() as keyof NonNullable<
-        typeof payrollStatusCounts
-      >;
-      if (key in payrollStatusCounts) {
-        payrollStatusCounts[key] += 1;
-      }
+      incrementMockPayrollStatus(payrollStatusCounts, row.status);
     }
   }
 
