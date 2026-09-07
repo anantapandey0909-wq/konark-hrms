@@ -3,13 +3,14 @@
  * companyId must come from the authenticated session (never from the client).
  */
 
+import { EmployeeStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
 /** Active headcount for present-rate denominator. */
 export async function countActiveEmployees(companyId: string): Promise<number> {
   return prisma.employee.count({
-    where: tenantScope(companyId, { status: "ACTIVE" }),
+    where: tenantScope(companyId, { status: EmployeeStatus.ACTIVE }),
   });
 }
 
