@@ -14,7 +14,7 @@ export const hrNavigation: SidebarNavigation = {
   main: [
     {
       name: "Dashboard",
-      href: "/dashboard",
+      href: "/dashboard/hr",
       icon: LayoutDashboard,
     },
     {
