@@ -183,22 +183,28 @@ export function PayrollTable({
                       </>
                     )}
 
+                    {onCancel &&
+                      (record.status === "DRAFT" ||
+                        record.status === "PENDING" ||
+                        record.status === "APPROVED") && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => onCancel(record)}
+                          className="text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:focus:bg-rose-950/20"
+                        >
+                          <Ban className="mr-2 h-4 w-4" />
+                          Cancel Payroll
+                        </DropdownMenuItem>
+                      </>
+                    )}
+
                     {onPay && record.status === "APPROVED" && (
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => onPay(record)}>
                           <CreditCard className="mr-2 h-4 w-4 text-blue-600" />
                           Process Payment
-                        </DropdownMenuItem>
-                      </>
-                    )}
-
-                    {onCancel && (record.status === "DRAFT" || record.status === "PENDING") && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => onCancel(record)} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:focus:bg-rose-950/20">
-                          <Ban className="mr-2 h-4 w-4" />
-                          Cancel Payroll
                         </DropdownMenuItem>
                       </>
                     )}
