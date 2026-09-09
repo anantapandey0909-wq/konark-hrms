@@ -179,7 +179,8 @@ export async function getPayrollStatsAction(): Promise<
   }
 
   if (!isRealDataEnabled()) {
-    const rows = mockPayrollForUser(user);
+    // Hub financial cards exclude CANCELLED (parity with real aggregatePayrollAmounts).
+    const rows = mockPayrollForUser(user).filter((r) => r.status !== "CANCELLED");
     const statsLib = calculatePayrollStatistics(rows);
     const summaryLib = calculatePayrollSummary(rows);
     return {
