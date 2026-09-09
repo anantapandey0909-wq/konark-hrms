@@ -169,31 +169,36 @@ export async function getPayrollDashboardStats(): Promise<{
     let totalNet = 0;
     let totalAll = 0;
     let totalDed = 0;
+    let activeCount = 0;
     for (const r of rows) {
       byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+      // Exclude CANCELLED from Hub financial / processed totals (parity with org aggregate).
+      if (r.status === "CANCELLED") continue;
+      activeCount += 1;
       totalGross += r.grossSalary;
       totalNet += r.netSalary;
       totalAll += r.totalAllowances;
       totalDed += r.totalDeductions;
     }
-    const total = rows.length;
     return {
       summary: {
-        totalPayrollRecords: total,
-        totalEmployees: total > 0 ? 1 : 0,
+        totalPayrollRecords: activeCount,
+        totalEmployees: activeCount > 0 ? 1 : 0,
         paidPayroll: byStatus.PAID ?? 0,
         pendingPayroll: byStatus.PENDING ?? 0,
         approvedPayroll: byStatus.APPROVED ?? 0,
         draftPayroll: byStatus.DRAFT ?? 0,
       },
       stats: {
-        employeeCount: total > 0 ? 1 : 0,
+        employeeCount: activeCount,
         totalGrossSalary: totalGross,
         totalNetSalary: totalNet,
         totalAllowances: totalAll,
         totalDeductions: totalDed,
         averageNetSalary:
-          total > 0 ? Math.round((totalNet / total) * 100) / 100 : 0,
+          activeCount > 0
+            ? Math.round((totalNet / activeCount) * 100) / 100
+            : 0,
       },
     };
   }
