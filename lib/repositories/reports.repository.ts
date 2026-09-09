@@ -1,10 +1,21 @@
 /**
  * Reports repository — read-only tenant-scoped aggregations over existing tables.
  * companyId must come from the authenticated session (never from the client).
+ *
+ * Payroll financial metrics exclude CANCELLED records so voided/QA cancels
+ * do not inflate cost, average compensation, department allocation, or trends.
  */
 
+import { PayrollStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
+
+/** Tenant-scoped payroll filter that omits cancelled (void) records. */
+function nonCancelledPayrollWhere(companyId: string) {
+  return tenantScope(companyId, {
+    status: { not: PayrollStatus.CANCELLED },
+  });
+}
 
 export async function groupEmployeesByStatus(companyId: string) {
   return prisma.employee.groupBy({
@@ -100,7 +111,7 @@ export async function groupPayrollByStatus(companyId: string) {
 
 export async function aggregatePayrollAmounts(companyId: string) {
   return prisma.payroll.aggregate({
-    where: tenantScope(companyId, {}),
+    where: nonCancelledPayrollWhere(companyId),
     _sum: {
       grossSalary: true,
       netSalary: true,
@@ -115,7 +126,7 @@ export async function aggregatePayrollAmounts(companyId: string) {
 export async function sumNetSalaryByPayrollStatus(companyId: string) {
   return prisma.payroll.groupBy({
     by: ["status"],
-    where: tenantScope(companyId, {}),
+    where: nonCancelledPayrollWhere(companyId),
     _sum: { netSalary: true },
     _count: { _all: true },
   });
@@ -123,7 +134,7 @@ export async function sumNetSalaryByPayrollStatus(companyId: string) {
 
 export async function distinctPayrollEmployeeCount(companyId: string) {
   const rows = await prisma.payroll.findMany({
-    where: tenantScope(companyId, {}),
+    where: nonCancelledPayrollWhere(companyId),
     select: { employeeId: true },
     distinct: ["employeeId"],
   });
@@ -132,7 +143,7 @@ export async function distinctPayrollEmployeeCount(companyId: string) {
 
 export async function listPayrollForTrends(companyId: string) {
   return prisma.payroll.findMany({
-    where: tenantScope(companyId, {}),
+    where: nonCancelledPayrollWhere(companyId),
     select: {
       month: true,
       year: true,
