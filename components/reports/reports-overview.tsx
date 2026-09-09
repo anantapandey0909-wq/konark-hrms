@@ -100,7 +100,7 @@ export const ReportsOverview: React.FC<ReportsOverviewProps> = ({ data }) => {
               <Card className="bg-gradient-to-br from-card to-muted/20">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Active Payroll
+                    Total Payroll Cost
                   </CardTitle>
                   <BarChart3 className="h-4 w-4 text-emerald-500" />
                 </CardHeader>
@@ -109,7 +109,7 @@ export const ReportsOverview: React.FC<ReportsOverviewProps> = ({ data }) => {
                     {formatINR(payrollStats.totalGrossSalary)}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {formatINR(payrollSummary.paidPayroll)} processed and paid
+                    All non-cancelled payroll periods
                   </p>
                 </CardContent>
               </Card>
@@ -119,7 +119,7 @@ export const ReportsOverview: React.FC<ReportsOverviewProps> = ({ data }) => {
               <Card className="bg-gradient-to-br from-card to-muted/20">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Average Compensation
+                    Average Net Salary
                   </CardTitle>
                   <TrendingUp className="h-4 w-4 text-blue-500" />
                 </CardHeader>
@@ -128,7 +128,7 @@ export const ReportsOverview: React.FC<ReportsOverviewProps> = ({ data }) => {
                     {formatINR(payrollStats.averageNetSalary)}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Regular net baseline average salary
+                    Average across payroll records
                   </p>
                 </CardContent>
               </Card>
@@ -138,7 +138,7 @@ export const ReportsOverview: React.FC<ReportsOverviewProps> = ({ data }) => {
               <Card className="bg-gradient-to-br from-card to-muted/20">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Statements Drafted
+                    Payroll Statements
                   </CardTitle>
                   <Layers className="h-4 w-4 text-indigo-500" />
                 </CardHeader>
@@ -147,7 +147,7 @@ export const ReportsOverview: React.FC<ReportsOverviewProps> = ({ data }) => {
                     {payrollSummary.totalPayrollRecords}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Individual operational records generated
+                    All non-cancelled payroll records
                   </p>
                 </CardContent>
               </Card>
