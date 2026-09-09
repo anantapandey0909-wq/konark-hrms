@@ -105,7 +105,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
               <Card className="hover:shadow-md transition-shadow">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    Monthly Payroll Cost
+                    Total Payroll Cost
                   </CardTitle>
                   <IndianRupee className="h-4 w-4 text-emerald-500" />
                 </CardHeader>
@@ -114,7 +114,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
                     {formatINR(payrollStats.totalGrossSalary)}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {formatINR(payrollSummary.paidPayroll)} processed successfully
+                    All non-cancelled payroll periods
                   </p>
                 </CardContent>
               </Card>
@@ -124,7 +124,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
               <Card className="hover:shadow-md transition-shadow">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    Average Compensation
+                    Average Net Salary
                   </CardTitle>
                   <TrendingUp className="h-4 w-4 text-blue-500" />
                 </CardHeader>
@@ -133,7 +133,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
                     {formatINR(payrollStats.averageNetSalary)}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Net average salary across all active divisions
+                    Average across payroll records
                   </p>
                 </CardContent>
               </Card>
@@ -143,7 +143,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
               <Card className="hover:shadow-md transition-shadow">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    Payroll Operations
+                    Payroll Statements
                   </CardTitle>
                   <CreditCard className="h-4 w-4 text-violet-500" />
                 </CardHeader>
@@ -152,7 +152,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
                     {payrollSummary.totalPayrollRecords}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Active statements generated this period
+                    All non-cancelled payroll records
                   </p>
                 </CardContent>
               </Card>
@@ -207,7 +207,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ data }) => {
             <CardHeader>
               <CardTitle>Department Allocation</CardTitle>
               <CardDescription>
-                Employee count and payroll cost distributed by business unit.
+                Gross payroll by business unit across all non-cancelled periods.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
