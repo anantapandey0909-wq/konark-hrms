@@ -1,4 +1,4 @@
-import type { Prisma, PayrollMonth } from "@prisma/client";
+import type { Prisma, PayrollMonth, PayrollStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
 
@@ -150,9 +150,18 @@ export async function countPayrollsByStatus(companyId: string) {
   return groups;
 }
 
+/**
+ * Financial aggregates for Payroll Hub summary cards.
+ * Excludes CANCELLED so expense/processed totals match active liability semantics
+ * (aligned with Reports Phase 12.8A).
+ * companyId is trusted server context only.
+ */
 export async function aggregatePayrollAmounts(companyId: string) {
   return prisma.payroll.aggregate({
-    where: { companyId },
+    where: {
+      companyId,
+      status: { not: "CANCELLED" as PayrollStatus },
+    },
     _sum: {
       grossSalary: true,
       netSalary: true,
