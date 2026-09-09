@@ -235,7 +235,9 @@ export function PayrollDashboard({
             <div className="text-2xl font-bold">
               {formatCurrency(totalExpense, "en-IN", "INR")}
             </div>
-            <p className="text-xs text-slate-500">Net salaries in scope</p>
+            <p className="text-xs text-slate-500">
+              All non-cancelled payroll records
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -262,7 +264,7 @@ export function PayrollDashboard({
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{processed}</div>
-            <p className="text-xs text-slate-500">Payroll records loaded</p>
+            <p className="text-xs text-slate-500">Non-cancelled payroll records</p>
           </CardContent>
         </Card>
         <Card>
