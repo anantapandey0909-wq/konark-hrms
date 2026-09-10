@@ -28,10 +28,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Employee } from "@/types/employee";
 import { cn } from "@/lib/utils";
 
-const ITEMS_PER_PAGE = 5;
-
 export interface EmployeeTableProps {
+  /** Current server page of employees (already sliced). */
   employees: Employee[];
+  /** Filtered total from server count. */
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
   isLoading?: boolean;
   className?: string;
   /** Controlled selection of employee UUIDs */
@@ -50,12 +54,15 @@ const formatDate = (dateString: string): string => {
 
 export function EmployeeTable({
   employees = [],
+  total,
+  page,
+  pageSize,
+  onPageChange,
   isLoading = false,
   className,
   selectedIds,
   onSelectionChange,
 }: EmployeeTableProps) {
-  const [currentPage, setCurrentPage] = useState(1);
   const [internalSelected, setInternalSelected] = useState<Set<string>>(
     new Set()
   );
@@ -74,27 +81,17 @@ export function EmployeeTable({
     [isControlled, onSelectionChange]
   );
 
-  const totalItems = employees.length;
+  const totalItems = total;
   const totalPages = useMemo(
-    () => Math.ceil(totalItems / ITEMS_PER_PAGE) || 1,
-    [totalItems]
+    () => Math.ceil(totalItems / pageSize) || 1,
+    [totalItems, pageSize]
   );
 
-  const paginatedRecords = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return employees.slice(start, start + ITEMS_PER_PAGE);
-  }, [employees, currentPage]);
+  const startRecordIndex =
+    totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endRecordIndex = Math.min(page * pageSize, totalItems);
 
-  const startRecordIndex = useMemo(
-    () => (currentPage - 1) * ITEMS_PER_PAGE + 1,
-    [currentPage]
-  );
-  const endRecordIndex = useMemo(
-    () => Math.min(currentPage * ITEMS_PER_PAGE, totalItems),
-    [currentPage, totalItems]
-  );
-
-  const pageIds = paginatedRecords.map((e) => e.id);
+  const pageIds = employees.map((e) => e.id);
   const allPageSelected =
     pageIds.length > 0 && pageIds.every((id) => selectedSet.has(id));
   const somePageSelected =
@@ -196,7 +193,7 @@ export function EmployeeTable({
                       ))}
                     </TableRow>
                   ))
-                ) : paginatedRecords.length === 0 ? (
+                ) : employees.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="h-48 text-center">
                       <div className="flex flex-col items-center justify-center space-y-2 text-muted-foreground">
@@ -208,7 +205,7 @@ export function EmployeeTable({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedRecords.map((emp, index) => {
+                  employees.map((emp, index) => {
                     const fullName = `${emp.firstName} ${emp.lastName}`;
                     const initials =
                       `${emp.firstName.charAt(0)}${emp.lastName.charAt(0)}`.toUpperCase();
@@ -333,23 +330,23 @@ export function EmployeeTable({
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1 || isLoading}
+                onClick={() => onPageChange(Math.max(page - 1, 1))}
+                disabled={page === 1 || isLoading}
                 aria-label="Go to previous page"
                 className="h-8 w-8"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="text-xs font-medium text-muted-foreground">
-                Page {currentPage} of {totalPages}
+                Page {page} of {totalPages}
               </span>
               <Button
                 variant="outline"
                 size="icon"
                 onClick={() =>
-                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  onPageChange(Math.min(page + 1, totalPages))
                 }
-                disabled={currentPage === totalPages || isLoading}
+                disabled={page === totalPages || isLoading}
                 aria-label="Go to next page"
                 className="h-8 w-8"
               >
