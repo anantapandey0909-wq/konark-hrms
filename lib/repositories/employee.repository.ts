@@ -19,10 +19,16 @@ export type EmployeeListFilters = {
   employmentType?: string;
 };
 
-export async function findEmployeesByCompany(
+export type EmployeeListPagination = {
+  /** 1-based page index (already clamped by service). */
+  page: number;
+  pageSize: number;
+};
+
+function buildEmployeeWhere(
   companyId: string,
-  filters: EmployeeListFilters = {}
-) {
+  filters: EmployeeListFilters
+): Prisma.EmployeeWhereInput {
   const where: Prisma.EmployeeWhereInput = tenantScope(companyId, {});
 
   if (filters.departmentId && filters.departmentId !== "ALL") {
@@ -46,11 +52,40 @@ export async function findEmployeesByCompany(
     ];
   }
 
-  return prisma.employee.findMany({
-    where,
-    include: employeeInclude,
-    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-  });
+  return where;
+}
+
+const employeeOrderBy: Prisma.EmployeeOrderByWithRelationInput[] = [
+  { firstName: "asc" },
+  { lastName: "asc" },
+  { id: "asc" },
+];
+
+/**
+ * Paginated tenant employee list.
+ * Same WHERE for findMany + count. Offset pagination only.
+ */
+export async function findEmployeesByCompany(
+  companyId: string,
+  filters: EmployeeListFilters = {},
+  pagination: EmployeeListPagination = { page: 1, pageSize: 5 }
+) {
+  const where = buildEmployeeWhere(companyId, filters);
+  const skip = (pagination.page - 1) * pagination.pageSize;
+  const take = pagination.pageSize;
+
+  const [items, total] = await Promise.all([
+    prisma.employee.findMany({
+      where,
+      include: employeeInclude,
+      orderBy: employeeOrderBy,
+      skip,
+      take,
+    }),
+    prisma.employee.count({ where }),
+  ]);
+
+  return { items, total };
 }
 
 export async function findEmployeeById(companyId: string, id: string) {
