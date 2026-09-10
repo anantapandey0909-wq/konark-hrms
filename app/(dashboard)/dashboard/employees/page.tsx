@@ -31,6 +31,8 @@ import {
   writeBulkSelectionIds,
 } from "@/lib/client/bulk-selection-store";
 
+const PAGE_SIZE = 5;
+
 export default function EmployeesPage() {
   const [filters, setFilters] = useState<EmployeeFilters>({
     search: "",
@@ -38,7 +40,9 @@ export default function EmployeesPage() {
     status: "ALL",
     employmentType: "ALL",
   });
+  const [page, setPage] = useState(1);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [total, setTotal] = useState(0);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -56,27 +60,39 @@ export default function EmployeesPage() {
     writeBulkSelectionIds(ids);
   }, []);
 
+  const handleFiltersChange = useCallback(
+    (next: React.SetStateAction<EmployeeFilters>) => {
+      setFilters(next);
+      setPage(1);
+    },
+    []
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setIsLoading(true);
       try {
-        const [emps, depts] = await Promise.all([
+        const [list, depts] = await Promise.all([
           fetchEmployees({
             search: filters.search || undefined,
             departmentId: filters.departmentId,
             status: filters.status,
             employmentType: filters.employmentType,
+            page,
+            pageSize: PAGE_SIZE,
           }),
           fetchDepartments(),
         ]);
         if (!cancelled) {
-          setEmployees(emps);
+          setEmployees(list.items);
+          setTotal(list.total);
           setDepartments(depts);
         }
       } catch {
         if (!cancelled) {
           setEmployees([]);
+          setTotal(0);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -85,9 +101,7 @@ export default function EmployeesPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters]);
-
-  const filteredEmployees = useMemo(() => employees, [employees]);
+  }, [filters, page]);
 
   return (
     <div className="flex w-full flex-col gap-6 p-4 md:p-8">
@@ -142,12 +156,16 @@ export default function EmployeesPage() {
 
       <EmployeeTableToolbar
         filters={filters}
-        setFilters={setFilters}
+        setFilters={handleFiltersChange}
         departments={departments}
       />
 
       <EmployeeTable
-        employees={filteredEmployees}
+        employees={employees}
+        total={total}
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
         isLoading={isLoading}
         selectedIds={selectedIds}
         onSelectionChange={handleSelectionChange}
