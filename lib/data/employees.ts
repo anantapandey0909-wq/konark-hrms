@@ -14,6 +14,7 @@ import {
 import type {
   CreateEmployeeInput,
   UpdateEmployeeInput,
+  EmployeeListResult,
 } from "@/lib/services/employee.service";
 
 export async function fetchEmployees(filters?: {
@@ -21,7 +22,9 @@ export async function fetchEmployees(filters?: {
   departmentId?: string;
   status?: string;
   employmentType?: string;
-}): Promise<Employee[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<EmployeeListResult> {
   const result = await listEmployeesAction(filters);
   if (!result.success) {
     throw new Error(result.error);
