@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
 import LeaveStats from "@/components/leave/leave-stats";
 import LeaveFilters from "@/components/leave/leave-filters";
 import LeaveTable from "@/components/leave/leave-table";
+import { fetchLeaveRequests } from "@/lib/data/leave";
 
 import type {
   LeaveStatus,
@@ -35,10 +37,37 @@ export default function LeaveDashboard({
   const [departmentFilter, setDepartmentFilter] =
     useState<string | "ALL">("ALL");
   const [currentPage, setCurrentPage] = useState(1);
+  const [leaveRequests, setLeaveRequests] =
+    useState<LeaveRequest[]>(initialRequests);
+  const [isPending, startTransition] = useTransition();
 
-  const isLoading = false;
-  const leaveRequests = initialRequests;
+  /** KPI cards stay on full unfiltered stats (existing semantics). */
   const stats = initialStats;
+
+  /**
+   * Server-side status + leaveType only (repo already supports these).
+   * Search and department name stay client-side (no server search/name API).
+   */
+  const reloadFromServer = useCallback(
+    (status: LeaveStatus | "ALL", leaveType: LeaveType | "ALL") => {
+      startTransition(async () => {
+        try {
+          const rows = await fetchLeaveRequests({
+            status: status === "ALL" ? undefined : status,
+            leaveType: leaveType === "ALL" ? undefined : leaveType,
+          });
+          setLeaveRequests(rows);
+        } catch (error) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to reload leave requests."
+          );
+        }
+      });
+    },
+    []
+  );
 
   const normalizedQuery = useMemo(
     () => searchQuery.trim().toLowerCase(),
@@ -63,6 +92,7 @@ export default function LeaveDashboard({
         leave.employeeCode.toLowerCase().includes(normalizedQuery) ||
         leave.reason.toLowerCase().includes(normalizedQuery);
 
+      // status + type already applied server-side; keep defensive client match
       const matchesStatus =
         statusFilter === "ALL" || leave.status === statusFilter;
 
@@ -120,7 +150,6 @@ export default function LeaveDashboard({
         </Button>
       </div>
 
-      {/* Map LeaveStatsSummary.totalRequests → LeaveStats.total */}
       <LeaveStats
         total={stats.totalRequests}
         totalRequests={stats.totalRequests}
@@ -141,11 +170,13 @@ export default function LeaveDashboard({
         onStatusChange={(value) => {
           setStatusFilter(value);
           resetPagination();
+          reloadFromServer(value, typeFilter);
         }}
         typeFilter={typeFilter}
         onTypeChange={(value) => {
           setTypeFilter(value);
           resetPagination();
+          reloadFromServer(statusFilter, value);
         }}
         departmentFilter={departmentFilter}
         onDepartmentChange={(value) => {
@@ -162,7 +193,7 @@ export default function LeaveDashboard({
         totalItems={totalItems}
         itemsPerPage={ITEMS_PER_PAGE}
         onPageChange={setCurrentPage}
-        isLoading={isLoading}
+        isLoading={isPending}
       />
     </div>
   );
