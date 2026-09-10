@@ -18,6 +18,7 @@ import {
   deactivateEmployee,
   type CreateEmployeeInput,
   type UpdateEmployeeInput,
+  type EmployeeListResult,
 } from "@/lib/services/employee.service";
 import { toSafeActionResult } from "@/lib/errors/app-error";
 import type { Employee } from "@/types/employee";
@@ -66,12 +67,24 @@ function filterMockEmployees(
   });
 }
 
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return 1;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) return 5;
+  return Math.min(50, Math.max(1, Math.floor(pageSize)));
+}
+
 export async function listEmployeesAction(filters?: {
   search?: string;
   departmentId?: string;
   status?: string;
   employmentType?: string;
-}): Promise<ActionResult<Employee[]>> {
+  page?: number;
+  pageSize?: number;
+}): Promise<ActionResult<EmployeeListResult>> {
   try {
     await requireEmployeesView();
     assertProductionRealData();
@@ -79,11 +92,22 @@ export async function listEmployeesAction(filters?: {
     return toSafeActionResult(error);
   }
 
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
   if (!isRealDataEnabled()) {
-    return { success: true, data: filterMockEmployees(filters) };
+    const filtered = filterMockEmployees(filters);
+    const total = filtered.length;
+    const start = (page - 1) * pageSize;
+    const items = filtered.slice(start, start + pageSize);
+    return { success: true, data: { items, total, page, pageSize } };
   }
   try {
-    const data = await listEmployees(filters);
+    const data = await listEmployees({
+      ...filters,
+      page,
+      pageSize,
+    });
     return { success: true, data };
   } catch (error) {
     return toSafeActionResult(error);
