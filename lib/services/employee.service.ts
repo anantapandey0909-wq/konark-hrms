@@ -37,6 +37,30 @@ const updateEmployeeSchema = createEmployeeSchema.partial();
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 
+export type EmployeeListResult = {
+  items: Employee[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 5;
+/** Upper bound for untrusted client pageSize (directory default remains 5). */
+const MAX_PAGE_SIZE = 50;
+
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return DEFAULT_PAGE;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize)));
+}
+
 /** Manager must exist in-tenant and be ACTIVE. */
 async function assertActiveManager(
   companyId: string,
@@ -67,16 +91,36 @@ export async function listEmployees(filters?: {
   departmentId?: string;
   status?: string;
   employmentType?: string;
-}): Promise<Employee[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<EmployeeListResult> {
   const { companyId } = await getTenantPrisma();
 
-  const repoFilters = { ...filters };
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
+  const repoFilters = {
+    search: filters?.search,
+    departmentId: filters?.departmentId,
+    status: filters?.status,
+    employmentType: filters?.employmentType,
+  };
   if (repoFilters.status === "INACTIVE") {
     repoFilters.status = "RESIGNED";
   }
 
-  const rows = await employeeRepo.findEmployeesByCompany(companyId, repoFilters);
-  return rows.map(mapEmployeeToFrontend);
+  const { items, total } = await employeeRepo.findEmployeesByCompany(
+    companyId,
+    repoFilters,
+    { page, pageSize }
+  );
+
+  return {
+    items: items.map(mapEmployeeToFrontend),
+    total,
+    page,
+    pageSize,
+  };
 }
 
 export async function getEmployee(id: string): Promise<Employee> {
