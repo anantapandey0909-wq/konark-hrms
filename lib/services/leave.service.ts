@@ -510,7 +510,7 @@ export async function approveLeaveRequest(
         approvedOn: new Date(),
         approvalRemarks: remarks ?? null,
         ...(approverEmployee
-          ? { approvedBy: { connect: { id: approverEmployee.id } }
+          ? { approvedBy: { connect: { id: approverEmployee.id } } }
           : {}),
       },
       include: {
