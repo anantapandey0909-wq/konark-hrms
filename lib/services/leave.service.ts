@@ -120,43 +120,34 @@ export async function getLeaveRequest(id: string): Promise<LeaveRequest> {
   return mapLeaveRequestToFrontend(row);
 }
 
+/**
+ * Leave dashboard KPIs via DB counts (not full-row load).
+ * Semantics unchanged: all-time status totals + onLeaveToday for APPROVED spanning today (UTC midnight).
+ * Scope: org-wide for approvers/super-admin; self-only otherwise.
+ */
 export async function getLeaveStats(): Promise<LeaveStatsSummary> {
-  // listLeaveRequests already applies self-scope for non-approvers.
-  const requests = await listLeaveRequests();
+  const { companyId, user } = await getTenantPrisma();
+  const scope: leaveRepo.LeaveStatsScope = {};
+
+  if (!canViewOrgLeave(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return {
+        totalRequests: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        cancelled: 0,
+        onLeaveToday: 0,
+      };
+    }
+    scope.employeeId = ownId;
+  }
+
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
-  const summary: LeaveStatsSummary = {
-    totalRequests: requests.length,
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-    cancelled: 0,
-    onLeaveToday: 0,
-  };
-
-  for (const leave of requests) {
-    switch (leave.status) {
-      case "PENDING":
-        summary.pending++;
-        break;
-      case "APPROVED":
-        summary.approved++;
-        break;
-      case "REJECTED":
-        summary.rejected++;
-        break;
-      case "CANCELLED":
-        summary.cancelled++;
-        break;
-    }
-    if (leave.status === "APPROVED") {
-      const start = parseDateOnly(leave.startDate);
-      const end = parseDateOnly(leave.endDate);
-      if (today >= start && today <= end) summary.onLeaveToday++;
-    }
-  }
-  return summary;
+  return leaveRepo.countLeaveStats(companyId, scope, today);
 }
 
 export async function getLeaveBalance(
@@ -519,7 +510,7 @@ export async function approveLeaveRequest(
         approvedOn: new Date(),
         approvalRemarks: remarks ?? null,
         ...(approverEmployee
-          ? { approvedBy: { connect: { id: approverEmployee.id } } }
+          ? { approvedBy: { connect: { id: approverEmployee.id } }
           : {}),
       },
       include: {

@@ -1,6 +1,7 @@
 import { LeaveStatus, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
+import type { LeaveStatsSummary } from "@/types/leave";
 
 const leaveInclude = {
   employee: {
@@ -18,6 +19,11 @@ export type LeaveListFilters = {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
+};
+
+/** Optional self-scope for stats (non-approvers). companyId always from session. */
+export type LeaveStatsScope = {
+  employeeId?: string;
 };
 
 function dayStart(iso: string): Date {
@@ -53,6 +59,58 @@ export async function findLeaveRequestsByCompany(
     include: leaveInclude,
     orderBy: [{ appliedOn: "desc" }, { createdAt: "desc" }],
   });
+}
+
+/**
+ * KPI counts via DB aggregation — does not load LeaveRequest rows.
+ * Semantics match prior in-memory getLeaveStats():
+ * - all-time totals by status (no period window)
+ * - onLeaveToday: APPROVED where startDate <= today <= endDate
+ */
+export async function countLeaveStats(
+  companyId: string,
+  scope: LeaveStatsScope = {},
+  today: Date
+): Promise<LeaveStatsSummary> {
+  const baseWhere: Prisma.LeaveRequestWhereInput = tenantScope(companyId, {});
+  if (scope.employeeId) {
+    baseWhere.employeeId = scope.employeeId;
+  }
+
+  const [grouped, onLeaveToday] = await Promise.all([
+    prisma.leaveRequest.groupBy({
+      by: ["status"],
+      where: baseWhere,
+      _count: { _all: true },
+    }),
+    prisma.leaveRequest.count({
+      where: {
+        ...baseWhere,
+        status: LeaveStatus.APPROVED,
+        startDate: { lte: today },
+        endDate: { gte: today },
+      },
+    }),
+  ]);
+
+  const byStatus: Partial<Record<LeaveStatus, number>> = {};
+  for (const row of grouped) {
+    byStatus[row.status] = row._count._all;
+  }
+
+  const pending = byStatus.PENDING ?? 0;
+  const approved = byStatus.APPROVED ?? 0;
+  const rejected = byStatus.REJECTED ?? 0;
+  const cancelled = byStatus.CANCELLED ?? 0;
+
+  return {
+    totalRequests: pending + approved + rejected + cancelled,
+    pending,
+    approved,
+    rejected,
+    cancelled,
+    onLeaveToday,
+  };
 }
 
 export async function findLeaveRequestById(companyId: string, id: string) {
