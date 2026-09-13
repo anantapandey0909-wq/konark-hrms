@@ -84,7 +84,8 @@ export const LeaveForm: React.FC<LeaveFormProps> = ({
           fetchDepartments(),
         ]);
         if (!cancelled) {
-          setEmployees(emps);
+          // EmployeeListResult: picker + metadata use items (default page)
+          setEmployees(emps.items);
           setDepartments(depts);
         }
       } catch {
