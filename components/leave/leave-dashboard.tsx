@@ -19,15 +19,21 @@ import type {
   LeaveRequest,
 } from "@/types/leave";
 
-const ITEMS_PER_PAGE = 10;
+const DEFAULT_PAGE_SIZE = 10;
 
 interface LeaveDashboardProps {
   readonly initialRequests: LeaveRequest[];
+  readonly initialTotal: number;
+  readonly initialPage: number;
+  readonly initialPageSize: number;
   readonly initialStats: LeaveStatsSummary;
 }
 
 export default function LeaveDashboard({
   initialRequests,
+  initialTotal,
+  initialPage,
+  initialPageSize,
   initialStats,
 }: LeaveDashboardProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -36,27 +42,37 @@ export default function LeaveDashboard({
   const [typeFilter, setTypeFilter] = useState<LeaveType | "ALL">("ALL");
   const [departmentFilter, setDepartmentFilter] =
     useState<string | "ALL">("ALL");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize || DEFAULT_PAGE_SIZE);
   const [leaveRequests, setLeaveRequests] =
     useState<LeaveRequest[]>(initialRequests);
+  const [totalItems, setTotalItems] = useState(initialTotal);
   const [isPending, startTransition] = useTransition();
 
   /** KPI cards stay on full unfiltered stats (existing semantics). */
   const stats = initialStats;
 
   /**
-   * Server-side status + leaveType only (repo already supports these).
-   * Search and department name stay client-side (no server search/name API).
+   * Server-side status + leaveType + page only.
+   * Search and department remain UI-only on the current page (Part 4B).
    */
   const reloadFromServer = useCallback(
-    (status: LeaveStatus | "ALL", leaveType: LeaveType | "ALL") => {
+    (
+      status: LeaveStatus | "ALL",
+      leaveType: LeaveType | "ALL",
+      page: number
+    ) => {
       startTransition(async () => {
         try {
-          const rows = await fetchLeaveRequests({
+          const result = await fetchLeaveRequests({
             status: status === "ALL" ? undefined : status,
             leaveType: leaveType === "ALL" ? undefined : leaveType,
+            page,
+            pageSize,
           });
-          setLeaveRequests(rows);
+          setLeaveRequests(result.items);
+          setTotalItems(result.total);
+          setCurrentPage(result.page);
         } catch (error) {
           toast.error(
             error instanceof Error
@@ -66,7 +82,7 @@ export default function LeaveDashboard({
         }
       });
     },
-    []
+    [pageSize]
   );
 
   const normalizedQuery = useMemo(
@@ -74,6 +90,10 @@ export default function LeaveDashboard({
     [searchQuery]
   );
 
+  /**
+   * Department options from the current page only (not org-wide).
+   * Full department filter is deferred to Phase 12.9D Part 4B.
+   */
   const departments = useMemo(() => {
     return [
       ...new Set(
@@ -84,7 +104,11 @@ export default function LeaveDashboard({
     ].sort();
   }, [leaveRequests]);
 
-  const filteredLeaveRequests = useMemo(() => {
+  /**
+   * Search / department apply only to the current server page.
+   * They do not imply filtering the full tenant dataset.
+   */
+  const displayedLeaveRequests = useMemo(() => {
     return leaveRequests.filter((leave) => {
       const matchesSearch =
         !normalizedQuery ||
@@ -92,44 +116,21 @@ export default function LeaveDashboard({
         leave.employeeCode.toLowerCase().includes(normalizedQuery) ||
         leave.reason.toLowerCase().includes(normalizedQuery);
 
-      // status + type already applied server-side; keep defensive client match
-      const matchesStatus =
-        statusFilter === "ALL" || leave.status === statusFilter;
-
-      const matchesLeaveType =
-        typeFilter === "ALL" || leave.leaveType === typeFilter;
-
       const matchesDepartment =
         departmentFilter === "ALL" || leave.department === departmentFilter;
 
-      return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesLeaveType &&
-        matchesDepartment
-      );
+      return matchesSearch && matchesDepartment;
     });
-  }, [
-    leaveRequests,
-    normalizedQuery,
-    statusFilter,
-    typeFilter,
-    departmentFilter,
-  ]);
+  }, [leaveRequests, normalizedQuery, departmentFilter]);
 
-  const totalItems = filteredLeaveRequests.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const activePage = Math.min(currentPage, totalPages);
 
-  const paginatedLeaveRequests = useMemo(() => {
-    const startIndex = (activePage - 1) * ITEMS_PER_PAGE;
-    return filteredLeaveRequests.slice(
-      startIndex,
-      startIndex + ITEMS_PER_PAGE
-    );
-  }, [filteredLeaveRequests, activePage]);
-
-  const resetPagination = () => setCurrentPage(1);
+  const handlePageChange = (page: number) => {
+    const next = Math.min(Math.max(1, page), totalPages);
+    setCurrentPage(next);
+    reloadFromServer(statusFilter, typeFilter, next);
+  };
 
   return (
     <div className="space-y-6 p-6 md:p-8">
@@ -164,35 +165,33 @@ export default function LeaveDashboard({
         searchQuery={searchQuery}
         onSearchChange={(value) => {
           setSearchQuery(value);
-          resetPagination();
         }}
         statusFilter={statusFilter}
         onStatusChange={(value) => {
           setStatusFilter(value);
-          resetPagination();
-          reloadFromServer(value, typeFilter);
+          setCurrentPage(1);
+          reloadFromServer(value, typeFilter, 1);
         }}
         typeFilter={typeFilter}
         onTypeChange={(value) => {
           setTypeFilter(value);
-          resetPagination();
-          reloadFromServer(statusFilter, value);
+          setCurrentPage(1);
+          reloadFromServer(statusFilter, value, 1);
         }}
         departmentFilter={departmentFilter}
         onDepartmentChange={(value) => {
           setDepartmentFilter(value);
-          resetPagination();
         }}
         departments={departments}
       />
 
       <LeaveTable
-        records={paginatedLeaveRequests}
+        records={displayedLeaveRequests}
         currentPage={activePage}
         totalPages={totalPages}
         totalItems={totalItems}
-        itemsPerPage={ITEMS_PER_PAGE}
-        onPageChange={setCurrentPage}
+        itemsPerPage={pageSize}
+        onPageChange={handlePageChange}
         isLoading={isPending}
       />
     </div>

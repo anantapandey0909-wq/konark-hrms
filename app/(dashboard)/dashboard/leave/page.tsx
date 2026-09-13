@@ -6,8 +6,14 @@ import type { LeaveRequest, LeaveStatsSummary } from "@/types/leave";
 /** Always re-fetch leave list on navigation — no stale static cache. */
 export const dynamic = "force-dynamic";
 
+const INITIAL_PAGE = 1;
+const INITIAL_PAGE_SIZE = 10;
+
 export default async function LeavePage() {
   let initialRequests: LeaveRequest[] = [];
+  let initialTotal = 0;
+  let initialPage = INITIAL_PAGE;
+  let initialPageSize = INITIAL_PAGE_SIZE;
   let initialStats: LeaveStatsSummary = {
     totalRequests: 0,
     pending: 0,
@@ -22,11 +28,14 @@ export default async function LeavePage() {
   const realData = isRealDataEnabled();
 
   try {
-    const [requests, stats] = await Promise.all([
-      fetchLeaveRequests(),
+    const [listResult, stats] = await Promise.all([
+      fetchLeaveRequests({ page: INITIAL_PAGE, pageSize: INITIAL_PAGE_SIZE }),
       fetchLeaveStats(),
     ]);
-    initialRequests = requests;
+    initialRequests = listResult.items;
+    initialTotal = listResult.total;
+    initialPage = listResult.page;
+    initialPageSize = listResult.pageSize;
     initialStats = stats;
   } catch (error) {
     loadError =
@@ -48,7 +57,9 @@ export default async function LeavePage() {
         NEXT_PUBLIC_USE_REAL_DATA=
         {String(process.env.NEXT_PUBLIC_USE_REAL_DATA ?? "(unset)")}
         {" · "}
-        records={initialRequests.length}
+        records={initialTotal}
+        {" · "}
+        page={initialPage}/{Math.max(1, Math.ceil(initialTotal / initialPageSize))}
       </div>
 
       {loadError && (
@@ -60,7 +71,7 @@ export default async function LeavePage() {
         </div>
       )}
 
-      {!loadError && realData && initialRequests.length === 0 && (
+      {!loadError && realData && initialTotal === 0 && (
         <div className="mx-6 rounded-md border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
           Real-data mode is ON. No leave requests found for your company yet —
           create one from Apply Leave.
@@ -69,6 +80,9 @@ export default async function LeavePage() {
 
       <LeaveDashboard
         initialRequests={initialRequests}
+        initialTotal={initialTotal}
+        initialPage={initialPage}
+        initialPageSize={initialPageSize}
         initialStats={initialStats}
       />
     </div>
