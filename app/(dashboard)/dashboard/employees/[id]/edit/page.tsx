@@ -53,7 +53,8 @@ export default function EditEmployeePage() {
         if (!cancelled) {
           setEmployee(emp);
           setDepartments(depts);
-          setManagers(emps.filter((e) => e.id !== id));
+          // EmployeeListResult: use items for manager options; exclude self
+          setManagers(emps.items.filter((e) => e.id !== id));
         }
       } finally {
         if (!cancelled) setLoading(false);

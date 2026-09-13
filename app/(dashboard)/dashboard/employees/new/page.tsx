@@ -26,7 +26,8 @@ export default function NewEmployeePage() {
         ]);
         if (!cancelled) {
           setDepartments(depts);
-          setManagers(emps);
+          // EmployeeListResult: managers are the items array
+          setManagers(emps.items);
         }
       } catch {
         /* keep empty */
