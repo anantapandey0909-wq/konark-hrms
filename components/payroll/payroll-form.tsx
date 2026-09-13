@@ -135,7 +135,8 @@ export function PayrollForm({
           fetchDepartments(),
         ]);
         if (!cancelled) {
-          setEmployees(emps);
+          // EmployeeListResult: picker uses items (default page)
+          setEmployees(emps.items);
           setDepartments(depts);
         }
       } catch {
