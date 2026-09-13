@@ -36,6 +36,30 @@ const APPROVER_ROLES: readonly AuthRole[] = [
   "SUPERVISOR",
 ];
 
+export type LeaveListResult = {
+  items: LeaveRequest[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10;
+/** Upper bound for untrusted client pageSize. */
+const MAX_PAGE_SIZE = 50;
+
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return DEFAULT_PAGE;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize)));
+}
+
 function parseDateOnly(iso: string): Date {
   return new Date(`${iso}T00:00:00.000Z`);
 }
@@ -86,21 +110,43 @@ export async function listLeaveRequests(filters?: {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
-}): Promise<LeaveRequest[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<LeaveListResult> {
   const { companyId, user } = await getTenantPrisma();
   const scoped = { ...(filters ?? {}) };
 
   if (!canViewOrgLeave(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
-      return [];
+      const page = clampPage(filters?.page);
+      const pageSize = clampPageSize(filters?.pageSize);
+      return { items: [], total: 0, page, pageSize };
     }
     // Force self-scope; ignore client employeeId.
     scoped.employeeId = ownId;
   }
 
-  const rows = await leaveRepo.findLeaveRequestsByCompany(companyId, scoped);
-  return rows.map(mapLeaveRequestToFrontend);
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
+  const { items, total } = await leaveRepo.findLeaveRequestsByCompany(
+    companyId,
+    {
+      status: scoped.status,
+      leaveType: scoped.leaveType,
+      employeeId: scoped.employeeId,
+      departmentId: scoped.departmentId,
+    },
+    { page, pageSize }
+  );
+
+  return {
+    items: items.map(mapLeaveRequestToFrontend),
+    total,
+    page,
+    pageSize,
+  };
 }
 
 export async function getLeaveRequest(id: string): Promise<LeaveRequest> {
