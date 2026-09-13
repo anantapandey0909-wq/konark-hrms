@@ -1,10 +1,7 @@
 /**
  * Thin leave data adapter.
  *
- * Mock vs real is decided ONLY inside app/actions/leave.ts ("use server"),
- * where isRealDataEnabled() reads process.env on the server.
- * This module never branches on the flag itself — that avoided a class of
- * client/server env mismatches for NEXT_PUBLIC_* in Client Components.
+ * Mock vs real is decided ONLY inside app/actions/leave.ts ("use server").
  */
 
 import type {
@@ -31,6 +28,7 @@ export async function fetchLeaveRequests(filters?: {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }): Promise<LeaveListResult> {

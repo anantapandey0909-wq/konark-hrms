@@ -45,7 +45,6 @@ export type LeaveListResult = {
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 10;
-/** Upper bound for untrusted client pageSize. */
 const MAX_PAGE_SIZE = 50;
 
 function clampPage(page?: number): number {
@@ -74,26 +73,15 @@ function assertCanApprove(role: AuthRole) {
   }
 }
 
-/**
- * Organizational leave visibility / on-behalf authority.
- * Mirrors leave.approve (and super-admin) — not inventing new permissions.
- */
 function canViewOrgLeave(user: AuthUser): boolean {
   if (user.isSuperAdmin) return true;
   return getPermissions(user.role).leave.approve;
 }
 
-/**
- * Self-service actors (leave.apply without leave.approve) may only act for
- * their own Employee record. Approvers / super-admin may act on behalf.
- */
 function canCreateOnBehalf(user: AuthUser): boolean {
   return canViewOrgLeave(user);
 }
 
-/**
- * Resolve the authenticated user's linked Employee id within the tenant.
- */
 async function resolveSessionEmployeeId(
   companyId: string,
   userId: string
@@ -110,6 +98,7 @@ export async function listLeaveRequests(filters?: {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }): Promise<LeaveListResult> {
@@ -123,7 +112,7 @@ export async function listLeaveRequests(filters?: {
       const pageSize = clampPageSize(filters?.pageSize);
       return { items: [], total: 0, page, pageSize };
     }
-    // Force self-scope; ignore client employeeId.
+    // Force self-scope; ignore client employeeId. Filters only narrow.
     scoped.employeeId = ownId;
   }
 
@@ -137,6 +126,7 @@ export async function listLeaveRequests(filters?: {
       leaveType: scoped.leaveType,
       employeeId: scoped.employeeId,
       departmentId: scoped.departmentId,
+      search: scoped.search,
     },
     { page, pageSize }
   );
@@ -166,11 +156,6 @@ export async function getLeaveRequest(id: string): Promise<LeaveRequest> {
   return mapLeaveRequestToFrontend(row);
 }
 
-/**
- * Leave dashboard KPIs via DB counts (not full-row load).
- * Semantics unchanged: all-time status totals + onLeaveToday for APPROVED spanning today (UTC midnight).
- * Scope: org-wide for approvers/super-admin; self-only otherwise.
- */
 export async function getLeaveStats(): Promise<LeaveStatsSummary> {
   const { companyId, user } = await getTenantPrisma();
   const scope: leaveRepo.LeaveStatsScope = {};
@@ -206,11 +191,7 @@ export async function getLeaveBalance(
   if (!canViewOrgLeave(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
-      throw new AppError(
-        "NOT_FOUND",
-        "Leave balance not found.",
-        404
-      );
+      throw new AppError("NOT_FOUND", "Leave balance not found.", 404);
     }
     if (employeeId && employeeId !== ownId) {
       throw new AppError("NOT_FOUND", "Leave balance not found.", 404);
@@ -247,7 +228,6 @@ export async function createLeaveRequest(
 
   let targetEmployeeId = parsed.employeeId;
 
-  // Self-service: leave.apply without leave.approve → own employee only
   if (!canCreateOnBehalf(user)) {
     const linked = await db.employee.findFirst({
       where: { companyId, userId: user.id },
@@ -313,7 +293,6 @@ export async function createLeaveRequest(
     );
   }
 
-  // Soft balance check on create (hard check on approve)
   const field = balanceFieldForLeaveType(parsed.leaveType);
   if (field) {
     const year = startDate.getUTCFullYear();
@@ -381,7 +360,6 @@ export async function updateLeaveRequest(
     if (!ownId || existing.employeeId !== ownId) {
       throw new AppError("NOT_FOUND", "Leave request not found.", 404);
     }
-    // Non-approvers cannot reassign leave to another employee.
     if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
       throw new AppError(
         "FORBIDDEN",
@@ -507,7 +485,6 @@ export async function approveLeaveRequest(
   const year = existing.startDate.getUTCFullYear();
   const field = balanceFieldForLeaveType(existing.leaveType);
 
-  // Resolve approver employee id for FK (approvedBy is Employee)
   const approverEmployee = await prisma.employee.findFirst({
     where: { companyId, userId: user.id },
   });
@@ -640,7 +617,6 @@ export async function cancelLeaveRequest(id: string): Promise<LeaveRequest> {
     throw new AppError("NOT_FOUND", "Leave request not found.", 404);
   }
 
-  // Owner or approver roles may cancel pending; only approvers restore approved balance
   const linked = await db.employee.findFirst({
     where: { companyId, userId: user.id },
   });
