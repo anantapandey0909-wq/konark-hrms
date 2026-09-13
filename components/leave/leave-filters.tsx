@@ -1,14 +1,19 @@
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { LeaveType, LeaveStatus } from "@/types/leave";
 import { LEAVE_TYPE_LABELS, LEAVE_STATUS_LABELS } from "@/constants/leave";
+
+export type LeaveDepartmentOption = {
+  id: string;
+  name: string;
+};
 
 interface LeaveFiltersProps {
   searchQuery: string;
@@ -17,7 +22,7 @@ interface LeaveFiltersProps {
   onStatusChange: (value: LeaveStatus | "ALL") => void;
   typeFilter: LeaveType | "ALL";
   onTypeChange: (value: LeaveType | "ALL") => void;
-  departments: string[];
+  departments: LeaveDepartmentOption[];
   departmentFilter: string;
   onDepartmentChange: (value: string) => void;
 }
@@ -51,17 +56,16 @@ export default function LeaveFilters({
   onTypeChange,
   departments,
   departmentFilter,
-  onDepartmentChange
+  onDepartmentChange,
 }: LeaveFiltersProps) {
   return (
     <div className="flex flex-col justify-between gap-3 rounded-lg border border-border/40 bg-muted/20 p-3 lg:flex-row lg:items-center">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
-        {/* Search Field */}
-        <div >
+        <div className="relative min-w-[200px] flex-1 max-w-sm">
           <Search
-  aria-hidden="true"
-  className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground"
-/>
+            aria-hidden="true"
+            className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground"
+          />
           <Input
             type="text"
             placeholder="Search employee name or code..."
@@ -72,11 +76,12 @@ export default function LeaveFilters({
           />
         </div>
 
-        {/* Filters Matrix */}
         <div className="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-3">
-          {/* Status Selection */}
           <Select value={statusFilter} onValueChange={onStatusChange}>
-            <SelectTrigger aria-label="Filter by status" className="w-full h-9 bg-background text-xs">
+            <SelectTrigger
+              aria-label="Filter by status"
+              className="w-full h-9 bg-background text-xs"
+            >
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -88,9 +93,11 @@ export default function LeaveFilters({
             </SelectContent>
           </Select>
 
-          {/* Leave Type Selection */}
           <Select value={typeFilter} onValueChange={onTypeChange}>
-            <SelectTrigger aria-label="Filter by leave type" className="w-full h-9 bg-background text-xs">
+            <SelectTrigger
+              aria-label="Filter by leave type"
+              className="w-full h-9 bg-background text-xs"
+            >
               <SelectValue placeholder="Leave Type" />
             </SelectTrigger>
             <SelectContent>
@@ -102,16 +109,18 @@ export default function LeaveFilters({
             </SelectContent>
           </Select>
 
-          {/* Department Selection */}
           <Select value={departmentFilter} onValueChange={onDepartmentChange}>
-            <SelectTrigger aria-label="Filter by department" className="h-9 text-xs bg-background w-full">
+            <SelectTrigger
+              aria-label="Filter by department"
+              className="h-9 text-xs bg-background w-full"
+            >
               <SelectValue placeholder="Department" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Departments</SelectItem>
               {departments.map((dept) => (
-                <SelectItem key={dept} value={dept}>
-                  {dept}
+                <SelectItem key={dept.id} value={dept.id}>
+                  {dept.name}
                 </SelectItem>
               ))}
             </SelectContent>

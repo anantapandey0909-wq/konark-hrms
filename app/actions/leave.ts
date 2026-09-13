@@ -43,12 +43,25 @@ function canViewOrgLeave(user: AuthUser): boolean {
   return getPermissions(user.role).leave.approve;
 }
 
-/** Match mock leave rows to session identity (employee code or id). */
 function isOwnMockLeave(user: AuthUser, leave: LeaveRequest): boolean {
   const identity = user.employeeId;
   return (
     leave.employeeId === identity ||
     leave.employeeCode === identity
+  );
+}
+
+function matchesMockSearch(leave: LeaveRequest, search: string): boolean {
+  const q = search.trim().toLowerCase();
+  if (!q) return true;
+  const name = leave.employeeName.toLowerCase();
+  const code = leave.employeeCode.toLowerCase();
+  const reason = leave.reason.toLowerCase();
+  // Option A parity: code OR name tokens OR reason (name covers first/last for mock).
+  return (
+    code.includes(q) ||
+    name.includes(q) ||
+    reason.includes(q)
   );
 }
 
@@ -59,6 +72,7 @@ function filterMockLeaves(
     leaveType?: string;
     employeeId?: string;
     departmentId?: string;
+    search?: string;
   }
 ): LeaveRequest[] {
   return rows.filter((r) => {
@@ -71,6 +85,18 @@ function filterMockLeaves(
     )
       return false;
     if (filters?.employeeId && r.employeeId !== filters.employeeId) return false;
+    // Mock rows expose department name only; departmentId match is best-effort
+    // against the name string when UI still has names in older mocks.
+    if (
+      filters?.departmentId &&
+      filters.departmentId !== "ALL" &&
+      r.department !== filters.departmentId &&
+      // When options use real ids, mock cannot map — keep row only if names were used as values.
+      !r.department
+    ) {
+      return false;
+    }
+    if (filters?.search && !matchesMockSearch(r, filters.search)) return false;
     return true;
   });
 }
@@ -82,10 +108,10 @@ function mockLeavesForUser(
     leaveType?: string;
     employeeId?: string;
     departmentId?: string;
+    search?: string;
   }
 ): LeaveRequest[] {
   if (!canViewOrgLeave(user)) {
-    // Force self-scope; ignore client employeeId.
     return filterMockLeaves(mockLeaveRequests, {
       ...filters,
       employeeId: undefined,
@@ -147,6 +173,7 @@ export async function listLeaveRequestsAction(filters?: {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }): Promise<ActionResult<LeaveListResult>> {

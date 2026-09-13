@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import LeaveStats from "@/components/leave/leave-stats";
 import LeaveFilters from "@/components/leave/leave-filters";
 import LeaveTable from "@/components/leave/leave-table";
 import { fetchLeaveRequests } from "@/lib/data/leave";
+import { fetchDepartments } from "@/lib/data/departments";
 
 import type {
   LeaveStatus,
@@ -20,6 +21,7 @@ import type {
 } from "@/types/leave";
 
 const DEFAULT_PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 interface LeaveDashboardProps {
   readonly initialRequests: LeaveRequest[];
@@ -40,34 +42,58 @@ export default function LeaveDashboard({
   const [statusFilter, setStatusFilter] =
     useState<LeaveStatus | "ALL">("ALL");
   const [typeFilter, setTypeFilter] = useState<LeaveType | "ALL">("ALL");
-  const [departmentFilter, setDepartmentFilter] =
-    useState<string | "ALL">("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("ALL");
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [pageSize] = useState(initialPageSize || DEFAULT_PAGE_SIZE);
   const [leaveRequests, setLeaveRequests] =
     useState<LeaveRequest[]>(initialRequests);
   const [totalItems, setTotalItems] = useState(initialTotal);
+  const [departments, setDepartments] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [isPending, startTransition] = useTransition();
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** KPI cards stay on full unfiltered stats (existing semantics). */
   const stats = initialStats;
 
-  /**
-   * Server-side status + leaveType + page only.
-   * Search and department remain UI-only on the current page (Part 4B).
-   */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const depts = await fetchDepartments();
+        if (!cancelled) {
+          setDepartments(
+            depts.map((d) => ({ id: d.id, name: d.name })).sort((a, b) =>
+              a.name.localeCompare(b.name)
+            )
+          );
+        }
+      } catch {
+        if (!cancelled) setDepartments([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const reloadFromServer = useCallback(
-    (
-      status: LeaveStatus | "ALL",
-      leaveType: LeaveType | "ALL",
-      page: number
-    ) => {
+    (args: {
+      status: LeaveStatus | "ALL";
+      leaveType: LeaveType | "ALL";
+      departmentId: string;
+      search: string;
+      page: number;
+    }) => {
       startTransition(async () => {
         try {
           const result = await fetchLeaveRequests({
-            status: status === "ALL" ? undefined : status,
-            leaveType: leaveType === "ALL" ? undefined : leaveType,
-            page,
+            status: args.status === "ALL" ? undefined : args.status,
+            leaveType: args.leaveType === "ALL" ? undefined : args.leaveType,
+            departmentId:
+              args.departmentId === "ALL" ? undefined : args.departmentId,
+            search: args.search.trim() || undefined,
+            page: args.page,
             pageSize,
           });
           setLeaveRequests(result.items);
@@ -85,52 +111,41 @@ export default function LeaveDashboard({
     [pageSize]
   );
 
-  const normalizedQuery = useMemo(
-    () => searchQuery.trim().toLowerCase(),
-    [searchQuery]
-  );
-
-  /**
-   * Department options from the current page only (not org-wide).
-   * Full department filter is deferred to Phase 12.9D Part 4B.
-   */
-  const departments = useMemo(() => {
-    return [
-      ...new Set(
-        leaveRequests
-          .map((leave) => leave.department)
-          .filter((department): department is string => Boolean(department))
-      ),
-    ].sort();
-  }, [leaveRequests]);
-
-  /**
-   * Search / department apply only to the current server page.
-   * They do not imply filtering the full tenant dataset.
-   */
-  const displayedLeaveRequests = useMemo(() => {
-    return leaveRequests.filter((leave) => {
-      const matchesSearch =
-        !normalizedQuery ||
-        leave.employeeName.toLowerCase().includes(normalizedQuery) ||
-        leave.employeeCode.toLowerCase().includes(normalizedQuery) ||
-        leave.reason.toLowerCase().includes(normalizedQuery);
-
-      const matchesDepartment =
-        departmentFilter === "ALL" || leave.department === departmentFilter;
-
-      return matchesSearch && matchesDepartment;
-    });
-  }, [leaveRequests, normalizedQuery, departmentFilter]);
-
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const activePage = Math.min(currentPage, totalPages);
 
   const handlePageChange = (page: number) => {
     const next = Math.min(Math.max(1, page), totalPages);
     setCurrentPage(next);
-    reloadFromServer(statusFilter, typeFilter, next);
+    reloadFromServer({
+      status: statusFilter,
+      leaveType: typeFilter,
+      departmentId: departmentFilter,
+      search: searchQuery,
+      page: next,
+    });
   };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setCurrentPage(1);
+      reloadFromServer({
+        status: statusFilter,
+        leaveType: typeFilter,
+        departmentId: departmentFilter,
+        search: value,
+        page: 1,
+      });
+    }, SEARCH_DEBOUNCE_MS);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
 
   return (
     <div className="space-y-6 p-6 md:p-8">
@@ -163,30 +178,48 @@ export default function LeaveDashboard({
 
       <LeaveFilters
         searchQuery={searchQuery}
-        onSearchChange={(value) => {
-          setSearchQuery(value);
-        }}
+        onSearchChange={handleSearchChange}
         statusFilter={statusFilter}
         onStatusChange={(value) => {
           setStatusFilter(value);
           setCurrentPage(1);
-          reloadFromServer(value, typeFilter, 1);
+          reloadFromServer({
+            status: value,
+            leaveType: typeFilter,
+            departmentId: departmentFilter,
+            search: searchQuery,
+            page: 1,
+          });
         }}
         typeFilter={typeFilter}
         onTypeChange={(value) => {
           setTypeFilter(value);
           setCurrentPage(1);
-          reloadFromServer(statusFilter, value, 1);
+          reloadFromServer({
+            status: statusFilter,
+            leaveType: value,
+            departmentId: departmentFilter,
+            search: searchQuery,
+            page: 1,
+          });
         }}
         departmentFilter={departmentFilter}
         onDepartmentChange={(value) => {
           setDepartmentFilter(value);
+          setCurrentPage(1);
+          reloadFromServer({
+            status: statusFilter,
+            leaveType: typeFilter,
+            departmentId: value,
+            search: searchQuery,
+            page: 1,
+          });
         }}
         departments={departments}
       />
 
       <LeaveTable
-        records={displayedLeaveRequests}
+        records={leaveRequests}
         currentPage={activePage}
         totalPages={totalPages}
         totalItems={totalItems}
