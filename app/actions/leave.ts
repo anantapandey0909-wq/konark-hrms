@@ -20,6 +20,7 @@ import {
   approveLeaveRequest,
   rejectLeaveRequest,
   cancelLeaveRequest,
+  type LeaveListResult,
 } from "@/lib/services/leave.service";
 import type {
   CreateLeaveInput,
@@ -93,6 +94,16 @@ function mockLeavesForUser(
   return filterMockLeaves(mockLeaveRequests, filters);
 }
 
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return 1;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) return 10;
+  return Math.min(50, Math.max(1, Math.floor(pageSize)));
+}
+
 function mockStatsForUser(user: AuthUser): LeaveStatsSummary {
   const rows = mockLeavesForUser(user);
   const today = new Date();
@@ -136,7 +147,9 @@ export async function listLeaveRequestsAction(filters?: {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
-}): Promise<ActionResult<LeaveRequest[]>> {
+  page?: number;
+  pageSize?: number;
+}): Promise<ActionResult<LeaveListResult>> {
   let user: AuthUser;
   try {
     user = await requireLeaveView();
@@ -145,16 +158,30 @@ export async function listLeaveRequestsAction(filters?: {
     return toSafeActionResult(error);
   }
 
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
   const real = isRealDataEnabled();
   console.info(
     `[leave] listLeaveRequestsAction dataSource=${real ? "postgres" : "mock"}`
   );
 
   if (!real) {
-    return { success: true, data: mockLeavesForUser(user, filters) };
+    const filtered = mockLeavesForUser(user, filters);
+    const total = filtered.length;
+    const start = (page - 1) * pageSize;
+    const items = filtered.slice(start, start + pageSize);
+    return { success: true, data: { items, total, page, pageSize } };
   }
   try {
-    return { success: true, data: await listLeaveRequests(filters) };
+    return {
+      success: true,
+      data: await listLeaveRequests({
+        ...filters,
+        page,
+        pageSize,
+      }),
+    };
   } catch (error) {
     return toSafeActionResult(error);
   }

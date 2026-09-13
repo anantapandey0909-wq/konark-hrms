@@ -13,6 +13,7 @@ import type {
   LeaveStatsSummary,
   LeaveFormData,
 } from "@/types/leave";
+import type { LeaveListResult } from "@/lib/services/leave.service";
 import {
   listLeaveRequestsAction,
   getLeaveRequestAction,
@@ -29,7 +30,10 @@ export async function fetchLeaveRequests(filters?: {
   status?: string;
   leaveType?: string;
   employeeId?: string;
-}): Promise<LeaveRequest[]> {
+  departmentId?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<LeaveListResult> {
   const result = await listLeaveRequestsAction(filters);
   if (!result.success) throw new Error(result.error);
   return result.data;
