@@ -121,7 +121,8 @@ export default function BulkOperationsDashboard() {
         ]);
         if (!cancelled) {
           setDepartments(depts);
-          setManagers(emps);
+          // EmployeeListResult: manager options from items (default page)
+          setManagers(emps.items);
         }
       } catch {
         if (!cancelled) {
