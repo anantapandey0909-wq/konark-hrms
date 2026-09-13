@@ -129,7 +129,8 @@ export function AttendanceForm({
       setEmployeesLoading(true);
       try {
         const list = await fetchEmployees();
-        if (!cancelled) setEmployees(list);
+        // EmployeeListResult: picker uses items (default page)
+        if (!cancelled) setEmployees(list.items);
       } catch {
         if (!cancelled) setEmployees([]);
       } finally {
