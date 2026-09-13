@@ -21,6 +21,12 @@ export type LeaveListFilters = {
   departmentId?: string;
 };
 
+export type LeaveListPagination = {
+  /** 1-based page index (already clamped by service). */
+  page: number;
+  pageSize: number;
+};
+
 /** Optional self-scope for stats (non-approvers). companyId always from session. */
 export type LeaveStatsScope = {
   employeeId?: string;
@@ -35,10 +41,10 @@ const ACTIVE_LEAVE_STATUSES: LeaveStatus[] = [
   LeaveStatus.APPROVED,
 ];
 
-export async function findLeaveRequestsByCompany(
+function buildLeaveWhere(
   companyId: string,
-  filters: LeaveListFilters = {}
-) {
+  filters: LeaveListFilters
+): Prisma.LeaveRequestWhereInput {
   const where: Prisma.LeaveRequestWhereInput = tenantScope(companyId, {});
 
   if (filters.status && filters.status !== "ALL") {
@@ -54,11 +60,40 @@ export async function findLeaveRequestsByCompany(
     where.employee = { departmentId: filters.departmentId };
   }
 
-  return prisma.leaveRequest.findMany({
-    where,
-    include: leaveInclude,
-    orderBy: [{ appliedOn: "desc" }, { createdAt: "desc" }],
-  });
+  return where;
+}
+
+const leaveOrderBy: Prisma.LeaveRequestOrderByWithRelationInput[] = [
+  { appliedOn: "desc" },
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+
+/**
+ * Paginated tenant leave list.
+ * Same WHERE for findMany + count. Offset pagination only.
+ */
+export async function findLeaveRequestsByCompany(
+  companyId: string,
+  filters: LeaveListFilters = {},
+  pagination: LeaveListPagination = { page: 1, pageSize: 10 }
+) {
+  const where = buildLeaveWhere(companyId, filters);
+  const skip = (pagination.page - 1) * pagination.pageSize;
+  const take = pagination.pageSize;
+
+  const [items, total] = await Promise.all([
+    prisma.leaveRequest.findMany({
+      where,
+      include: leaveInclude,
+      orderBy: leaveOrderBy,
+      skip,
+      take,
+    }),
+    prisma.leaveRequest.count({ where }),
+  ]);
+
+  return { items, total };
 }
 
 /**
