@@ -68,6 +68,22 @@ type Prepared = {
   overtimeHours: number | null;
 };
 
+/** Load all tenant employees for import code lookup (paginated repo API). */
+async function loadAllCompanyEmployees(companyId: string) {
+  const first = await employeeRepo.findEmployeesByCompany(
+    companyId,
+    {},
+    { page: 1, pageSize: 1 }
+  );
+  if (first.total === 0) return [];
+  const { items } = await employeeRepo.findEmployeesByCompany(
+    companyId,
+    {},
+    { page: 1, pageSize: first.total }
+  );
+  return items;
+}
+
 async function validateAttendanceImportBatch(
   companyId: string,
   rows: AttendanceImportRowInput[]
@@ -76,7 +92,7 @@ async function validateAttendanceImportBatch(
   errors: AttendanceImportRowError[];
   duplicateCount: number;
 }> {
-  const companyEmployees = await employeeRepo.findEmployeesByCompany(companyId);
+  const companyEmployees = await loadAllCompanyEmployees(companyId);
   const byCode = new Map(
     companyEmployees.map((e) => [e.employeeCode.toLowerCase(), e])
   );
