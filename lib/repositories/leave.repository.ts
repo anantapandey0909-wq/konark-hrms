@@ -19,6 +19,8 @@ export type LeaveListFilters = {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
+  /** Trimmed; empty means no search condition. */
+  search?: string;
 };
 
 export type LeaveListPagination = {
@@ -56,8 +58,42 @@ function buildLeaveWhere(
   if (filters.employeeId) {
     where.employeeId = filters.employeeId;
   }
-  if (filters.departmentId) {
-    where.employee = { departmentId: filters.departmentId };
+
+  const andClauses: Prisma.LeaveRequestWhereInput[] = [];
+
+  if (filters.departmentId && filters.departmentId !== "ALL") {
+    andClauses.push({
+      employee: { departmentId: filters.departmentId },
+    });
+  }
+
+  const q = filters.search?.trim();
+  if (q) {
+    // Option A: OR across code, firstName, lastName, reason (case-insensitive).
+    andClauses.push({
+      OR: [
+        { reason: { contains: q, mode: "insensitive" } },
+        {
+          employee: {
+            is: { employeeCode: { contains: q, mode: "insensitive" } },
+          },
+        },
+        {
+          employee: {
+            is: { firstName: { contains: q, mode: "insensitive" } },
+          },
+        },
+        {
+          employee: {
+            is: { lastName: { contains: q, mode: "insensitive" } },
+          },
+        },
+      ],
+    });
+  }
+
+  if (andClauses.length > 0) {
+    where.AND = andClauses;
   }
 
   return where;
