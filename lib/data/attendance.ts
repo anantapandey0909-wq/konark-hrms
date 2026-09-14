@@ -9,6 +9,7 @@ import { mockAttendanceWithEmployees } from "@/mock/attendance";
 import { calculateAttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import type { AttendanceWithEmployee } from "@/types/attendance";
+import type { AttendanceListResult } from "@/lib/services/attendance.service";
 import {
   listAttendanceAction,
   getAttendanceAction,
@@ -30,20 +31,38 @@ export async function fetchAttendanceList(filters?: {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
-}): Promise<AttendanceWithEmployee[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<AttendanceListResult> {
   if (!isRealDataEnabled()) {
-    return mockAttendanceWithEmployees.filter((row) => {
+    const page =
+      typeof filters?.page === "number" && Number.isFinite(filters.page)
+        ? Math.max(1, Math.floor(filters.page))
+        : 1;
+    const pageSize =
+      typeof filters?.pageSize === "number" && Number.isFinite(filters.pageSize)
+        ? Math.min(50, Math.max(1, Math.floor(filters.pageSize)))
+        : 10;
+
+    const filtered = mockAttendanceWithEmployees.filter((row) => {
       if (filters?.status && filters.status !== "ALL") {
         if (row.attendance.status !== filters.status) return false;
       }
       if (filters?.workMode && filters.workMode !== "ALL") {
         if (row.attendance.workMode !== filters.workMode) return false;
       }
-      if (filters?.employeeId && row.attendance.employeeId !== filters.employeeId) {
+      if (
+        filters?.employeeId &&
+        row.attendance.employeeId !== filters.employeeId
+      ) {
         return false;
       }
       return true;
     });
+    const total = filtered.length;
+    const start = (page - 1) * pageSize;
+    const items = filtered.slice(start, start + pageSize);
+    return { items, total, page, pageSize };
   }
 
   const result = await listAttendanceAction(filters);
@@ -53,7 +72,6 @@ export async function fetchAttendanceList(filters?: {
 
 /**
  * All-time Attendance KPIs (independent of list pagination/filters).
- * Mock: same calculateAttendanceMetrics on mock rows.
  */
 export async function fetchAttendanceMetrics(): Promise<AttendanceMetrics> {
   if (!isRealDataEnabled()) {

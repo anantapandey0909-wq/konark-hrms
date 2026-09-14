@@ -23,6 +23,29 @@ import type { AttendanceWithEmployee } from "@/types/attendance";
 import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import type { AttendanceStatus, WorkMode } from "@prisma/client";
 
+export type AttendanceListResult = {
+  items: AttendanceWithEmployee[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 50;
+
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return DEFAULT_PAGE;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize)));
+}
+
 function parseDateOnly(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00.000Z`);
 }
@@ -42,18 +65,12 @@ function assertCheckOrder(checkIn: Date | null, checkOut: Date | null) {
   }
 }
 
-/**
- * Organizational attendance visibility (company-wide reads).
- * Uses existing matrix only: mark OR approve (or super-admin).
- * Actors with only attendance.view (e.g. EMPLOYEE) are self-scoped.
- */
 function canViewOrgAttendance(user: AuthUser): boolean {
   if (user.isSuperAdmin) return true;
   const p = getPermissions(user.role);
   return p.attendance.mark || p.attendance.approve;
 }
 
-/** Resolve the authenticated user's linked Employee id within the tenant. */
 async function resolveSessionEmployeeId(
   companyId: string,
   userId: string
@@ -73,28 +90,46 @@ export async function listAttendance(filters?: {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
-}): Promise<AttendanceWithEmployee[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<AttendanceListResult> {
   const { companyId, user } = await getTenantPrisma();
   const scoped = { ...(filters ?? {}) };
 
   if (!canViewOrgAttendance(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
-      return [];
+      const page = clampPage(filters?.page);
+      const pageSize = clampPageSize(filters?.pageSize);
+      return { items: [], total: 0, page, pageSize };
     }
-    // Force self-scope; ignore client employeeId.
     scoped.employeeId = ownId;
   }
 
-  const rows = await attendanceRepo.findAttendancesByCompany(companyId, scoped);
-  return rows.map(mapAttendanceWithEmployee);
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
+  const { items, total } = await attendanceRepo.findAttendancesByCompany(
+    companyId,
+    {
+      startDate: scoped.startDate,
+      endDate: scoped.endDate,
+      status: scoped.status,
+      workMode: scoped.workMode,
+      employeeId: scoped.employeeId,
+      departmentId: scoped.departmentId,
+    },
+    { page, pageSize }
+  );
+
+  return {
+    items: items.map(mapAttendanceWithEmployee),
+    total,
+    page,
+    pageSize,
+  };
 }
 
-/**
- * All-time Attendance KPIs via DB aggregation (not full-row load).
- * Scope matches listAttendance: org for mark/approve; self otherwise.
- * No date window — same dataset semantics as prior calculateAttendanceMetrics(list).
- */
 export async function getAttendanceMetrics(): Promise<AttendanceMetrics> {
   const { companyId, user } = await getTenantPrisma();
   const scope: attendanceRepo.AttendanceMetricsScope = {};
@@ -312,7 +347,6 @@ export async function updateAttendance(
   return mapAttendanceWithEmployee(updated);
 }
 
-/** Check-in for the authenticated user's linked employee. */
 export async function checkIn(options?: {
   workMode?: WorkMode;
   location?: string | null;

@@ -19,6 +19,7 @@ import {
   updateAttendance,
   checkIn,
   checkOut,
+  type AttendanceListResult,
 } from "@/lib/services/attendance.service";
 import type {
   CreateAttendanceInput,
@@ -31,6 +32,35 @@ export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string; code: string };
 
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return 1;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) return 10;
+  return Math.min(50, Math.max(1, Math.floor(pageSize)));
+}
+
+function filterMockAttendance(filters?: {
+  status?: string;
+  workMode?: string;
+  employeeId?: string;
+}): AttendanceWithEmployee[] {
+  return mockAttendanceWithEmployees.filter((row) => {
+    if (filters?.status && filters.status !== "ALL") {
+      if (row.attendance.status !== filters.status) return false;
+    }
+    if (filters?.workMode && filters.workMode !== "ALL") {
+      if (row.attendance.workMode !== filters.workMode) return false;
+    }
+    if (filters?.employeeId && row.attendance.employeeId !== filters.employeeId) {
+      return false;
+    }
+    return true;
+  });
+}
+
 export async function listAttendanceAction(filters?: {
   startDate?: string;
   endDate?: string;
@@ -38,11 +68,33 @@ export async function listAttendanceAction(filters?: {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
-}): Promise<ActionResult<AttendanceWithEmployee[]>> {
+  page?: number;
+  pageSize?: number;
+}): Promise<ActionResult<AttendanceListResult>> {
   try {
     await requireAttendanceView();
     assertProductionRealData();
-    const data = await listAttendance(filters);
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
+  if (!isRealDataEnabled()) {
+    const filtered = filterMockAttendance(filters);
+    const total = filtered.length;
+    const start = (page - 1) * pageSize;
+    const items = filtered.slice(start, start + pageSize);
+    return { success: true, data: { items, total, page, pageSize } };
+  }
+
+  try {
+    const data = await listAttendance({
+      ...filters,
+      page,
+      pageSize,
+    });
     return { success: true, data };
   } catch (error) {
     return toSafeActionResult(error);
