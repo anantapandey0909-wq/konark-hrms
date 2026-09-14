@@ -6,12 +6,17 @@ import {
 } from "@/lib/data/attendance";
 import { AttendancePageClient } from "./attendance-page-client";
 
+const INITIAL_PAGE = 1;
+const INITIAL_PAGE_SIZE = 10;
+
 /**
- * Server Component: load attendance list + independent KPI metrics.
- * Mock vs real is handled inside data adapters via feature flag.
+ * Server Component: load paginated attendance list + independent KPI metrics.
  */
 export default async function AttendancePage() {
   let initialData: AttendanceWithEmployee[] = [];
+  let initialTotal = 0;
+  let initialPage = INITIAL_PAGE;
+  let initialPageSize = INITIAL_PAGE_SIZE;
   let initialMetrics: AttendanceMetrics = {
     totalRecords: 0,
     presentCount: 0,
@@ -25,11 +30,14 @@ export default async function AttendancePage() {
   };
 
   try {
-    const [list, metrics] = await Promise.all([
-      fetchAttendanceList(),
+    const [listResult, metrics] = await Promise.all([
+      fetchAttendanceList({ page: INITIAL_PAGE, pageSize: INITIAL_PAGE_SIZE }),
       fetchAttendanceMetrics(),
     ]);
-    initialData = list;
+    initialData = listResult.items;
+    initialTotal = listResult.total;
+    initialPage = listResult.page;
+    initialPageSize = listResult.pageSize;
     initialMetrics = metrics;
   } catch {
     // Unauthenticated / mock-auth without cookie: empty list + zero metrics.
@@ -38,6 +46,9 @@ export default async function AttendancePage() {
   return (
     <AttendancePageClient
       initialData={initialData}
+      initialTotal={initialTotal}
+      initialPage={initialPage}
+      initialPageSize={initialPageSize}
       initialMetrics={initialMetrics}
     />
   );

@@ -21,7 +21,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Users, Clock, ShieldCheck, CheckCircle2 } from "lucide-react";
+import {
+  Plus,
+  Users,
+  Clock,
+  ShieldCheck,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import {
   fetchAttendanceList,
   fetchAttendanceMetrics,
@@ -29,17 +37,28 @@ import {
   patchAttendance,
 } from "@/lib/data/attendance";
 
+const DEFAULT_PAGE_SIZE = 10;
+
 interface AttendancePageClientProps {
   readonly initialData: AttendanceWithEmployee[];
+  readonly initialTotal: number;
+  readonly initialPage: number;
+  readonly initialPageSize: number;
   readonly initialMetrics: AttendanceMetrics;
 }
 
 export function AttendancePageClient({
   initialData,
+  initialTotal,
+  initialPage,
+  initialPageSize,
   initialMetrics,
 }: AttendancePageClientProps) {
   const [data, setData] =
     React.useState<AttendanceWithEmployee[]>(initialData);
+  const [totalItems, setTotalItems] = React.useState(initialTotal);
+  const [currentPage, setCurrentPage] = React.useState(initialPage);
+  const [pageSize] = React.useState(initialPageSize || DEFAULT_PAGE_SIZE);
   const [metrics, setMetrics] =
     React.useState<AttendanceMetrics>(initialMetrics);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -54,15 +73,39 @@ export function AttendancePageClient({
     React.useState<AttendanceWithEmployee | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  /** Reload list + KPIs after save — KPIs stay independent of client filters. */
+  const loadPage = React.useCallback(
+    async (page: number) => {
+      setIsLoading(true);
+      try {
+        const result = await fetchAttendanceList({
+          page,
+          pageSize,
+        });
+        setData(result.items);
+        setTotalItems(result.total);
+        setCurrentPage(result.page);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to load attendance."
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [pageSize]
+  );
+
+  /** Reload list page + KPIs after save — KPIs stay independent of list page. */
   const reload = React.useCallback(async () => {
     setIsLoading(true);
     try {
-      const [rows, nextMetrics] = await Promise.all([
-        fetchAttendanceList(),
+      const [listResult, nextMetrics] = await Promise.all([
+        fetchAttendanceList({ page: currentPage, pageSize }),
         fetchAttendanceMetrics(),
       ]);
-      setData(rows);
+      setData(listResult.items);
+      setTotalItems(listResult.total);
+      setCurrentPage(listResult.page);
       setMetrics(nextMetrics);
     } catch (error) {
       toast.error(
@@ -71,8 +114,12 @@ export function AttendancePageClient({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentPage, pageSize]);
 
+  /**
+   * Client-side search/status/workMode apply only to the current server page
+   * (existing filter UX preserved; server-side filters are a later phase).
+   */
   const filteredData = React.useMemo(() => {
     return data.filter((row) => {
       const searchTarget =
@@ -90,6 +137,18 @@ export function AttendancePageClient({
       return searchMatch && statusMatch && workModeMatch;
     });
   }, [data, filters]);
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const activePage = Math.min(currentPage, totalPages);
+  const startRecordIndex =
+    totalItems === 0 ? 0 : (activePage - 1) * pageSize + 1;
+  const endRecordIndex = Math.min(activePage * pageSize, totalItems);
+
+  const handlePageChange = (page: number) => {
+    const next = Math.min(Math.max(1, page), totalPages);
+    setCurrentPage(next);
+    void loadPage(next);
+  };
 
   const handleEditClick = React.useCallback((record: AttendanceWithEmployee) => {
     setEditingRecord(record);
@@ -225,7 +284,53 @@ export function AttendancePageClient({
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading attendance…</p>
         ) : (
-          <AttendanceTable data={filteredData} onEdit={handleEditClick} />
+          <>
+            <AttendanceTable data={filteredData} onEdit={handleEditClick} />
+            {totalItems > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs">
+                <span className="text-muted-foreground">
+                  Showing{" "}
+                  <span className="font-semibold text-foreground">
+                    {startRecordIndex}
+                  </span>
+                  –
+                  <span className="font-semibold text-foreground">
+                    {endRecordIndex}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold text-foreground">
+                    {totalItems}
+                  </span>{" "}
+                  records
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => handlePageChange(activePage - 1)}
+                    disabled={activePage <= 1 || isLoading}
+                    aria-label="Go to previous page"
+                    className="h-8 w-8"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-muted-foreground tabular-nums px-1">
+                    Page {activePage} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => handlePageChange(activePage + 1)}
+                    disabled={activePage >= totalPages || isLoading}
+                    aria-label="Go to next page"
+                    className="h-8 w-8"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
