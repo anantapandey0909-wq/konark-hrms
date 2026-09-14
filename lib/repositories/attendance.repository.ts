@@ -5,6 +5,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tenantScope } from "@/lib/db/prisma-with-tenant";
+import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 
 const attendanceInclude = {
   employee: {
@@ -28,8 +29,17 @@ export type AttendanceListFilters = {
   departmentId?: string;
 };
 
+/** Optional self-scope for metrics (non-org viewers). companyId from session only. */
+export type AttendanceMetricsScope = {
+  employeeId?: string;
+};
+
 function dayStart(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00.000Z`);
+}
+
+function roundToTwoDecimals(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 export async function findAttendancesByCompany(
@@ -65,6 +75,87 @@ export async function findAttendancesByCompany(
     include: attendanceInclude,
     orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
   });
+}
+
+/**
+ * All-time Attendance KPIs via DB aggregation — does not load Attendance rows.
+ * Semantics match calculateAttendanceMetrics() in lib/reports/attendance-metrics.ts:
+ * - totalRecords = count of all scoped rows
+ * - status counts via groupBy
+ * - averageWorkingHours = avg of totalHours only where totalHours is not null
+ * - totalOvertimeHours = sum of overtimeHours where not null
+ * - regularizationCount = count where isRegularized === true
+ * No date window.
+ */
+export async function getAttendanceMetricsByCompany(
+  companyId: string,
+  scope: AttendanceMetricsScope = {}
+): Promise<AttendanceMetrics> {
+  const baseWhere: Prisma.AttendanceWhereInput = tenantScope(companyId, {});
+  if (scope.employeeId) {
+    baseWhere.employeeId = scope.employeeId;
+  }
+
+  const [
+    totalRecords,
+    grouped,
+    hoursAgg,
+    overtimeAgg,
+    regularizationCount,
+  ] = await Promise.all([
+    prisma.attendance.count({ where: baseWhere }),
+    prisma.attendance.groupBy({
+      by: ["status"],
+      where: baseWhere,
+      _count: { _all: true },
+    }),
+    prisma.attendance.aggregate({
+      where: { ...baseWhere, totalHours: { not: null } },
+      _sum: { totalHours: true },
+      _count: { _all: true },
+    }),
+    prisma.attendance.aggregate({
+      where: { ...baseWhere, overtimeHours: { not: null } },
+      _sum: { overtimeHours: true },
+    }),
+    prisma.attendance.count({
+      where: { ...baseWhere, isRegularized: true },
+    }),
+  ]);
+
+  const byStatus: Record<string, number> = {};
+  for (const row of grouped) {
+    byStatus[row.status] = row._count._all;
+  }
+
+  const presentCount = byStatus.PRESENT ?? 0;
+  const lateCount = byStatus.LATE ?? 0;
+  const halfDayCount = byStatus.HALF_DAY ?? 0;
+  const absentCount = byStatus.ABSENT ?? 0;
+  const onLeaveCount = byStatus.ON_LEAVE ?? 0;
+
+  const activeWorkDaysCount = hoursAgg._count._all;
+  const totalWorkingHours = hoursAgg._sum.totalHours ?? 0;
+  const averageWorkingHours =
+    activeWorkDaysCount > 0
+      ? roundToTwoDecimals(totalWorkingHours / activeWorkDaysCount)
+      : 0;
+
+  const totalOvertimeHours = roundToTwoDecimals(
+    overtimeAgg._sum.overtimeHours ?? 0
+  );
+
+  return {
+    totalRecords,
+    presentCount,
+    lateCount,
+    halfDayCount,
+    absentCount,
+    onLeaveCount,
+    averageWorkingHours,
+    totalOvertimeHours,
+    regularizationCount,
+  };
 }
 
 export async function findAttendanceById(companyId: string, id: string) {
