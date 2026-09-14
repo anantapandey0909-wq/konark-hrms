@@ -20,6 +20,7 @@ import {
 import { getPermissions } from "@/lib/auth/permissions";
 import type { AuthUser } from "@/types/auth";
 import type { AttendanceWithEmployee } from "@/types/attendance";
+import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import type { AttendanceStatus, WorkMode } from "@prisma/client";
 
 function parseDateOnly(isoDate: string): Date {
@@ -89,6 +90,36 @@ export async function listAttendance(filters?: {
   return rows.map(mapAttendanceWithEmployee);
 }
 
+/**
+ * All-time Attendance KPIs via DB aggregation (not full-row load).
+ * Scope matches listAttendance: org for mark/approve; self otherwise.
+ * No date window — same dataset semantics as prior calculateAttendanceMetrics(list).
+ */
+export async function getAttendanceMetrics(): Promise<AttendanceMetrics> {
+  const { companyId, user } = await getTenantPrisma();
+  const scope: attendanceRepo.AttendanceMetricsScope = {};
+
+  if (!canViewOrgAttendance(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return {
+        totalRecords: 0,
+        presentCount: 0,
+        lateCount: 0,
+        halfDayCount: 0,
+        absentCount: 0,
+        onLeaveCount: 0,
+        averageWorkingHours: 0,
+        totalOvertimeHours: 0,
+        regularizationCount: 0,
+      };
+    }
+    scope.employeeId = ownId;
+  }
+
+  return attendanceRepo.getAttendanceMetricsByCompany(companyId, scope);
+}
+
 export async function getAttendance(
   id: string
 ): Promise<AttendanceWithEmployee> {
@@ -101,7 +132,6 @@ export async function getAttendance(
   if (!canViewOrgAttendance(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId || row.employeeId !== ownId) {
-      // Same surface as missing — avoid peer existence leaks.
       throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
     }
   }

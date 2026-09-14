@@ -6,10 +6,13 @@
 
 import { isRealDataEnabled } from "@/lib/config/flags";
 import { mockAttendanceWithEmployees } from "@/mock/attendance";
+import { calculateAttendanceMetrics } from "@/lib/reports/attendance-metrics";
+import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import type { AttendanceWithEmployee } from "@/types/attendance";
 import {
   listAttendanceAction,
   getAttendanceAction,
+  getAttendanceMetricsAction,
   createAttendanceAction,
   updateAttendanceAction,
   checkInAction,
@@ -44,6 +47,21 @@ export async function fetchAttendanceList(filters?: {
   }
 
   const result = await listAttendanceAction(filters);
+  if (!result.success) throw new Error(result.error);
+  return result.data;
+}
+
+/**
+ * All-time Attendance KPIs (independent of list pagination/filters).
+ * Mock: same calculateAttendanceMetrics on mock rows.
+ */
+export async function fetchAttendanceMetrics(): Promise<AttendanceMetrics> {
+  if (!isRealDataEnabled()) {
+    const rows = mockAttendanceWithEmployees.map((r) => r.attendance);
+    return calculateAttendanceMetrics(rows);
+  }
+
+  const result = await getAttendanceMetricsAction();
   if (!result.success) throw new Error(result.error);
   return result.data;
 }

@@ -7,9 +7,14 @@ import {
   requireAttendanceSelfService,
   requireAttendanceView,
 } from "@/lib/auth/assert-data-management";
+import { isRealDataEnabled } from "@/lib/config/flags";
+import { mockAttendanceWithEmployees } from "@/mock/attendance";
+import { calculateAttendanceMetrics } from "@/lib/reports/attendance-metrics";
+import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import {
   listAttendance,
   getAttendance,
+  getAttendanceMetrics,
   createAttendance,
   updateAttendance,
   checkIn,
@@ -38,6 +43,28 @@ export async function listAttendanceAction(filters?: {
     await requireAttendanceView();
     assertProductionRealData();
     const data = await listAttendance(filters);
+    return { success: true, data };
+  } catch (error) {
+    return toSafeActionResult(error);
+  }
+}
+
+export async function getAttendanceMetricsAction(): Promise<
+  ActionResult<AttendanceMetrics>
+> {
+  try {
+    await requireAttendanceView();
+    assertProductionRealData();
+
+    if (!isRealDataEnabled()) {
+      const rows = mockAttendanceWithEmployees.map((r) => r.attendance);
+      return {
+        success: true,
+        data: calculateAttendanceMetrics(rows),
+      };
+    }
+
+    const data = await getAttendanceMetrics();
     return { success: true, data };
   } catch (error) {
     return toSafeActionResult(error);

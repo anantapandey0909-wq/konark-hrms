@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { AttendanceWithEmployee } from "@/types/attendance";
-import { calculateAttendanceMetrics } from "@/lib/reports/attendance-metrics";
+import type { AttendanceMetrics } from "@/lib/reports/attendance-metrics";
 import { AttendanceTable } from "@/components/attendance/attendance-table";
 import {
   AttendanceFilters,
@@ -24,19 +24,24 @@ import {
 import { Plus, Users, Clock, ShieldCheck, CheckCircle2 } from "lucide-react";
 import {
   fetchAttendanceList,
+  fetchAttendanceMetrics,
   saveAttendance,
   patchAttendance,
 } from "@/lib/data/attendance";
 
 interface AttendancePageClientProps {
   readonly initialData: AttendanceWithEmployee[];
+  readonly initialMetrics: AttendanceMetrics;
 }
 
 export function AttendancePageClient({
   initialData,
+  initialMetrics,
 }: AttendancePageClientProps) {
   const [data, setData] =
     React.useState<AttendanceWithEmployee[]>(initialData);
+  const [metrics, setMetrics] =
+    React.useState<AttendanceMetrics>(initialMetrics);
   const [isLoading, setIsLoading] = React.useState(false);
   const [filters, setFilters] = React.useState<AttendanceFilterState>({
     search: "",
@@ -49,12 +54,16 @@ export function AttendancePageClient({
     React.useState<AttendanceWithEmployee | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  /** Reload only from user actions (save), never from useEffect. */
+  /** Reload list + KPIs after save — KPIs stay independent of client filters. */
   const reload = React.useCallback(async () => {
     setIsLoading(true);
     try {
-      const rows = await fetchAttendanceList();
+      const [rows, nextMetrics] = await Promise.all([
+        fetchAttendanceList(),
+        fetchAttendanceMetrics(),
+      ]);
       setData(rows);
+      setMetrics(nextMetrics);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to load attendance."
@@ -63,11 +72,6 @@ export function AttendancePageClient({
       setIsLoading(false);
     }
   }, []);
-
-  const metrics = React.useMemo(() => {
-    const rawAttendances = data.map((d) => d.attendance);
-    return calculateAttendanceMetrics(rawAttendances);
-  }, [data]);
 
   const filteredData = React.useMemo(() => {
     return data.filter((row) => {
