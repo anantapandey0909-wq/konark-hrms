@@ -29,6 +29,12 @@ export type AttendanceListFilters = {
   departmentId?: string;
 };
 
+export type AttendanceListPagination = {
+  /** 1-based page (already clamped by service). */
+  page: number;
+  pageSize: number;
+};
+
 /** Optional self-scope for metrics (non-org viewers). companyId from session only. */
 export type AttendanceMetricsScope = {
   employeeId?: string;
@@ -42,10 +48,10 @@ function roundToTwoDecimals(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-export async function findAttendancesByCompany(
+function buildAttendanceWhere(
   companyId: string,
-  filters: AttendanceListFilters = {}
-) {
+  filters: AttendanceListFilters
+): Prisma.AttendanceWhereInput {
   const where: Prisma.AttendanceWhereInput = tenantScope(companyId, {});
 
   if (filters.employeeId) {
@@ -70,22 +76,46 @@ export async function findAttendancesByCompany(
     where.employee = { departmentId: filters.departmentId };
   }
 
-  return prisma.attendance.findMany({
-    where,
-    include: attendanceInclude,
-    orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
-  });
+  return where;
+}
+
+const attendanceOrderBy: Prisma.AttendanceOrderByWithRelationInput[] = [
+  { attendanceDate: "desc" },
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+
+/**
+ * Paginated tenant attendance list.
+ * Same WHERE for findMany + count. Offset pagination only.
+ */
+export async function findAttendancesByCompany(
+  companyId: string,
+  filters: AttendanceListFilters = {},
+  pagination: AttendanceListPagination = { page: 1, pageSize: 10 }
+) {
+  const where = buildAttendanceWhere(companyId, filters);
+  const skip = (pagination.page - 1) * pagination.pageSize;
+  const take = pagination.pageSize;
+
+  const [items, total] = await Promise.all([
+    prisma.attendance.findMany({
+      where,
+      include: attendanceInclude,
+      orderBy: attendanceOrderBy,
+      skip,
+      take,
+    }),
+    prisma.attendance.count({ where }),
+  ]);
+
+  return { items, total };
 }
 
 /**
  * All-time Attendance KPIs via DB aggregation — does not load Attendance rows.
- * Semantics match calculateAttendanceMetrics() in lib/reports/attendance-metrics.ts:
- * - totalRecords = count of all scoped rows
- * - status counts via groupBy
- * - averageWorkingHours = avg of totalHours only where totalHours is not null
- * - totalOvertimeHours = sum of overtimeHours where not null
- * - regularizationCount = count where isRegularized === true
- * No date window.
+ * Semantics match calculateAttendanceMetrics() in lib/reports/attendance-metrics.ts.
+ * No date window. Independent of list pagination.
  */
 export async function getAttendanceMetricsByCompany(
   companyId: string,
