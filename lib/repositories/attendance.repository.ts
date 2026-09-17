@@ -27,6 +27,8 @@ export type AttendanceListFilters = {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
+  /** Case-insensitive name search (firstName / lastName). */
+  search?: string;
 };
 
 export type AttendanceListPagination = {
@@ -46,6 +48,43 @@ function dayStart(isoDate: string): Date {
 
 function roundToTwoDecimals(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * Name search on related Employee.
+ * Single token: firstName OR lastName contains (insensitive).
+ * Multi-token: each token must match firstName OR lastName (AND of token clauses).
+ * Approximates prior client concat-substring for "John Smith" without SQL concat.
+ */
+function buildEmployeeNameSearch(
+  search: string
+): Prisma.EmployeeWhereInput | undefined {
+  const tokens = search
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  if (tokens.length === 0) return undefined;
+
+  if (tokens.length === 1) {
+    const token = tokens[0];
+    return {
+      OR: [
+        { firstName: { contains: token, mode: "insensitive" } },
+        { lastName: { contains: token, mode: "insensitive" } },
+      ],
+    };
+  }
+
+  return {
+    AND: tokens.map((token) => ({
+      OR: [
+        { firstName: { contains: token, mode: "insensitive" } },
+        { lastName: { contains: token, mode: "insensitive" } },
+      ],
+    })),
+  };
 }
 
 function buildAttendanceWhere(
@@ -72,8 +111,19 @@ function buildAttendanceWhere(
       where.attendanceDate.lte = dayStart(filters.endDate);
     }
   }
+
+  const employeeWhere: Prisma.EmployeeWhereInput = {};
   if (filters.departmentId) {
-    where.employee = { departmentId: filters.departmentId };
+    employeeWhere.departmentId = filters.departmentId;
+  }
+  const nameSearch = filters.search
+    ? buildEmployeeNameSearch(filters.search)
+    : undefined;
+  if (nameSearch) {
+    Object.assign(employeeWhere, nameSearch);
+  }
+  if (Object.keys(employeeWhere).length > 0) {
+    where.employee = employeeWhere;
   }
 
   return where;
@@ -114,8 +164,7 @@ export async function findAttendancesByCompany(
 
 /**
  * All-time Attendance KPIs via DB aggregation — does not load Attendance rows.
- * Semantics match calculateAttendanceMetrics() in lib/reports/attendance-metrics.ts.
- * No date window. Independent of list pagination.
+ * No date window. Independent of list pagination/search.
  */
 export async function getAttendanceMetricsByCompany(
   companyId: string,
@@ -209,10 +258,6 @@ export async function findAttendanceByEmployeeDate(
   });
 }
 
-/**
- * Batch lookup for import conflict detection (avoids N+1).
- * companyId is trusted server context only.
- */
 export async function findAttendancesByEmployeeDates(
   companyId: string,
   employeeIds: string[],
