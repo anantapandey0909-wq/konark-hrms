@@ -24,6 +24,24 @@ import type {
   UpdateAttendanceInput,
 } from "@/lib/validation/attendance";
 
+function matchesMockSearch(
+  row: AttendanceWithEmployee,
+  search: string | undefined
+): boolean {
+  if (!search?.trim()) return true;
+  const tokens = search
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return true;
+  const first = row.employee.firstName.toLowerCase();
+  const last = row.employee.lastName.toLowerCase();
+  return tokens.every(
+    (token) => first.includes(token) || last.includes(token)
+  );
+}
+
 export async function fetchAttendanceList(filters?: {
   startDate?: string;
   endDate?: string;
@@ -31,6 +49,7 @@ export async function fetchAttendanceList(filters?: {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }): Promise<AttendanceListResult> {
@@ -57,6 +76,7 @@ export async function fetchAttendanceList(filters?: {
       ) {
         return false;
       }
+      if (!matchesMockSearch(row, filters?.search)) return false;
       return true;
     });
     const total = filtered.length;
@@ -70,9 +90,6 @@ export async function fetchAttendanceList(filters?: {
   return result.data;
 }
 
-/**
- * All-time Attendance KPIs (independent of list pagination/filters).
- */
 export async function fetchAttendanceMetrics(): Promise<AttendanceMetrics> {
   if (!isRealDataEnabled()) {
     const rows = mockAttendanceWithEmployees.map((r) => r.attendance);

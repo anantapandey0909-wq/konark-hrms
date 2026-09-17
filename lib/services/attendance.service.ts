@@ -90,6 +90,7 @@ export async function listAttendance(filters?: {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }): Promise<AttendanceListResult> {
@@ -118,6 +119,7 @@ export async function listAttendance(filters?: {
       workMode: scoped.workMode,
       employeeId: scoped.employeeId,
       departmentId: scoped.departmentId,
+      search: scoped.search?.trim() || undefined,
     },
     { page, pageSize }
   );

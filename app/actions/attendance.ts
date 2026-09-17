@@ -42,10 +42,29 @@ function clampPageSize(pageSize?: number): number {
   return Math.min(50, Math.max(1, Math.floor(pageSize)));
 }
 
+function matchesMockSearch(
+  row: AttendanceWithEmployee,
+  search: string | undefined
+): boolean {
+  if (!search?.trim()) return true;
+  const tokens = search
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return true;
+  const first = row.employee.firstName.toLowerCase();
+  const last = row.employee.lastName.toLowerCase();
+  return tokens.every(
+    (token) => first.includes(token) || last.includes(token)
+  );
+}
+
 function filterMockAttendance(filters?: {
   status?: string;
   workMode?: string;
   employeeId?: string;
+  search?: string;
 }): AttendanceWithEmployee[] {
   return mockAttendanceWithEmployees.filter((row) => {
     if (filters?.status && filters.status !== "ALL") {
@@ -57,6 +76,7 @@ function filterMockAttendance(filters?: {
     if (filters?.employeeId && row.attendance.employeeId !== filters.employeeId) {
       return false;
     }
+    if (!matchesMockSearch(row, filters?.search)) return false;
     return true;
   });
 }
@@ -68,6 +88,7 @@ export async function listAttendanceAction(filters?: {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }): Promise<ActionResult<AttendanceListResult>> {
