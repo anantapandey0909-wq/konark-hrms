@@ -73,13 +73,16 @@ export function AttendancePageClient({
     React.useState<AttendanceWithEmployee | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const loadPage = React.useCallback(
-    async (page: number) => {
+  /** Server list load: status + workMode applied before pagination. Search stays client-side. */
+  const loadList = React.useCallback(
+    async (page: number, status: string, workMode: string) => {
       setIsLoading(true);
       try {
         const result = await fetchAttendanceList({
           page,
           pageSize,
+          status: status === "ALL" ? undefined : status,
+          workMode: workMode === "ALL" ? undefined : workMode,
         });
         setData(result.items);
         setTotalItems(result.total);
@@ -95,12 +98,17 @@ export function AttendancePageClient({
     [pageSize]
   );
 
-  /** Reload list page + KPIs after save — KPIs stay independent of list page. */
+  /** Reload list page + KPIs after save — KPIs stay independent of list filters. */
   const reload = React.useCallback(async () => {
     setIsLoading(true);
     try {
       const [listResult, nextMetrics] = await Promise.all([
-        fetchAttendanceList({ page: currentPage, pageSize }),
+        fetchAttendanceList({
+          page: currentPage,
+          pageSize,
+          status: filters.status === "ALL" ? undefined : filters.status,
+          workMode: filters.workMode === "ALL" ? undefined : filters.workMode,
+        }),
         fetchAttendanceMetrics(),
       ]);
       setData(listResult.items);
@@ -114,29 +122,20 @@ export function AttendancePageClient({
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, pageSize]);
+  }, [currentPage, pageSize, filters.status, filters.workMode]);
 
   /**
-   * Client-side search/status/workMode apply only to the current server page
-   * (existing filter UX preserved; server-side filters are a later phase).
+   * Search remains client-side on the current server page (Part 3B).
+   * Status / workMode are applied server-side — do not re-filter them here.
    */
   const filteredData = React.useMemo(() => {
     return data.filter((row) => {
       const searchTarget =
         `${row.employee.firstName} ${row.employee.lastName}`.toLowerCase();
       const searchQuery = filters.search.toLowerCase();
-
-      const searchMatch =
-        filters.search === "" || searchTarget.includes(searchQuery);
-      const statusMatch =
-        filters.status === "ALL" || row.attendance.status === filters.status;
-      const workModeMatch =
-        filters.workMode === "ALL" ||
-        row.attendance.workMode === filters.workMode;
-
-      return searchMatch && statusMatch && workModeMatch;
+      return filters.search === "" || searchTarget.includes(searchQuery);
     });
-  }, [data, filters]);
+  }, [data, filters.search]);
 
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const activePage = Math.min(currentPage, totalPages);
@@ -144,10 +143,21 @@ export function AttendancePageClient({
     totalItems === 0 ? 0 : (activePage - 1) * pageSize + 1;
   const endRecordIndex = Math.min(activePage * pageSize, totalItems);
 
+  const handleFiltersChange = (next: AttendanceFilterState) => {
+    const statusChanged = next.status !== filters.status;
+    const workModeChanged = next.workMode !== filters.workMode;
+    setFilters(next);
+
+    if (statusChanged || workModeChanged) {
+      setCurrentPage(1);
+      void loadList(1, next.status, next.workMode);
+    }
+  };
+
   const handlePageChange = (page: number) => {
     const next = Math.min(Math.max(1, page), totalPages);
     setCurrentPage(next);
-    void loadPage(next);
+    void loadList(next, filters.status, filters.workMode);
   };
 
   const handleEditClick = React.useCallback((record: AttendanceWithEmployee) => {
@@ -280,7 +290,10 @@ export function AttendancePageClient({
       </div>
 
       <div className="space-y-4">
-        <AttendanceFilters filters={filters} onFiltersChange={setFilters} />
+        <AttendanceFilters
+          filters={filters}
+          onFiltersChange={handleFiltersChange}
+        />
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading attendance…</p>
         ) : (
