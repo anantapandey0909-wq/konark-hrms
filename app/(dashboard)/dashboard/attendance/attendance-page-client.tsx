@@ -73,9 +73,14 @@ export function AttendancePageClient({
     React.useState<AttendanceWithEmployee | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  /** Server list load: status + workMode applied before pagination. Search stays client-side. */
+  /** Server list: search + status + workMode before pagination. */
   const loadList = React.useCallback(
-    async (page: number, status: string, workMode: string) => {
+    async (
+      page: number,
+      status: string,
+      workMode: string,
+      search: string
+    ) => {
       setIsLoading(true);
       try {
         const result = await fetchAttendanceList({
@@ -83,6 +88,7 @@ export function AttendancePageClient({
           pageSize,
           status: status === "ALL" ? undefined : status,
           workMode: workMode === "ALL" ? undefined : workMode,
+          search: search.trim() || undefined,
         });
         setData(result.items);
         setTotalItems(result.total);
@@ -98,7 +104,7 @@ export function AttendancePageClient({
     [pageSize]
   );
 
-  /** Reload list page + KPIs after save — KPIs stay independent of list filters. */
+  /** Reload list + KPIs after save — KPIs independent of list filters. */
   const reload = React.useCallback(async () => {
     setIsLoading(true);
     try {
@@ -108,6 +114,7 @@ export function AttendancePageClient({
           pageSize,
           status: filters.status === "ALL" ? undefined : filters.status,
           workMode: filters.workMode === "ALL" ? undefined : filters.workMode,
+          search: filters.search.trim() || undefined,
         }),
         fetchAttendanceMetrics(),
       ]);
@@ -122,20 +129,13 @@ export function AttendancePageClient({
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, pageSize, filters.status, filters.workMode]);
-
-  /**
-   * Search remains client-side on the current server page (Part 3B).
-   * Status / workMode are applied server-side — do not re-filter them here.
-   */
-  const filteredData = React.useMemo(() => {
-    return data.filter((row) => {
-      const searchTarget =
-        `${row.employee.firstName} ${row.employee.lastName}`.toLowerCase();
-      const searchQuery = filters.search.toLowerCase();
-      return filters.search === "" || searchTarget.includes(searchQuery);
-    });
-  }, [data, filters.search]);
+  }, [
+    currentPage,
+    pageSize,
+    filters.status,
+    filters.workMode,
+    filters.search,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const activePage = Math.min(currentPage, totalPages);
@@ -146,18 +146,19 @@ export function AttendancePageClient({
   const handleFiltersChange = (next: AttendanceFilterState) => {
     const statusChanged = next.status !== filters.status;
     const workModeChanged = next.workMode !== filters.workMode;
+    const searchChanged = next.search !== filters.search;
     setFilters(next);
 
-    if (statusChanged || workModeChanged) {
+    if (statusChanged || workModeChanged || searchChanged) {
       setCurrentPage(1);
-      void loadList(1, next.status, next.workMode);
+      void loadList(1, next.status, next.workMode, next.search);
     }
   };
 
   const handlePageChange = (page: number) => {
     const next = Math.min(Math.max(1, page), totalPages);
     setCurrentPage(next);
-    void loadList(next, filters.status, filters.workMode);
+    void loadList(next, filters.status, filters.workMode, filters.search);
   };
 
   const handleEditClick = React.useCallback((record: AttendanceWithEmployee) => {
@@ -298,7 +299,7 @@ export function AttendancePageClient({
           <p className="text-sm text-muted-foreground">Loading attendance…</p>
         ) : (
           <>
-            <AttendanceTable data={filteredData} onEdit={handleEditClick} />
+            <AttendanceTable data={data} onEdit={handleEditClick} />
             {totalItems > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs">
                 <span className="text-muted-foreground">
