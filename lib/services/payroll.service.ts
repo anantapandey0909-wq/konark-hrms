@@ -34,6 +34,31 @@ import type {
   PayrollLeaveSummary,
 } from "@/types/payroll";
 
+export type PayrollListResult = {
+  items: PayrollRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 50;
+/** Cap for self-service stats full-row load (one employee, bounded). */
+const SELF_STATS_MAX_ROWS = 500;
+
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return DEFAULT_PAGE;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize)));
+}
+
 function parseDateOnly(iso: string): Date {
   return new Date(`${iso}T00:00:00.000Z`);
 }
@@ -61,7 +86,6 @@ function defaultLeave(): PayrollLeaveSummary {
 
 const PAID_IMMUTABLE = new Set(["PAID"]);
 
-/** Organization-level payroll access (not self-service only). */
 function hasOrgPayrollAccess(user: AuthUser): boolean {
   if (user.isSuperAdmin) return true;
   const p = getPermissions(user.role);
@@ -73,10 +97,6 @@ function canApprovePayroll(user: AuthUser): boolean {
   return getPermissions(user.role).payroll.approve;
 }
 
-/**
- * Resolve the authenticated user's linked Employee id within the tenant.
- * Returns null if no employee profile is linked.
- */
 async function resolveSessionEmployeeId(
   companyId: string,
   userId: string
@@ -96,22 +116,42 @@ export async function listPayrollRecords(filters?: {
   year?: number;
   departmentId?: string;
   employeeId?: string;
-}): Promise<PayrollRecord[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<PayrollListResult> {
   const { companyId, user } = await getTenantPrisma();
 
   const scopedFilters = { ...(filters ?? {}) };
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
 
   if (!hasOrgPayrollAccess(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
-      return [];
+      return { items: [], total: 0, page, pageSize };
     }
-    // Force self-scope; ignore client employeeId for enumeration.
     scopedFilters.employeeId = ownId;
   }
 
-  const rows = await payrollRepo.findPayrollsByCompany(companyId, scopedFilters);
-  return rows.map(mapPayrollToFrontend);
+  const { items, total } = await payrollRepo.findPayrollsByCompany(
+    companyId,
+    {
+      search: scopedFilters.search,
+      status: scopedFilters.status,
+      month: scopedFilters.month,
+      year: scopedFilters.year,
+      departmentId: scopedFilters.departmentId,
+      employeeId: scopedFilters.employeeId,
+    },
+    { page, pageSize }
+  );
+
+  return {
+    items: items.map(mapPayrollToFrontend),
+    total,
+    page,
+    pageSize,
+  };
 }
 
 export async function getPayrollRecord(id: string): Promise<PayrollRecord> {
@@ -124,7 +164,6 @@ export async function getPayrollRecord(id: string): Promise<PayrollRecord> {
   if (!hasOrgPayrollAccess(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId || row.employeeId !== ownId) {
-      // Same surface as missing record — avoid existence leaks.
       throw new AppError("NOT_FOUND", "Payroll record not found.", 404);
     }
   }
@@ -138,7 +177,6 @@ export async function getPayrollDashboardStats(): Promise<{
 }> {
   const { companyId, user } = await getTenantPrisma();
 
-  // Self-service: stats only for own records
   if (!hasOrgPayrollAccess(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
@@ -161,9 +199,18 @@ export async function getPayrollDashboardStats(): Promise<{
         },
       };
     }
-    const rows = await payrollRepo.findPayrollsByCompany(companyId, {
-      employeeId: ownId,
-    });
+    // Self-scope stats: load all own rows (bounded by one employee), not list page.
+    const counted = await payrollRepo.findPayrollsByCompany(
+      companyId,
+      { employeeId: ownId },
+      { page: 1, pageSize: 1 }
+    );
+    const take = Math.min(Math.max(counted.total, 1), SELF_STATS_MAX_ROWS);
+    const { items: rows } = await payrollRepo.findPayrollsByCompany(
+      companyId,
+      { employeeId: ownId },
+      { page: 1, pageSize: take }
+    );
     const byStatus: Record<string, number> = {};
     let totalGross = 0;
     let totalNet = 0;
@@ -172,7 +219,6 @@ export async function getPayrollDashboardStats(): Promise<{
     let activeCount = 0;
     for (const r of rows) {
       byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
-      // Exclude CANCELLED from Hub financial / processed totals (parity with org aggregate).
       if (r.status === "CANCELLED") continue;
       activeCount += 1;
       totalGross += r.grossSalary;
@@ -271,7 +317,6 @@ export async function createPayrollRecord(
     );
   }
 
-  // Create must start as DRAFT unless caller may approve (still no PAID on create).
   let status = (parsed.status ?? "DRAFT") as PayrollStatus;
   if (status === "APPROVED" || status === "PAID") {
     if (!canApprovePayroll(user)) {
@@ -282,25 +327,15 @@ export async function createPayrollRecord(
       );
     }
   }
-  if (status === "PAID" && !canApprovePayroll(user)) {
-    throw new AppError(
-      "FORBIDDEN",
-      "You do not have permission to mark payroll as paid.",
-      403
-    );
-  }
-  // Users with generate but not approve cannot create as APPROVED/PAID
   if ((status === "APPROVED" || status === "PAID") && !canApprovePayroll(user)) {
     status = "DRAFT";
   }
 
-  // Authoritative period: always from month + year.
   const bounds = payPeriodBounds(parsed.month, parsed.year);
   const start = parseDateOnly(bounds.startIso);
   const end = parseDateOnly(bounds.endIso);
 
   const basic = parsed.basicSalary;
-  // Server-authoritative line items — ignore client allowance/deduction arrays.
   const salary = resolveSalaryComponents(basic);
 
   const attendanceSummary = parsed.attendanceSummary ?? defaultAttendance();
@@ -403,7 +438,6 @@ export async function updatePayrollRecord(
     );
   }
 
-  // Approval / paid transitions require payroll.approve
   if (
     nextStatus === "APPROVED" &&
     existing.status !== "APPROVED" &&
@@ -428,8 +462,6 @@ export async function updatePayrollRecord(
   }
 
   const basic = parsed.basicSalary ?? existing.basicSalary;
-
-  // Server-authoritative line items from basic; never trust client arrays.
   const salary = resolveSalaryComponents(basic);
 
   const data: Prisma.PayrollUpdateInput = {
