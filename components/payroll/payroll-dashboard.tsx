@@ -11,6 +11,8 @@ import {
   Calendar,
   Users,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,14 +32,42 @@ import {
 import type { ResolvedDepartment } from "@/types/department";
 import { formatCurrency } from "@/lib/payroll";
 
+const DEFAULT_PAGE_SIZE = 10;
+
 interface PayrollDashboardProps {
   readonly initialRecords: PayrollRecord[];
+  readonly initialTotal: number;
+  readonly initialPage: number;
+  readonly initialPageSize: number;
   readonly initialStats: PayrollStats | null;
   readonly initialDepartments: ResolvedDepartment[];
 }
 
+function filtersToQuery(
+  nextFilters: PayrollFilters,
+  page: number,
+  pageSize: number
+) {
+  const departmentId =
+    nextFilters.department === "ALL"
+      ? undefined
+      : nextFilters.department.id;
+  return {
+    search: nextFilters.search || undefined,
+    status: nextFilters.status === "ALL" ? undefined : nextFilters.status,
+    month: nextFilters.month === "ALL" ? undefined : nextFilters.month,
+    year: nextFilters.year === "ALL" ? undefined : nextFilters.year,
+    departmentId,
+    page,
+    pageSize,
+  };
+}
+
 export function PayrollDashboard({
   initialRecords,
+  initialTotal,
+  initialPage,
+  initialPageSize,
   initialStats,
   initialDepartments,
 }: PayrollDashboardProps) {
@@ -50,37 +80,56 @@ export function PayrollDashboard({
     year: "ALL",
   });
   const [records, setRecords] = useState<PayrollRecord[]>(initialRecords);
+  const [totalItems, setTotalItems] = useState(initialTotal);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize || DEFAULT_PAGE_SIZE);
   const [stats, setStats] = useState<PayrollStats | null>(initialStats);
   const [departments] = useState<ResolvedDepartment[]>(initialDepartments);
   const [isPending, startTransition] = useTransition();
 
-  const reload = useCallback((nextFilters: PayrollFilters) => {
-    startTransition(async () => {
-      try {
-        const departmentId =
-          nextFilters.department === "ALL"
-            ? undefined
-            : nextFilters.department.id;
-        const [rows, dash] = await Promise.all([
-          fetchPayrollRecords({
-            search: nextFilters.search || undefined,
-            status:
-              nextFilters.status === "ALL" ? undefined : nextFilters.status,
-            month: nextFilters.month === "ALL" ? undefined : nextFilters.month,
-            year: nextFilters.year === "ALL" ? undefined : nextFilters.year,
-            departmentId,
-          }),
-          fetchPayrollStats(),
-        ]);
-        setRecords(rows);
-        setStats(dash.stats);
-      } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Failed to reload payroll."
-        );
-      }
-    });
-  }, []);
+  const reload = useCallback(
+    (nextFilters: PayrollFilters, page: number) => {
+      startTransition(async () => {
+        try {
+          const [listResult, dash] = await Promise.all([
+            fetchPayrollRecords(
+              filtersToQuery(nextFilters, page, pageSize)
+            ),
+            fetchPayrollStats(),
+          ]);
+          setRecords(listResult.items);
+          setTotalItems(listResult.total);
+          setCurrentPage(listResult.page);
+          setStats(dash.stats);
+        } catch (error) {
+          toast.error(
+            error instanceof Error ? error.message : "Failed to reload payroll."
+          );
+        }
+      });
+    },
+    [pageSize]
+  );
+
+  const loadPage = useCallback(
+    (page: number, nextFilters: PayrollFilters) => {
+      startTransition(async () => {
+        try {
+          const listResult = await fetchPayrollRecords(
+            filtersToQuery(nextFilters, page, pageSize)
+          );
+          setRecords(listResult.items);
+          setTotalItems(listResult.total);
+          setCurrentPage(listResult.page);
+        } catch (error) {
+          toast.error(
+            error instanceof Error ? error.message : "Failed to load payroll."
+          );
+        }
+      });
+    },
+    [pageSize]
+  );
 
   const handleUploadSalary = useCallback(() => {
     toast.info("Coming Soon", {
@@ -115,14 +164,14 @@ export function PayrollDashboard({
         toast.success("Success", {
           description: `Approved payroll for ${record.employeeName}.`,
         });
-        reload(filters);
+        reload(filters, currentPage);
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to approve payroll."
         );
       }
     },
-    [filters, reload]
+    [filters, currentPage, reload]
   );
 
   const handlePay = useCallback(
@@ -132,14 +181,14 @@ export function PayrollDashboard({
         toast.success("Success", {
           description: `Disbursed salary payment to ${record.employeeName}.`,
         });
-        reload(filters);
+        reload(filters, currentPage);
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to mark as paid."
         );
       }
     },
-    [filters, reload]
+    [filters, currentPage, reload]
   );
 
   const handleCancel = useCallback(
@@ -149,20 +198,21 @@ export function PayrollDashboard({
         toast.warning("Cancelled", {
           description: `Cancelled payroll record for ${record.employeeName}.`,
         });
-        reload(filters);
+        reload(filters, currentPage);
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to cancel payroll."
         );
       }
     },
-    [filters, reload]
+    [filters, currentPage, reload]
   );
 
   const handleFilterChange = useCallback(
     (updatedFilters: PayrollFilters) => {
       setFilters(updatedFilters);
-      reload(updatedFilters);
+      setCurrentPage(1);
+      reload(updatedFilters, 1);
     },
     [reload]
   );
@@ -176,11 +226,24 @@ export function PayrollDashboard({
       year: "ALL",
     };
     setFilters(base);
-    reload(base);
+    setCurrentPage(1);
+    reload(base, 1);
   }, [reload]);
 
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const activePage = Math.min(currentPage, totalPages);
+  const startRecordIndex =
+    totalItems === 0 ? 0 : (activePage - 1) * pageSize + 1;
+  const endRecordIndex = Math.min(activePage * pageSize, totalItems);
+
+  const handlePageChange = (page: number) => {
+    const next = Math.min(Math.max(1, page), totalPages);
+    setCurrentPage(next);
+    loadPage(next, filters);
+  };
+
   const totalExpense = stats?.totalNetSalary ?? 0;
-  const processed = stats?.employeeCount ?? records.length;
+  const processed = stats?.employeeCount ?? 0;
 
   return (
     <div className="space-y-8 p-6 md:p-8">
@@ -299,6 +362,49 @@ export function PayrollDashboard({
         onPay={handlePay}
         onCancel={handleCancel}
       />
+
+      {totalItems > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs">
+          <span className="text-muted-foreground">
+            Showing{" "}
+            <span className="font-semibold text-foreground">
+              {startRecordIndex}
+            </span>
+            –
+            <span className="font-semibold text-foreground">
+              {endRecordIndex}
+            </span>{" "}
+            of{" "}
+            <span className="font-semibold text-foreground">{totalItems}</span>{" "}
+            records
+          </span>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => handlePageChange(activePage - 1)}
+              disabled={activePage <= 1 || isPending}
+              aria-label="Go to previous page"
+              className="h-8 w-8"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-muted-foreground tabular-nums px-1">
+              Page {activePage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => handlePageChange(activePage + 1)}
+              disabled={activePage >= totalPages || isPending}
+              aria-label="Go to next page"
+              className="h-8 w-8"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
