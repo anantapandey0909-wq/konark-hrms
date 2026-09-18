@@ -66,20 +66,11 @@ type Prepared = {
   salary: ReturnType<typeof resolveSalaryComponents>;
 };
 
-/** Load all tenant employees for import code lookup (paginated repo API). */
-async function loadAllCompanyEmployees(companyId: string) {
-  const first = await employeeRepo.findEmployeesByCompany(
-    companyId,
-    {},
-    { page: 1, pageSize: 1 }
+/** Unique trimmed employee codes from the upload (bounded by row count). */
+function extractEmployeeCodes(rows: PayrollImportRowInput[]): string[] {
+  return Array.from(
+    new Set(rows.map((row) => row.employeeId.trim()).filter(Boolean))
   );
-  if (first.total === 0) return [];
-  const { items } = await employeeRepo.findEmployeesByCompany(
-    companyId,
-    {},
-    { page: 1, pageSize: first.total }
-  );
-  return items;
 }
 
 async function validatePayrollImportBatch(
@@ -90,7 +81,11 @@ async function validatePayrollImportBatch(
   errors: PayrollImportRowError[];
   duplicateCount: number;
 }> {
-  const companyEmployees = await loadAllCompanyEmployees(companyId);
+  const codes = extractEmployeeCodes(rows);
+  const companyEmployees = await employeeRepo.findEmployeesByCodesForImport(
+    companyId,
+    codes
+  );
   const byCode = new Map(
     companyEmployees.map((e) => [e.employeeCode.toLowerCase(), e])
   );

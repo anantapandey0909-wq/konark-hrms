@@ -88,6 +88,50 @@ export async function findEmployeesByCompany(
   return { items, total };
 }
 
+/**
+ * Import lookup: only employees whose codes appear in the upload.
+ * Bounded by unique codes (≤ import max rows), not company headcount.
+ * Case-insensitive code match preserves prior Map(toLowerCase) semantics.
+ * companyId is trusted server context only.
+ */
+export async function findEmployeesByCodesForImport(
+  companyId: string,
+  codes: string[]
+) {
+  const unique = Array.from(
+    new Set(codes.map((c) => c.trim()).filter(Boolean))
+  );
+  if (unique.length === 0) return [];
+
+  // OR + equals insensitive: Prisma `in` is case-sensitive on most collations.
+  const where: Prisma.EmployeeWhereInput = {
+    companyId,
+    OR: unique.map((code) => ({
+      employeeCode: {
+        equals: code,
+        mode: Prisma.QueryMode.insensitive,
+      },
+    })),
+  };
+
+  return prisma.employee.findMany({
+    where,
+    select: {
+      id: true,
+      employeeCode: true,
+      firstName: true,
+      lastName: true,
+      designation: true,
+      status: true,
+      department: {
+        select: {
+          departmentName: true,
+        },
+      },
+    },
+  });
+}
+
 export async function findEmployeeById(companyId: string, id: string) {
   return prisma.employee.findFirst({
     where: tenantScope(companyId, { id }),
