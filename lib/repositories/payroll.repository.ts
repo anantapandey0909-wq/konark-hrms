@@ -19,10 +19,16 @@ export type PayrollListFilters = {
   employeeId?: string;
 };
 
-export async function findPayrollsByCompany(
+export type PayrollListPagination = {
+  /** 1-based page (clamped by service). */
+  page: number;
+  pageSize: number;
+};
+
+function buildPayrollWhere(
   companyId: string,
-  filters: PayrollListFilters = {}
-) {
+  filters: PayrollListFilters
+): Prisma.PayrollWhereInput {
   const where: Prisma.PayrollWhereInput = tenantScope(companyId, {});
 
   if (filters.status && filters.status !== "ALL") {
@@ -49,11 +55,41 @@ export async function findPayrollsByCompany(
     ];
   }
 
-  return prisma.payroll.findMany({
-    where,
-    include: payrollInclude,
-    orderBy: [{ year: "desc" }, { month: "desc" }, { createdAt: "desc" }],
-  });
+  return where;
+}
+
+const payrollOrderBy: Prisma.PayrollOrderByWithRelationInput[] = [
+  { year: "desc" },
+  { month: "desc" },
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+
+/**
+ * Paginated tenant payroll list.
+ * Same WHERE for findMany + count. Offset pagination only.
+ */
+export async function findPayrollsByCompany(
+  companyId: string,
+  filters: PayrollListFilters = {},
+  pagination: PayrollListPagination = { page: 1, pageSize: 10 }
+) {
+  const where = buildPayrollWhere(companyId, filters);
+  const skip = (pagination.page - 1) * pagination.pageSize;
+  const take = pagination.pageSize;
+
+  const [items, total] = await Promise.all([
+    prisma.payroll.findMany({
+      where,
+      include: payrollInclude,
+      orderBy: payrollOrderBy,
+      skip,
+      take,
+    }),
+    prisma.payroll.count({ where }),
+  ]);
+
+  return { items, total };
 }
 
 export async function findPayrollById(companyId: string, id: string) {
@@ -152,8 +188,7 @@ export async function countPayrollsByStatus(companyId: string) {
 
 /**
  * Financial aggregates for Payroll Hub summary cards.
- * Excludes CANCELLED so expense/processed totals match active liability semantics
- * (aligned with Reports Phase 12.8A).
+ * Excludes CANCELLED so expense/processed totals match active liability semantics.
  * companyId is trusted server context only.
  */
 export async function aggregatePayrollAmounts(companyId: string) {
