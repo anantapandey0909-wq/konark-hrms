@@ -15,6 +15,7 @@ import {
   getPayrollDashboardStats,
   createPayrollRecord,
   updatePayrollRecord,
+  type PayrollListResult,
 } from "@/lib/services/payroll.service";
 import type {
   CreatePayrollInput,
@@ -36,7 +37,16 @@ export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string; code: string };
 
-/** Same organizational access rule as lib/services/payroll.service.ts */
+function clampPage(page?: number): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return 1;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampPageSize(pageSize?: number): number {
+  if (typeof pageSize !== "number" || !Number.isFinite(pageSize)) return 10;
+  return Math.min(50, Math.max(1, Math.floor(pageSize)));
+}
+
 function hasOrgPayrollAccess(user: AuthUser): boolean {
   if (user.isSuperAdmin) return true;
   const p = getPermissions(user.role);
@@ -76,7 +86,6 @@ function filterMock(
   });
 }
 
-/** Apply org-access or self-scope to mock payroll rows (parity with real service). */
 function mockPayrollForUser(
   user: AuthUser,
   filters?: {
@@ -91,7 +100,6 @@ function mockPayrollForUser(
   const scopedFilters = { ...(filters ?? {}) };
 
   if (!hasOrgPayrollAccess(user)) {
-    // AuthUser.employeeId is the employee code from map-user; also match record id.
     const identity = user.employeeId;
     scopedFilters.employeeId = undefined;
     return filterMock(scopedFilters).filter(
@@ -109,7 +117,9 @@ export async function listPayrollRecordsAction(filters?: {
   year?: number;
   departmentId?: string;
   employeeId?: string;
-}): Promise<ActionResult<PayrollRecord[]>> {
+  page?: number;
+  pageSize?: number;
+}): Promise<ActionResult<PayrollListResult>> {
   let user: AuthUser;
   try {
     user = await requirePayrollView();
@@ -118,11 +128,25 @@ export async function listPayrollRecordsAction(filters?: {
     return toSafeActionResult(error);
   }
 
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
   if (!isRealDataEnabled()) {
-    return { success: true, data: mockPayrollForUser(user, filters) };
+    const filtered = mockPayrollForUser(user, filters);
+    const total = filtered.length;
+    const start = (page - 1) * pageSize;
+    const items = filtered.slice(start, start + pageSize);
+    return { success: true, data: { items, total, page, pageSize } };
   }
   try {
-    return { success: true, data: await listPayrollRecords(filters) };
+    return {
+      success: true,
+      data: await listPayrollRecords({
+        ...filters,
+        page,
+        pageSize,
+      }),
+    };
   } catch (error) {
     return toSafeActionResult(error);
   }
@@ -179,7 +203,6 @@ export async function getPayrollStatsAction(): Promise<
   }
 
   if (!isRealDataEnabled()) {
-    // Hub financial cards exclude CANCELLED (parity with real aggregatePayrollAmounts).
     const rows = mockPayrollForUser(user).filter((r) => r.status !== "CANCELLED");
     const statsLib = calculatePayrollStatistics(rows);
     const summaryLib = calculatePayrollSummary(rows);

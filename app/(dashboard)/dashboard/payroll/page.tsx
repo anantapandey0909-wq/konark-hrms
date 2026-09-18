@@ -9,19 +9,28 @@ import type { ResolvedDepartment } from "@/types/department";
 
 export const dynamic = "force-dynamic";
 
+const INITIAL_PAGE = 1;
+const INITIAL_PAGE_SIZE = 10;
+
 export default async function PayrollPage() {
   let initialRecords: PayrollRecord[] = [];
+  let initialTotal = 0;
+  let initialPage = INITIAL_PAGE;
+  let initialPageSize = INITIAL_PAGE_SIZE;
   let initialStats: PayrollStats | null = null;
   let initialDepartments: ResolvedDepartment[] = [];
   let loadError: string | null = null;
 
   try {
-    const [records, dash, depts] = await Promise.all([
-      fetchPayrollRecords(),
+    const [listResult, dash, depts] = await Promise.all([
+      fetchPayrollRecords({ page: INITIAL_PAGE, pageSize: INITIAL_PAGE_SIZE }),
       fetchPayrollStats(),
       fetchDepartments(),
     ]);
-    initialRecords = records;
+    initialRecords = listResult.items;
+    initialTotal = listResult.total;
+    initialPage = listResult.page;
+    initialPageSize = listResult.pageSize;
     initialStats = dash.stats;
     initialDepartments = depts;
   } catch (error) {
@@ -38,6 +47,9 @@ export default async function PayrollPage() {
       )}
       <PayrollDashboard
         initialRecords={initialRecords}
+        initialTotal={initialTotal}
+        initialPage={initialPage}
+        initialPageSize={initialPageSize}
         initialStats={initialStats}
         initialDepartments={initialDepartments}
       />

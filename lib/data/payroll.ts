@@ -8,6 +8,7 @@ import type {
   PayrollSummary,
   PayrollStats,
 } from "@/types/payroll";
+import type { PayrollListResult } from "@/lib/services/payroll.service";
 import type {
   CreatePayrollInput,
   UpdatePayrollInput,
@@ -27,7 +28,9 @@ export async function fetchPayrollRecords(filters?: {
   year?: number;
   departmentId?: string;
   employeeId?: string;
-}): Promise<PayrollRecord[]> {
+  page?: number;
+  pageSize?: number;
+}): Promise<PayrollListResult> {
   const result = await listPayrollRecordsAction(filters);
   if (!result.success) throw new Error(result.error);
   return result.data;
