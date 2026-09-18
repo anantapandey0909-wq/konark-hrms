@@ -12,7 +12,10 @@ import {
   getPermissions,
   type RolePermissions,
 } from "@/lib/auth/permissions";
-import { isRealDataEnabled } from "@/lib/config/flags";
+import {
+  isRealAuthEnabled,
+  isRealDataEnabled,
+} from "@/lib/config/flags";
 import { AppError } from "@/lib/errors/app-error";
 
 export type PermissionCheck = (permissions: RolePermissions) => boolean;
@@ -45,8 +48,26 @@ export async function requirePermission(
 }
 
 /**
+ * Defense-in-depth: production must use cookie-based real authentication.
+ * Development mock auth remains allowed when real auth is disabled.
+ * Does not inspect localStorage, alter sessions, or expose secrets.
+ */
+export function assertProductionRealAuth(): void {
+  if (process.env.NODE_ENV === "production" && !isRealAuthEnabled()) {
+    throw new AppError(
+      "INTERNAL",
+      "Application misconfiguration: real authentication is required in production."
+    );
+  }
+}
+
+/**
  * Defense-in-depth: production must not serve mock data paths.
  * Development mock mode remains allowed.
+ *
+ * Also enforces production coupling: real data requires real auth
+ * (assertProductionRealAuth) so operators cannot run DB-backed production
+ * with mock localStorage-only login.
  */
 export function assertProductionRealData(): void {
   if (process.env.NODE_ENV === "production" && !isRealDataEnabled()) {
@@ -55,6 +76,8 @@ export function assertProductionRealData(): void {
       "Application misconfiguration: real data mode is required in production."
     );
   }
+  // Production + real data implies real auth must be enabled.
+  assertProductionRealAuth();
 }
 
 // ---------------------------------------------------------------------------

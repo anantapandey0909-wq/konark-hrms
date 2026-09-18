@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { isRealAuthEnabled } from "@/lib/config/flags";
+import { assertProductionRealAuth } from "@/lib/auth/assert-data-management";
 import { realLogin } from "@/lib/auth/real-auth";
 import {
   SESSION_COOKIE_NAME,
@@ -16,6 +17,18 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  // Production must not accept login when real auth is disabled (fail closed).
+  // Development may still hit this route with the flag off → 400 below.
+  try {
+    assertProductionRealAuth();
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Application misconfiguration: real authentication is required in production.";
+    return NextResponse.json({ success: false, message }, { status: 500 });
+  }
+
   if (!isRealAuthEnabled()) {
     return NextResponse.json(
       { success: false, message: "Real authentication is disabled." },
