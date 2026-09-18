@@ -66,6 +66,21 @@ function mapEmployeeStatus(dbStatus: string): EmployeeStatus {
   return "INACTIVE";
 }
 
+const MONTH_ORDER = [
+  "JANUARY",
+  "FEBRUARY",
+  "MARCH",
+  "APRIL",
+  "MAY",
+  "JUNE",
+  "JULY",
+  "AUGUST",
+  "SEPTEMBER",
+  "OCTOBER",
+  "NOVEMBER",
+  "DECEMBER",
+];
+
 export async function getReportsDashboard(): Promise<ReportsDashboardData> {
   const { companyId, user } = await getTenantPrisma();
   const includePayroll = canViewPayrollMetrics(user);
@@ -84,7 +99,8 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
     payrollAmountAgg,
     payrollStatusSums,
     payrollEmployeeCount,
-    payrollTrendRows,
+    payrollTrendGroups,
+    payrollDeptGroups,
   ] = await Promise.all([
     reportsRepo.countEmployees(companyId),
     reportsRepo.groupEmployeesByStatus(companyId),
@@ -106,7 +122,10 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
       ? reportsRepo.distinctPayrollEmployeeCount(companyId)
       : Promise.resolve(0),
     includePayroll
-      ? reportsRepo.listPayrollForTrends(companyId)
+      ? reportsRepo.groupPayrollTrendByMonthYear(companyId)
+      : Promise.resolve([]),
+    includePayroll
+      ? reportsRepo.groupPayrollByDepartmentName(companyId)
       : Promise.resolve([]),
   ]);
 
@@ -252,66 +271,41 @@ export async function getReportsDashboard(): Promise<ReportsDashboardData> {
     }
   }
 
-  const deptNameById = new Map(
-    departments.map((d) => [d.id, d.departmentName] as const)
+  // Resolve department labels → ids from tenant department list when possible.
+  const deptIdByName = new Map(
+    departments.map((d) => [d.departmentName, d.id] as const)
   );
-  const deptPayrollMap = new Map<string, DepartmentPayrollMetric>();
-  for (const row of payrollTrendRows) {
-    const deptId = row.employee?.departmentId ?? "unassigned";
-    const existing = deptPayrollMap.get(deptId);
-    if (existing) {
-      existing.totalGross += row.grossSalary;
-      existing.totalNet += row.netSalary;
-      existing.recordCount += 1;
-    } else {
-      deptPayrollMap.set(deptId, {
-        departmentId: deptId,
-        departmentName:
-          row.departmentName ?? deptNameById.get(deptId) ?? "Unassigned",
-        totalGross: row.grossSalary,
-        totalNet: row.netSalary,
-        recordCount: 1,
-      });
-    }
-  }
-  const departmentPayrollMetrics = Array.from(deptPayrollMap.values());
 
-  const trendMap = new Map<string, MonthlyPayrollTrend>();
-  for (const row of payrollTrendRows) {
-    const key = `${row.year}-${row.month}`;
-    const existing = trendMap.get(key);
-    if (existing) {
-      existing.totalGross += row.grossSalary;
-      existing.totalNet += row.netSalary;
-      existing.recordCount += 1;
-    } else {
-      trendMap.set(key, {
-        month: row.month,
-        year: row.year,
-        totalGross: row.grossSalary,
-        totalNet: row.netSalary,
-        recordCount: 1,
-      });
-    }
-  }
-  const months = [
-    "JANUARY",
-    "FEBRUARY",
-    "MARCH",
-    "APRIL",
-    "MAY",
-    "JUNE",
-    "JULY",
-    "AUGUST",
-    "SEPTEMBER",
-    "OCTOBER",
-    "NOVEMBER",
-    "DECEMBER",
-  ];
-  const monthlyPayrollTrend = Array.from(trendMap.values()).sort((a, b) => {
-    if (a.year !== b.year) return a.year - b.year;
-    return months.indexOf(a.month) - months.indexOf(b.month);
-  });
+  const departmentPayrollMetrics: DepartmentPayrollMetric[] =
+    payrollDeptGroups.map((g) => {
+      const label =
+        g.departmentName && g.departmentName.trim().length > 0
+          ? g.departmentName
+          : "Unassigned";
+      const matchedId = g.departmentName
+        ? deptIdByName.get(g.departmentName)
+        : undefined;
+      return {
+        departmentId: matchedId ?? "unassigned",
+        departmentName: label,
+        totalGross: g._sum.grossSalary ?? 0,
+        totalNet: g._sum.netSalary ?? 0,
+        recordCount: g._count._all,
+      };
+    });
+
+  const monthlyPayrollTrend: MonthlyPayrollTrend[] = payrollTrendGroups
+    .map((g) => ({
+      month: g.month,
+      year: g.year,
+      totalGross: g._sum.grossSalary ?? 0,
+      totalNet: g._sum.netSalary ?? 0,
+      recordCount: g._count._all,
+    }))
+    .sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return MONTH_ORDER.indexOf(a.month) - MONTH_ORDER.indexOf(b.month);
+    });
 
   return {
     employeeStats,

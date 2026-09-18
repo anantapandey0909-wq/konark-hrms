@@ -132,31 +132,47 @@ export async function sumNetSalaryByPayrollStatus(companyId: string) {
   });
 }
 
+/**
+ * Distinct employees with at least one non-CANCELLED payroll row.
+ * groupBy employeeId avoids transferring every payroll row; result size = unique employees.
+ */
 export async function distinctPayrollEmployeeCount(companyId: string) {
-  const rows = await prisma.payroll.findMany({
+  const groups = await prisma.payroll.groupBy({
+    by: ["employeeId"],
     where: nonCancelledPayrollWhere(companyId),
-    select: { employeeId: true },
-    distinct: ["employeeId"],
   });
-  return rows.length;
+  return groups.length;
 }
 
-export async function listPayrollForTrends(companyId: string) {
-  return prisma.payroll.findMany({
+/**
+ * All-time monthly payroll trend aggregates (non-CANCELLED only).
+ * Replaces full-row listPayrollForTrends for month/year charts.
+ */
+export async function groupPayrollTrendByMonthYear(companyId: string) {
+  return prisma.payroll.groupBy({
+    by: ["year", "month"],
     where: nonCancelledPayrollWhere(companyId),
-    select: {
-      month: true,
-      year: true,
-      status: true,
+    _sum: {
       grossSalary: true,
       netSalary: true,
-      totalAllowances: true,
-      totalDeductions: true,
-      employeeId: true,
-      departmentName: true,
-      employee: {
-        select: { departmentId: true },
-      },
     },
+    _count: { _all: true },
+  });
+}
+
+/**
+ * All-time department allocation using denormalized Payroll.departmentName
+ * (same label source used when present on payroll rows).
+ * Non-CANCELLED only. Null/empty names map to Unassigned in the service.
+ */
+export async function groupPayrollByDepartmentName(companyId: string) {
+  return prisma.payroll.groupBy({
+    by: ["departmentName"],
+    where: nonCancelledPayrollWhere(companyId),
+    _sum: {
+      grossSalary: true,
+      netSalary: true,
+    },
+    _count: { _all: true },
   });
 }
