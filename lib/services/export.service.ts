@@ -1,9 +1,14 @@
 /**
  * Export service — read-only preview and bounded synchronous generation.
  * companyId always from getTenantPrisma(); never from client.
+ *
+ * Authorization uses ROLE_PERMISSIONS (reports.export + per-module view).
+ * Client-selected module is never trusted as authority — only as the resource
+ * being requested after permission checks pass.
  */
 
 import type { AuthRole, AuthUser } from "@/types/auth";
+import { getPermissions } from "@/lib/auth/permissions";
 import { getTenantPrisma } from "@/lib/db/prisma-with-tenant";
 import { AppError } from "@/lib/errors/app-error";
 import * as exportRepo from "@/lib/repositories/export.repository";
@@ -61,23 +66,101 @@ const MODULE_META: Record<
   },
 };
 
+/**
+ * Enforce Export Center access from ROLE_PERMISSIONS.
+ * - reports.export is required for any export module (Export Center gate).
+ * - Each module also requires the corresponding view permission.
+ * - Payroll remains restricted to ADMIN / HR / ACCOUNTANT (or super-admin).
+ */
 function assertCanExport(user: AuthUser, module: ExportModule): void {
-  const role = user.role as AuthRole;
-  if (role === "EMPLOYEE") {
+  if (user.isSuperAdmin) return;
+
+  const p = getPermissions(user.role);
+
+  // Primary Export Center permission — matches ROLE_PERMISSIONS.reports.export
+  if (!p.reports.export) {
     throw new AppError(
       "FORBIDDEN",
-      "Employees cannot use the Export Center."
+      "You do not have permission to export data."
     );
   }
-  // Payroll is restricted to finance/HR leadership.
-  if (module === "payroll") {
-    const allowed: AuthRole[] = ["ADMIN", "HR", "ACCOUNTANT"];
-    if (!allowed.includes(role) && !user.isSuperAdmin) {
+
+  switch (module) {
+    case "employees":
+      if (!p.employees.view) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You do not have permission to export employees."
+        );
+      }
+      break;
+    case "departments":
+      if (!p.departments.view) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You do not have permission to export departments."
+        );
+      }
+      break;
+    case "attendance":
+      if (!p.attendance.view) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You do not have permission to export attendance."
+        );
+      }
+      break;
+    case "leave":
+      if (!p.leave.view) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You do not have permission to export leave."
+        );
+      }
+      break;
+    case "payroll": {
+      if (!p.payroll.view) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You do not have permission to export payroll."
+        );
+      }
+      // Preserve finance/HR leadership restriction (stronger than view alone).
+      const allowed: AuthRole[] = ["ADMIN", "HR", "ACCOUNTANT"];
+      if (!allowed.includes(user.role as AuthRole)) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Payroll export requires HR, Accountant, or Admin role."
+        );
+      }
+      break;
+    }
+    case "reports":
+      if (!p.reports.view) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You do not have permission to export reports."
+        );
+      }
+      break;
+    default: {
+      const _exhaustive: never = module;
       throw new AppError(
         "FORBIDDEN",
-        "Payroll export requires HR, Accountant, or Admin role."
+        `Unsupported export module: ${String(_exhaustive)}`
       );
     }
+  }
+}
+
+function assertCanUseExportCenter(user: AuthUser): void {
+  if (user.isSuperAdmin) return;
+  const p = getPermissions(user.role);
+  if (!p.reports.export) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to use the Export Center."
+    );
   }
 }
 
@@ -287,7 +370,6 @@ function buildFilePayload(
       extension: "json",
     };
   }
-  // SpreadsheetML — Excel-compatible without exceljs
   return {
     body: buildSpreadsheetMl(MODULE_META[module].name, columns, rows),
     mimeType: "application/vnd.ms-excel",
@@ -299,6 +381,8 @@ export async function listExportModuleSummaries(): Promise<
   ExportModuleSummary[]
 > {
   const { companyId, user } = await getTenantPrisma();
+  assertCanUseExportCenter(user);
+
   const modules = Object.keys(MODULE_META) as ExportModule[];
 
   const recent = await exportRepo.findRecentExportAudits(companyId, 50);
@@ -460,10 +544,7 @@ export async function generateExport(
 
 export async function listExportHistory(): Promise<ExportHistoryItem[]> {
   const { companyId, user } = await getTenantPrisma();
-  // EMPLOYEE cannot view export history either
-  if (user.role === "EMPLOYEE") {
-    throw new AppError("FORBIDDEN", "Employees cannot view export history.");
-  }
+  assertCanUseExportCenter(user);
 
   const rows = await exportRepo.findExportAuditHistory(companyId, 25);
   return rows.map((row) => {
