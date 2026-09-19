@@ -1,5 +1,9 @@
 /**
  * Leave service — business rules, balance deduction, tenant isolation.
+ *
+ * MANAGER leave scope is team-only: Employee.managerId = manager's Employee.id.
+ * ADMIN / HR remain company-wide. EMPLOYEE remains self-scoped.
+ * SUPERVISOR leave.approve is false — unchanged in this phase.
  */
 
 import type { LeaveStatus, LeaveType, HalfDaySession } from "@prisma/client";
@@ -73,13 +77,28 @@ function assertCanApprove(role: AuthRole) {
   }
 }
 
-function canViewOrgLeave(user: AuthUser): boolean {
+/** Company-wide leave org access: ADMIN, HR, super-admin. */
+function isCompanyWideLeaveApprover(user: AuthUser): boolean {
+  if (user.isSuperAdmin) return true;
+  return user.role === "ADMIN" || user.role === "HR";
+}
+
+/** MANAGER with leave.approve — team-scoped only. */
+function isTeamLeaveManager(user: AuthUser): boolean {
+  return (
+    user.role === "MANAGER" && getPermissions(user.role).leave.approve === true
+  );
+}
+
+/** True if the user can see beyond self (org-wide or team). */
+function canViewBeyondSelf(user: AuthUser): boolean {
   if (user.isSuperAdmin) return true;
   return getPermissions(user.role).leave.approve;
 }
 
 function canCreateOnBehalf(user: AuthUser): boolean {
-  return canViewOrgLeave(user);
+  // On-behalf create remains company-wide for ADMIN/HR only.
+  return isCompanyWideLeaveApprover(user);
 }
 
 async function resolveSessionEmployeeId(
@@ -93,6 +112,19 @@ async function resolveSessionEmployeeId(
   return linked?.id ?? null;
 }
 
+/**
+ * Ensure a leave row belongs to a direct report of this manager.
+ * Uses employee.managerId from the included employee relation.
+ */
+function assertIsDirectReport(
+  leaveEmployeeManagerId: string | null | undefined,
+  managerEmployeeId: string
+): void {
+  if (leaveEmployeeManagerId !== managerEmployeeId) {
+    throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+  }
+}
+
 export async function listLeaveRequests(filters?: {
   status?: string;
   leaveType?: string;
@@ -103,21 +135,27 @@ export async function listLeaveRequests(filters?: {
   pageSize?: number;
 }): Promise<LeaveListResult> {
   const { companyId, user } = await getTenantPrisma();
-  const scoped = { ...(filters ?? {}) };
-
-  if (!canViewOrgLeave(user)) {
-    const ownId = await resolveSessionEmployeeId(companyId, user.id);
-    if (!ownId) {
-      const page = clampPage(filters?.page);
-      const pageSize = clampPageSize(filters?.pageSize);
-      return { items: [], total: 0, page, pageSize };
-    }
-    // Force self-scope; ignore client employeeId. Filters only narrow.
-    scoped.employeeId = ownId;
-  }
+  const scoped: leaveRepo.LeaveListFilters = { ...(filters ?? {}) };
 
   const page = clampPage(filters?.page);
   const pageSize = clampPageSize(filters?.pageSize);
+
+  if (isCompanyWideLeaveApprover(user)) {
+    // ADMIN / HR: full company; optional client filters only narrow.
+  } else if (isTeamLeaveManager(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return { items: [], total: 0, page, pageSize };
+    }
+    // Force team scope; client employeeId can only narrow within the team.
+    scoped.managerId = ownId;
+  } else if (!canViewBeyondSelf(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return { items: [], total: 0, page, pageSize };
+    }
+    scoped.employeeId = ownId;
+  }
 
   const { items, total } = await leaveRepo.findLeaveRequestsByCompany(
     companyId,
@@ -126,6 +164,7 @@ export async function listLeaveRequests(filters?: {
       leaveType: scoped.leaveType,
       employeeId: scoped.employeeId,
       departmentId: scoped.departmentId,
+      managerId: scoped.managerId,
       search: scoped.search,
     },
     { page, pageSize }
@@ -146,7 +185,15 @@ export async function getLeaveRequest(id: string): Promise<LeaveRequest> {
     throw new AppError("NOT_FOUND", "Leave request not found.", 404);
   }
 
-  if (!canViewOrgLeave(user)) {
+  if (isCompanyWideLeaveApprover(user)) {
+    // full company access
+  } else if (isTeamLeaveManager(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+    }
+    assertIsDirectReport(row.employee.managerId, ownId);
+  } else if (!canViewBeyondSelf(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId || row.employeeId !== ownId) {
       throw new AppError("NOT_FOUND", "Leave request not found.", 404);
@@ -160,7 +207,22 @@ export async function getLeaveStats(): Promise<LeaveStatsSummary> {
   const { companyId, user } = await getTenantPrisma();
   const scope: leaveRepo.LeaveStatsScope = {};
 
-  if (!canViewOrgLeave(user)) {
+  if (isCompanyWideLeaveApprover(user)) {
+    // company-wide KPIs
+  } else if (isTeamLeaveManager(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return {
+        totalRequests: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        cancelled: 0,
+        onLeaveToday: 0,
+      };
+    }
+    scope.managerId = ownId;
+  } else if (!canViewBeyondSelf(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
       return {
@@ -188,7 +250,18 @@ export async function getLeaveBalance(
 
   let targetEmployeeId = employeeId;
 
-  if (!canViewOrgLeave(user)) {
+  if (isCompanyWideLeaveApprover(user)) {
+    // may request any in-tenant balance
+  } else if (isTeamLeaveManager(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError("NOT_FOUND", "Leave balance not found.", 404);
+    }
+    const emp = await employeeRepo.findEmployeeById(companyId, targetEmployeeId);
+    if (!emp || emp.managerId !== ownId) {
+      throw new AppError("NOT_FOUND", "Leave balance not found.", 404);
+    }
+  } else if (!canViewBeyondSelf(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
       throw new AppError("NOT_FOUND", "Leave balance not found.", 404);
@@ -229,6 +302,7 @@ export async function createLeaveRequest(
   let targetEmployeeId = parsed.employeeId;
 
   if (!canCreateOnBehalf(user)) {
+    // MANAGER is not company-wide on-behalf; only self (or expand later).
     const linked = await db.employee.findFirst({
       where: { companyId, userId: user.id },
     });
@@ -239,6 +313,14 @@ export async function createLeaveRequest(
       );
     }
     if (targetEmployeeId !== linked.id) {
+      // Team managers may only apply for themselves unless product expands later.
+      if (isTeamLeaveManager(user)) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You may only submit leave requests for yourself.",
+          403
+        );
+      }
       throw new AppError(
         "FORBIDDEN",
         "You may only submit leave requests for yourself.",
@@ -353,9 +435,22 @@ export async function updateLeaveRequest(
     throw new AppError("NOT_FOUND", "Leave request not found.", 404);
   }
 
-  const isOrgApprover = canViewOrgLeave(user);
-
-  if (!isOrgApprover) {
+  if (isCompanyWideLeaveApprover(user)) {
+    // company-wide edit of pending requests
+  } else if (isTeamLeaveManager(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+    }
+    assertIsDirectReport(existing.employee.managerId, ownId);
+    if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
+      throw new AppError(
+        "FORBIDDEN",
+        "You cannot reassign a leave request to another employee.",
+        403
+      );
+    }
+  } else {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId || existing.employeeId !== ownId) {
       throw new AppError("NOT_FOUND", "Leave request not found.", 404);
@@ -397,7 +492,7 @@ export async function updateLeaveRequest(
 
   let employeeId = existing.employeeId;
   if (
-    isOrgApprover &&
+    isCompanyWideLeaveApprover(user) &&
     parsed.employeeId &&
     parsed.employeeId !== existing.employeeId
   ) {
@@ -478,6 +573,15 @@ export async function approveLeaveRequest(
   if (!existing) {
     throw new AppError("NOT_FOUND", "Leave request not found.", 404);
   }
+
+  if (isTeamLeaveManager(user) && !isCompanyWideLeaveApprover(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+    }
+    assertIsDirectReport(existing.employee.managerId, ownId);
+  }
+
   if (existing.status !== "PENDING") {
     throw new AppError("CONFLICT", "Only pending requests can be approved.");
   }
@@ -577,6 +681,15 @@ export async function rejectLeaveRequest(
   if (!existing) {
     throw new AppError("NOT_FOUND", "Leave request not found.", 404);
   }
+
+  if (isTeamLeaveManager(user) && !isCompanyWideLeaveApprover(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError("NOT_FOUND", "Leave request not found.", 404);
+    }
+    assertIsDirectReport(existing.employee.managerId, ownId);
+  }
+
   if (existing.status !== "PENDING") {
     throw new AppError("CONFLICT", "Only pending requests can be rejected.");
   }
@@ -621,10 +734,14 @@ export async function cancelLeaveRequest(id: string): Promise<LeaveRequest> {
     where: { companyId, userId: user.id },
   });
   const isOwner = linked?.id === existing.employeeId;
-  const isApprover = APPROVER_ROLES.includes(user.role);
+  const isCompanyApprover = isCompanyWideLeaveApprover(user);
+  const isTeamManager =
+    isTeamLeaveManager(user) &&
+    linked != null &&
+    existing.employee.managerId === linked.id;
 
   if (existing.status === "PENDING") {
-    if (!isOwner && !isApprover) {
+    if (!isOwner && !isCompanyApprover && !isTeamManager) {
       throw new AppError(
         "FORBIDDEN",
         "Not allowed to cancel this request.",
@@ -648,10 +765,10 @@ export async function cancelLeaveRequest(id: string): Promise<LeaveRequest> {
   }
 
   if (existing.status === "APPROVED") {
-    if (!isApprover) {
+    if (!isCompanyApprover && !isTeamManager) {
       throw new AppError(
         "FORBIDDEN",
-        "Only managers/HR can cancel approved leave.",
+        "Only authorized managers/HR can cancel approved leave.",
         403
       );
     }

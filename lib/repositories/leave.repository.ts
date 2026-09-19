@@ -19,6 +19,11 @@ export type LeaveListFilters = {
   leaveType?: string;
   employeeId?: string;
   departmentId?: string;
+  /**
+   * When set, only leave whose employee.managerId equals this value
+   * (MANAGER team scope). Always server-derived — never from the client.
+   */
+  managerId?: string;
   /** Trimmed; empty means no search condition. */
   search?: string;
 };
@@ -29,9 +34,11 @@ export type LeaveListPagination = {
   pageSize: number;
 };
 
-/** Optional self-scope for stats (non-approvers). companyId always from session. */
+/** Optional self-scope or team-scope for stats. companyId always from session. */
 export type LeaveStatsScope = {
   employeeId?: string;
+  /** Team scope: employees reporting to this manager Employee.id */
+  managerId?: string;
 };
 
 function dayStart(iso: string): Date {
@@ -61,9 +68,16 @@ function buildLeaveWhere(
 
   const andClauses: Prisma.LeaveRequestWhereInput[] = [];
 
+  // MANAGER team scope: only direct reports (Employee.managerId).
+  if (filters.managerId) {
+    andClauses.push({
+      employee: { is: { managerId: filters.managerId } },
+    });
+  }
+
   if (filters.departmentId && filters.departmentId !== "ALL") {
     andClauses.push({
-      employee: { departmentId: filters.departmentId },
+      employee: { is: { departmentId: filters.departmentId } },
     });
   }
 
@@ -146,6 +160,9 @@ export async function countLeaveStats(
   const baseWhere: Prisma.LeaveRequestWhereInput = tenantScope(companyId, {});
   if (scope.employeeId) {
     baseWhere.employeeId = scope.employeeId;
+  }
+  if (scope.managerId) {
+    baseWhere.employee = { is: { managerId: scope.managerId } };
   }
 
   const [grouped, onLeaveToday] = await Promise.all([
