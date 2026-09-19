@@ -10,19 +10,24 @@ import React, {
 } from "react";
 import type { ReactNode } from "react";
 
-import type { AuthState } from "@/types/auth";
+import type { AuthResponse, AuthState } from "@/types/auth";
 import { authService } from "@/lib/auth/auth-service";
 
 interface AuthContextType extends AuthState {
+  /**
+   * Authenticate and update in-memory state.
+   * Returns AuthResponse so callers (e.g. login page) can redirect by role
+   * without reading localStorage. Real auth still relies on the HTTP-only cookie.
+   */
   readonly login: (
     usernameOrEmail: string,
     password?: string
-  ) => Promise<void>;
+  ) => Promise<AuthResponse>;
 
   readonly logout: () => Promise<void>;
 
   /**
-   * Reload the authenticated user from storage / server session.
+   * Reload the authenticated user from cookie (/api/auth/me) or mock storage.
    */
   readonly refresh: () => void;
 }
@@ -74,6 +79,7 @@ export function AuthProvider({
     };
   }, [initializeAuth]);
 
+  // Mock-only cross-tab sync. Real auth does not use localStorage.
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === "konark_hrms_session") {
@@ -89,7 +95,7 @@ export function AuthProvider({
   }, [initializeAuth]);
 
   const login = useCallback(
-    async (usernameOrEmail: string, password?: string) => {
+    async (usernameOrEmail: string, password?: string): Promise<AuthResponse> => {
       setAuthState((prev) => ({
         ...prev,
         isLoading: true,
@@ -106,6 +112,8 @@ export function AuthProvider({
           isAuthenticated: response.success,
           isLoading: false,
         });
+
+        return response;
       } catch (error) {
         setAuthState({
           user: null,

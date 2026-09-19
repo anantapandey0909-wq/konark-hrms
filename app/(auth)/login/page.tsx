@@ -25,7 +25,7 @@ import type { LoginSchema } from "@/schemas/auth";
 export default function LoginPage() {
   const router = useRouter();
 
-  const { login, user } = useAuth();
+  const { login } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -34,35 +34,22 @@ export default function LoginPage() {
       setIsLoading(true);
 
       try {
-        await login(
-          values.email,
-          values.password
-        );
+        // login() updates AuthProvider state and returns the AuthResponse.
+        // Real auth: session lives in the HTTP-only cookie only — do not read localStorage.
+        // Mock auth: localStorage is still used inside authService, but this page
+        // relies on the returned response, not a direct localStorage read.
+        const response = await login(values.email, values.password);
 
-        /*
-         * Read the freshly stored session after AuthProvider login.
-         * This guarantees we redirect using the authenticated role.
-         */
-        const storedSession = JSON.parse(
-          localStorage.getItem("konark_hrms_session") ?? "null"
-        );
+        const authenticatedUser = response.user;
 
-        if (!storedSession?.user) {
-          toast.error(
-            "Unable to create authentication session."
-          );
+        if (!response.success || !authenticatedUser) {
+          toast.error("Unable to create authentication session.");
           return;
         }
 
-        const authenticatedUser = storedSession.user;
+        toast.success(`Welcome back, ${authenticatedUser.firstName}!`);
 
-        toast.success(
-          `Welcome back, ${authenticatedUser.firstName}!`
-        );
-
-        const redirectPath = getRoleRoute(
-          authenticatedUser.role
-        );
+        const redirectPath = getRoleRoute(authenticatedUser.role);
 
         router.replace(redirectPath);
       } catch (error) {
@@ -93,15 +80,9 @@ export default function LoginPage() {
         />
       }
     >
-      <AuthLogo
-        size="lg"
-        className="mb-4"
-      />
+      <AuthLogo size="lg" className="mb-4" />
 
-      <LoginForm
-        onSubmit={handleLogin}
-        isLoading={isLoading}
-      />
+      <LoginForm onSubmit={handleLogin} isLoading={isLoading} />
     </AuthLayout>
   );
 }

@@ -7,8 +7,18 @@ import {
   isSessionExpired,
 } from "@/lib/auth/session";
 
+/**
+ * Client auth service.
+ *
+ * localStorage is ONLY for mock authentication (isRealAuthEnabled() === false).
+ * Real authentication source of truth is the HTTP-only cookie (konark_hrms_session)
+ * set by POST /api/auth/login and validated by GET /api/auth/me.
+ * When real auth is enabled, /api/auth/me failure MUST fail closed — never fall
+ * back to localStorage.
+ */
+
 // ==============================================================================
-// Storage (client mock path — localStorage)
+// Storage (client MOCK path only — localStorage)
 // ==============================================================================
 
 function saveSession(session: AuthSession): void {
@@ -33,6 +43,14 @@ function loadSession(): AuthSession | null {
     clearSession();
     return null;
   }
+}
+
+/**
+ * Migration cleanup: remove any stale mock key left over after switching to
+ * real auth. Must NEVER be used as an authentication source or fallback.
+ */
+function clearStaleLocalSession(): void {
+  clearSession();
 }
 
 // ==============================================================================
@@ -73,7 +91,7 @@ async function mockLogout(): Promise<void> {
 }
 
 // ==============================================================================
-// Real authentication (calls server routes that set HTTP-only cookies)
+// Real authentication (HTTP-only cookie is the only source of truth)
 // ==============================================================================
 
 async function realLogin(
@@ -96,13 +114,11 @@ async function realLogin(
     throw new Error(data.message || "Invalid credentials.");
   }
 
-  // Mirror session into localStorage so existing AuthProvider / login page
-  // contracts that read konark_hrms_session continue to work without redesign.
-  // Source of truth for the server remains the HTTP-only cookie from Set-Cookie.
-  if (data.session) {
-    saveSession(data.session);
-  }
+  // Cookie is set by the server (Set-Cookie). Do NOT persist real sessions
+  // into localStorage — that must never become an auth source of truth.
+  clearStaleLocalSession();
 
+  // Return user/session for immediate in-memory AuthProvider state only.
   return data;
 }
 
@@ -113,10 +129,16 @@ async function realLogout(): Promise<void> {
       credentials: "include",
     });
   } finally {
-    clearSession();
+    // Clear any legacy localStorage key; never used for real-auth decisions.
+    clearStaleLocalSession();
   }
 }
 
+/**
+ * Restore real session from the HTTP-only cookie via /api/auth/me.
+ * Fail closed: non-2xx, unsuccessful payload, or network error → null.
+ * NEVER falls back to localStorage.
+ */
 async function realRestoreSession(): Promise<AuthSession | null> {
   try {
     const res = await fetch("/api/auth/me", {
@@ -124,7 +146,7 @@ async function realRestoreSession(): Promise<AuthSession | null> {
       credentials: "include",
     });
     if (!res.ok) {
-      clearSession();
+      clearStaleLocalSession();
       return null;
     }
     const data = (await res.json()) as {
@@ -132,13 +154,16 @@ async function realRestoreSession(): Promise<AuthSession | null> {
       session?: AuthSession;
     };
     if (data.success && data.session) {
-      saveSession(data.session);
+      // In-memory only; do not write to localStorage.
+      clearStaleLocalSession();
       return data.session;
     }
-    clearSession();
+    clearStaleLocalSession();
     return null;
   } catch {
-    return loadSession();
+    // Network / parse failure: fail closed — do not use loadSession().
+    clearStaleLocalSession();
+    return null;
   }
 }
 
@@ -163,7 +188,14 @@ export async function logout(): Promise<void> {
   return mockLogout();
 }
 
+/**
+ * Sync localStorage session — MOCK AUTH ONLY.
+ * When real auth is enabled, always returns null (cookie is source of truth).
+ */
 export function getStoredSession(): AuthSession | null {
+  if (isRealAuthEnabled()) {
+    return null;
+  }
   const session = loadSession();
   if (!session) return null;
   if (isSessionExpired(session)) {
@@ -182,8 +214,9 @@ export function restoreSession(): AuthSession | null {
 }
 
 /**
- * Async session restore — used by AuthProvider when real auth is enabled
- * so the HTTP-only cookie is the source of truth after refresh.
+ * Async session restore — used by AuthProvider.
+ * Real auth: HTTP-only cookie via /api/auth/me (fail closed).
+ * Mock auth: localStorage.
  */
 export async function restoreSessionAsync(): Promise<AuthSession | null> {
   if (isRealAuthEnabled()) {
