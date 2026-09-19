@@ -16,6 +16,8 @@ const attendanceInclude = {
       profileImage: true,
       designation: true,
       departmentId: true,
+      /** Required for SUPERVISOR team-scope object checks. */
+      managerId: true,
     },
   },
 } as const;
@@ -27,6 +29,11 @@ export type AttendanceListFilters = {
   workMode?: string;
   employeeId?: string;
   departmentId?: string;
+  /**
+   * Team scope: only attendance for employees reporting to this manager
+   * Employee.id (server-derived SUPERVISOR scope). Never from the client.
+   */
+  managerId?: string;
   /** Case-insensitive name search (firstName / lastName). */
   search?: string;
 };
@@ -37,9 +44,10 @@ export type AttendanceListPagination = {
   pageSize: number;
 };
 
-/** Optional self-scope for metrics (non-org viewers). companyId from session only. */
+/** Self-scope or team-scope for metrics. companyId from session only. */
 export type AttendanceMetricsScope = {
   employeeId?: string;
+  managerId?: string;
 };
 
 function dayStart(isoDate: string): Date {
@@ -54,7 +62,6 @@ function roundToTwoDecimals(value: number): number {
  * Name search on related Employee.
  * Single token: firstName OR lastName contains (insensitive).
  * Multi-token: each token must match firstName OR lastName (AND of token clauses).
- * Approximates prior client concat-substring for "John Smith" without SQL concat.
  */
 function buildEmployeeNameSearch(
   search: string
@@ -113,6 +120,9 @@ function buildAttendanceWhere(
   }
 
   const employeeWhere: Prisma.EmployeeWhereInput = {};
+  if (filters.managerId) {
+    employeeWhere.managerId = filters.managerId;
+  }
   if (filters.departmentId) {
     employeeWhere.departmentId = filters.departmentId;
   }
@@ -173,6 +183,9 @@ export async function getAttendanceMetricsByCompany(
   const baseWhere: Prisma.AttendanceWhereInput = tenantScope(companyId, {});
   if (scope.employeeId) {
     baseWhere.employeeId = scope.employeeId;
+  }
+  if (scope.managerId) {
+    baseWhere.employee = { is: { managerId: scope.managerId } };
   }
 
   const [

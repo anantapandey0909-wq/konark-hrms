@@ -1,5 +1,10 @@
 /**
  * Attendance service — business rules, validation, tenant checks.
+ *
+ * SUPERVISOR attendance is team-scoped:
+ *   employee.managerId === supervisor's Employee.id (session-derived).
+ * ADMIN / HR / MANAGER (approve/mark as before) remain company-wide except SUPERVISOR.
+ * EMPLOYEE remains self-scoped. Check-in/out always self-only.
  */
 
 import { getTenantPrisma } from "@/lib/db/prisma-with-tenant";
@@ -65,10 +70,24 @@ function assertCheckOrder(checkIn: Date | null, checkOut: Date | null) {
   }
 }
 
-function canViewOrgAttendance(user: AuthUser): boolean {
+/**
+ * Company-wide attendance viewer.
+ * SUPERVISOR is excluded even when attendance.mark is true (team-scoped instead).
+ * MANAGER retains org access via attendance.approve (unchanged).
+ */
+function isCompanyWideAttendanceViewer(user: AuthUser): boolean {
   if (user.isSuperAdmin) return true;
+  if (user.role === "SUPERVISOR") return false;
   const p = getPermissions(user.role);
   return p.attendance.mark || p.attendance.approve;
+}
+
+/** SUPERVISOR with mark — team via Employee.managerId. */
+function isTeamAttendanceSupervisor(user: AuthUser): boolean {
+  return (
+    user.role === "SUPERVISOR" &&
+    getPermissions(user.role).attendance.mark === true
+  );
 }
 
 async function resolveSessionEmployeeId(
@@ -83,6 +102,15 @@ async function resolveSessionEmployeeId(
   return linked?.id ?? null;
 }
 
+function assertIsDirectReport(
+  employeeManagerId: string | null | undefined,
+  supervisorEmployeeId: string
+): void {
+  if (employeeManagerId !== supervisorEmployeeId) {
+    throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
+  }
+}
+
 export async function listAttendance(filters?: {
   startDate?: string;
   endDate?: string;
@@ -95,20 +123,27 @@ export async function listAttendance(filters?: {
   pageSize?: number;
 }): Promise<AttendanceListResult> {
   const { companyId, user } = await getTenantPrisma();
-  const scoped = { ...(filters ?? {}) };
+  const scoped: attendanceRepo.AttendanceListFilters = { ...(filters ?? {}) };
 
-  if (!canViewOrgAttendance(user)) {
+  const page = clampPage(filters?.page);
+  const pageSize = clampPageSize(filters?.pageSize);
+
+  if (isCompanyWideAttendanceViewer(user)) {
+    // ADMIN / HR / MANAGER (mark|approve): full company; filters only narrow.
+  } else if (isTeamAttendanceSupervisor(user)) {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
-      const page = clampPage(filters?.page);
-      const pageSize = clampPageSize(filters?.pageSize);
+      return { items: [], total: 0, page, pageSize };
+    }
+    // Force team scope; client employeeId may only narrow within the team.
+    scoped.managerId = ownId;
+  } else {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
       return { items: [], total: 0, page, pageSize };
     }
     scoped.employeeId = ownId;
   }
-
-  const page = clampPage(filters?.page);
-  const pageSize = clampPageSize(filters?.pageSize);
 
   const { items, total } = await attendanceRepo.findAttendancesByCompany(
     companyId,
@@ -119,6 +154,7 @@ export async function listAttendance(filters?: {
       workMode: scoped.workMode,
       employeeId: scoped.employeeId,
       departmentId: scoped.departmentId,
+      managerId: scoped.managerId,
       search: scoped.search?.trim() || undefined,
     },
     { page, pageSize }
@@ -136,7 +172,25 @@ export async function getAttendanceMetrics(): Promise<AttendanceMetrics> {
   const { companyId, user } = await getTenantPrisma();
   const scope: attendanceRepo.AttendanceMetricsScope = {};
 
-  if (!canViewOrgAttendance(user)) {
+  if (isCompanyWideAttendanceViewer(user)) {
+    // company-wide KPIs
+  } else if (isTeamAttendanceSupervisor(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      return {
+        totalRecords: 0,
+        presentCount: 0,
+        lateCount: 0,
+        halfDayCount: 0,
+        absentCount: 0,
+        onLeaveCount: 0,
+        averageWorkingHours: 0,
+        totalOvertimeHours: 0,
+        regularizationCount: 0,
+      };
+    }
+    scope.managerId = ownId;
+  } else {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId) {
       return {
@@ -166,7 +220,15 @@ export async function getAttendance(
     throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
   }
 
-  if (!canViewOrgAttendance(user)) {
+  if (isCompanyWideAttendanceViewer(user)) {
+    // full company
+  } else if (isTeamAttendanceSupervisor(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
+    }
+    assertIsDirectReport(row.employee.managerId, ownId);
+  } else {
     const ownId = await resolveSessionEmployeeId(companyId, user.id);
     if (!ownId || row.employeeId !== ownId) {
       throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
@@ -197,6 +259,17 @@ export async function createAttendance(
       "VALIDATION",
       "Attendance can only be created for active employees."
     );
+  }
+
+  if (isTeamAttendanceSupervisor(user) && !isCompanyWideAttendanceViewer(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId || employee.managerId !== ownId) {
+      throw new AppError(
+        "FORBIDDEN",
+        "You may only create attendance for your direct reports.",
+        403
+      );
+    }
   }
 
   const attendanceDate = parseDateOnly(parsed.attendanceDate);
@@ -267,6 +340,28 @@ export async function updateAttendance(
   const existing = await attendanceRepo.findAttendanceById(companyId, id);
   if (!existing) {
     throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
+  }
+
+  if (isTeamAttendanceSupervisor(user) && !isCompanyWideAttendanceViewer(user)) {
+    const ownId = await resolveSessionEmployeeId(companyId, user.id);
+    if (!ownId) {
+      throw new AppError("NOT_FOUND", "Attendance record not found.", 404);
+    }
+    assertIsDirectReport(existing.employee.managerId, ownId);
+
+    if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
+      const target = await employeeRepo.findEmployeeById(
+        companyId,
+        parsed.employeeId
+      );
+      if (!target || target.managerId !== ownId) {
+        throw new AppError(
+          "FORBIDDEN",
+          "You may only assign attendance to your direct reports.",
+          403
+        );
+      }
+    }
   }
 
   if (parsed.employeeId && parsed.employeeId !== existing.employeeId) {
